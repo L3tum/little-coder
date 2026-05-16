@@ -10,8 +10,7 @@
       "skill_token_budget": 300,
       "knowledge_token_budget": 200,
       "system_prompt_budget": 0,
-      "max_retries": 1,
-      "temperature": 0.3
+      "max_retries": 1
     },
     "model_profiles": {
       "llamacpp/qwen3.6-27b": {
