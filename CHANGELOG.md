@@ -2,6 +2,20 @@
 
 All notable changes to little-coder are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and little-coder's public interface (CLI, providers, tools, skills) follows semver starting at `v0.0.1` post-rename.
 
+## [v1.4.1] — 2026-05-16
+
+Wire fix for the v1.4.0 startup rebrand. The `[Extensions]` block was still showing for users running from outside the repo root.
+
+### Fixed
+- **`quietStartup` is now actually applied for end users.** v1.4.0 set `"quietStartup": true` in our shipped `.pi/settings.json`, but pi reads global settings from `~/.pi/agent/settings.json` (or the dir pointed to by `PI_CODING_AGENT_DIR`) — not from the npm package's internal `.pi/`. So users running little-coder from anywhere outside the repo root still saw pi's full extension/skill/prompt inventory on startup. The launcher (`bin/little-coder.mjs`) now non-destructively merges `quietStartup: true` into the user's actual global pi settings on every launch, preserving any other keys. To see the inventory anyway: `little-coder --verbose`.
+- **Terminal title now reasserts on `turn_start` / `turn_end`.** Pi's `updateTerminalTitle()` fires multiple times during a session (init, provider count update, session-name change) and was clobbering our `setTitle("little-coder - <cwd>")` back to `π - <cwd>`. The branding extension now re-applies the title on every turn boundary, so after the first prompt the title stays correct.
+
+### Notes for upgraders
+- Existing keys in your `~/.pi/agent/settings.json` are preserved. The launcher only writes `quietStartup` if it isn't already `true`. If you'd previously set `"quietStartup": false` deliberately, you'll see the launcher overwrite it back to `true` — set `--verbose` per-invocation to see the inventory without disabling the global default.
+- No CLI flag, skill-pack, or API changes.
+
+---
+
 ## [v1.4.0] — 2026-05-16
 
 Startup UI rebrand. The TUI's opening frame now reads as **little-coder**, not as pi. Pi remains the substrate; the chrome above it just stops pretending it's the product.

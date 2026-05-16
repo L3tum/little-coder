@@ -61,10 +61,13 @@ function setTitleForCwd(setTitle: (t: string) => void, cwd: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
-  // session_start fires on initial load AND on every session switch,
-  // so registering once covers both. Pi's own updateTerminalTitle() runs
-  // during init/switch, so re-asserting our title here is what keeps
-  // "π - <cwd>" from sneaking back in.
+  // session_start fires on initial load AND on every session switch.
+  // Pi's updateTerminalTitle() runs in init() *after* session_start, so our
+  // setTitle here gets clobbered back to "π - <cwd>". We reassert the title
+  // on turn_start and turn_end too — pi calls updateTerminalTitle at the same
+  // points (interactive-mode.js:1179, 1346, 3971), so re-setting on every
+  // turn keeps our "little-coder - <cwd>" winning for the duration of a
+  // session.
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
@@ -75,6 +78,16 @@ export default function (pi: ExtensionAPI) {
       invalidate() {},
     }));
 
+    setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
+  });
+
+  pi.on("turn_start", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
+    setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
+  });
+
+  pi.on("turn_end", async (_event, ctx) => {
+    if (!ctx.hasUI) return;
     setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
   });
 }
