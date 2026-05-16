@@ -2,6 +2,25 @@
 
 All notable changes to little-coder are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and little-coder's public interface (CLI, providers, tools, skills) follows semver starting at `v0.0.1` post-rename.
 
+## [v1.4.0] — 2026-05-16
+
+Startup UI rebrand. The TUI's opening frame now reads as **little-coder**, not as pi. Pi remains the substrate; the chrome above it just stops pretending it's the product.
+
+### Added
+- **New `.pi/extensions/branding/` extension.** Calls `pi.ui.setHeader()` and `pi.ui.setTitle()` on every `session_start` event to install a little-coder banner: `little-coder vX.Y.Z` (logo) + `A coding agent tuned for small local models` (tagline, verbatim from the README opening line) + a compact keybinding-hint row. The terminal title goes from `π - <cwd>` to `little-coder - <cwd>`. Implementation pattern follows pi's bundled `examples/extensions/custom-header.ts` — the factory returns a duck-typed Component (`render(width): string[]`), so no deep imports of pi-tui internals are required.
+- **Startup screenshot in README.** A real `docs/assets/startup.svg` captured from a live `little-coder` startup, rendered via [charm.sh `freeze`](https://github.com/charmbracelet/freeze). Embedded near the top of the README so the first thing a visitor sees is the actual product, not a description of it.
+
+### Changed
+- **`.pi/settings.json` now ships `"quietStartup": true`.** This is what suppresses pi's built-in loaded-resources block — the long list of extension paths, skills, prompts, themes that previously flooded the screen on every launch. Power users who want the inventory back can pass `little-coder --verbose`, which sets pi's `verbose: true` and overrides `quietStartup`.
+- **Pi's "Pi can explain its own features..." onboarding string is gone.** The branding extension's `setHeader` replaces pi's built-in header entirely, so the line never renders.
+
+### Notes for upgraders
+- No API, settings, or skill-pack breaks. CLI flags unchanged.
+- If you'd customized pi's startup output via your own `models.json` / `.pi/settings.json` override, your changes still apply — the only new top-level key in shipped `.pi/settings.json` is `quietStartup`, and pi's override semantics preserve per-key user values.
+- To restore the original pi-style startup (the `pi vX.Y.Z` logo and the loaded-resources list), run `little-coder --verbose`. There's no way to disable the branding extension from the user side short of editing the installed package, but the rebrand is purely the startup frame — no functional difference.
+
+---
+
 ## [v1.3.0] — 2026-05-16
 
 First functional release of Phase 2 (iterative improvement on real-world coding tasks). Three concrete sharp edges that surfaced while actually using the Mac → Linux LAN setup, plus a quality-of-life cleanup on the pi update banner. Minor version bump because three of the four changes are new behavior, all backwards-compatible.

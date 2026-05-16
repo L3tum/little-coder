@@ -2,6 +2,8 @@
 
 **A coding agent tuned for small local models, built on top of [pi](https://pi.dev).**
 
+![little-coder startup view](docs/assets/startup.svg)
+
 The research story behind all this — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[*Honey, I Shrunk the Coding Agent*](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**. Start there if you want the "why"; stay here for the "how".
 
 ## How it relates to pi
@@ -290,9 +292,10 @@ The benchmarks harness (`benchmarks/`) is dev-only and not shipped with the npm 
 little-coder/
 ├── .pi/
 │   ├── settings.json               # per-model profiles + benchmark_overrides (terminal_bench, gaia)
-│   └── extensions/                 # 20 TypeScript extensions, auto-discovered by pi
+│   └── extensions/                 # 21 TypeScript extensions, auto-discovered by pi
+│       ├── branding/               # little-coder startup header + terminal title (replaces pi's built-in)
 │       ├── llama-cpp-provider/     # data-driven provider registration from models.json — ships llamacpp, ollama, lmstudio (+ user override file)
-│       ├── write-guard/            # Write refuses on existing files — the whitepaper invariant
+│       ├── write-guard/            # Write refuses on existing files; rewrites root-bare /foo.md paths to cwd
 │       ├── extra-tools/            # glob, webfetch, websearch (pi ships grep/find)
 │       ├── skill-inject/           # per-turn tool-skill selection (error > recency > intent)
 │       ├── knowledge-inject/       # algorithm cheat-sheet scoring (word=1.0, bigram=2.0, threshold=2.0)

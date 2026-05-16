@@ -1,4 +1,5 @@
 {
+  "quietStartup": true,
   "compaction": { "enabled": true },
   "retry": { "enabled": true, "maxRetries": 2 },
   "little_coder": {
