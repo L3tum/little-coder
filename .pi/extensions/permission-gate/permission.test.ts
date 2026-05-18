@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { isSafeBash, parseExtraPrefixes, getSafePrefixes } from "./index.ts";
+import { isSafeBash, parseExtraPrefixes, getSafePrefixes, isNoopCd } from "./index.ts";
+import { resolve } from "node:path";
+import { homedir } from "node:os";
 
 describe("isSafeBash", () => {
   it("allows whitelisted read-only commands", () => {
@@ -59,6 +61,68 @@ describe("parseExtraPrefixes", () => {
   it("drops empty / whitespace-only segments", () => {
     expect(parseExtraPrefixes("a,,b,")).toEqual(["a", "b"]);
     expect(parseExtraPrefixes("a,   ,b")).toEqual(["a", "b"]);
+  });
+});
+
+describe("isNoopCd", () => {
+  const cwd = process.cwd();
+
+  it("allows cd when target resolves to cwd", () => {
+    expect(isNoopCd("cd .", cwd)).toBe(true);
+    expect(isNoopCd("cd ./", cwd)).toBe(true);
+    expect(isNoopCd("cd", homedir())).toBe(true); // cd with no args → $HOME; only no-op if cwd === $HOME
+  });
+
+  it("allows cd <cwd-basename> when it resolves to cwd via .", () => {
+    // cd . is the canonical no-op; cd <basename> from parent would not
+    // resolve to cwd (it'd be cwd/basename), so test the real case.
+    expect(isNoopCd("cd .", cwd)).toBe(true);
+  });
+
+  it("allows cd with the full cwd path", () => {
+    expect(isNoopCd(`cd ${cwd}`, cwd)).toBe(true);
+  });
+
+  it("allows cd with ~ when ~ resolves to cwd", () => {
+    // Only true when cwd === $HOME
+    if (cwd === homedir()) {
+      expect(isNoopCd("cd ~", cwd)).toBe(true);
+      expect(isNoopCd("cd ~/", cwd)).toBe(true);
+    }
+  });
+
+  it("allows cd with chained && when target resolves to cwd", () => {
+    expect(isNoopCd("cd . && ls -la", cwd)).toBe(true);
+    expect(isNoopCd("cd ./ && echo hi", cwd)).toBe(true);
+  });
+
+  it("blocks cd when target does not resolve to cwd", () => {
+    expect(isNoopCd("cd /", cwd)).toBe(false);
+    expect(isNoopCd("cd /tmp", cwd)).toBe(false);
+    expect(isNoopCd("cd ..", cwd)).toBe(false);
+    expect(isNoopCd("cd /etc", cwd)).toBe(false);
+  });
+
+  it("blocks cd with ~ when ~ does not resolve to cwd", () => {
+    if (cwd !== homedir()) {
+      expect(isNoopCd("cd ~", cwd)).toBe(false);
+      expect(isNoopCd("cd ~/", cwd)).toBe(false);
+    }
+  });
+
+  it("returns false for non-cd commands", () => {
+    expect(isNoopCd("ls -la", cwd)).toBe(false);
+    expect(isNoopCd("scd foo", cwd)).toBe(false);
+  });
+
+  it("handles leading whitespace", () => {
+    expect(isNoopCd("   cd .", cwd)).toBe(true);
+    expect(isNoopCd("   cd /tmp", cwd)).toBe(false);
+  });
+
+  it("handles semicolons as chain separators", () => {
+    expect(isNoopCd("cd . ; ls", cwd)).toBe(true);
+    expect(isNoopCd("cd /tmp ; ls", cwd)).toBe(false);
   });
 });
 

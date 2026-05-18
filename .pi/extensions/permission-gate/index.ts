@@ -1,4 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { resolve, normalize } from "node:path";
+import { homedir } from "node:os";
 
 // Port of tools.py::_SAFE_PREFIXES + agent.py::_check_permission. Bash
 // commands not matching the whitelist are blocked in "auto" mode. In
@@ -59,6 +61,49 @@ function getPermissionMode(): "auto" | "accept-all" | "manual" {
   return "auto";
 }
 
+/**
+ * Resolve a `cd` command's target and check whether it lands in the current
+ * working directory.  AIs frequently emit `cd <project> && …` even when they
+ * are already in the right directory.  Rather than blocking every `cd`, we
+ * allow it when the resolved target equals cwd (a harmless no-op) and block
+ * genuine directory changes that would confuse the single-directory harness.
+ *
+ * Handles:
+ *   cd                 → $HOME
+ *   cd ~               → $HOME
+ *   cd ~/foo           → $HOME/foo
+ *   cd foo             → cwd/foo
+ *   cd /abs/path       → /abs/path
+ *   cd ./foo           → cwd/foo
+ *   cd ..              → cwd/..
+ *   cd foo && rest     → resolved from the cd segment only
+ */
+export function isNoopCd(command: string, cwd: string): boolean {
+  // Strip common leading noise the model may prepend.
+  const trimmed = command.trim();
+
+  // Only intercept bare `cd …` — not `scd`, `cdcd`, etc.
+  const cdMatch = trimmed.match(/^cd\s+(.*)$/) ?? trimmed.match(/^cd$/);
+  if (!cdMatch) return false; // not a cd command; let normal whitelist handle it
+
+  // Extract the argument.  `cd` with no args → $HOME.
+  const rawArg = (cdMatch[1] ?? "").trim();
+  // If the cd is chained (e.g. "cd foo && ls"), only look at the segment
+  // before the first `&&` or `;`.
+  const arg = rawArg.split(/\s*&&|;/)[0].trim();
+  const target = expandCdPath(arg, cwd);
+  return normalize(resolve(target)) === normalize(resolve(cwd));
+}
+
+function expandCdPath(arg: string, cwd: string): string {
+  if (arg === "") return homedir();
+  if (arg.startsWith("~")) {
+    // ~ → $HOME, ~/foo → $HOME/foo
+    return resolve(homedir(), arg.slice(1).replace(/^\/?/, "./"));
+  }
+  return resolve(cwd, arg);
+}
+
 export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, _ctx) => {
     const mode = getPermissionMode();
@@ -71,12 +116,19 @@ export default function (pi: ExtensionAPI) {
     // for destructive edits via the TUI.
     if (toolName === "bash" || toolName === "Bash") {
       const cmd = input?.command;
-      if (typeof cmd === "string" && !isSafeBash(cmd)) {
-        if (mode === "manual") {
-          return { block: true, reason: "manual permission mode: bash command not pre-approved" };
+      if (typeof cmd === "string") {
+        // Allow `cd` when it resolves to cwd (no-op).  AIs frequently emit
+        // `cd <project> && …` even when already in the right directory.
+        if (/^cd(\s|$)/.test(cmd.trim()) && isNoopCd(cmd, process.cwd())) {
+          return;
         }
-        // auto: block when not whitelisted
-        return { block: true, reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES` };
+        if (!isSafeBash(cmd)) {
+          if (mode === "manual") {
+            return { block: true, reason: "manual permission mode: bash command not pre-approved" };
+          }
+          // auto: block when not whitelisted
+          return { block: true, reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES` };
+        }
       }
     }
   });
