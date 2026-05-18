@@ -169,23 +169,61 @@ const RESEARCH_DIRECTIVE = [
   "",
 ].join("\n");
 
-function listSkills(): string {
+function listAllSkills(): string {
   loadSkills();
-  if (skills.size === 0) return "No skills loaded.";
   const lines: string[] = [];
-  const sorted = [...skills.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  for (const [name, sk] of sorted) {
-    lines.push(`  ${name}  (${sk.tokenCost} tok)`);
+
+  // Tool skills (skills/tools/*.md)
+  if (skills.size > 0) {
+    lines.push("Tool Skills:");
+    const sorted = [...skills.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [name, sk] of sorted) {
+      lines.push(`  ${name}  (${sk.tokenCost} tok)`);
+    }
+    lines.push("");
   }
-  return `${skills.size} skills loaded:\n${lines.join("\n")}`;
+
+  // Knowledge entries (skills/knowledge/*.md + skills/protocols/*.md)
+  const here = dirname(fileURLToPath(import.meta.url));
+  const repo = join(here, "..", "..", "..");
+  const knowledgeDir = join(repo, "skills", "knowledge");
+  const protocolsDir = join(repo, "skills", "protocols");
+
+  if (existsSync(knowledgeDir)) {
+    lines.push("Knowledge:");
+    for (const file of readdirSync(knowledgeDir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      const parsed = parseSkillFile(readFileSync(join(knowledgeDir, file), "utf-8"));
+      const name = parsed?.frontmatter?.name ?? parsed?.frontmatter?.topic ?? file;
+      const kw = Array.isArray(parsed?.frontmatter?.keywords) ? parsed.frontmatter.keywords.join(", ") : "";
+      lines.push(`  ${name}${kw ? `  [${kw}]` : ""}`);
+    }
+    lines.push("");
+  }
+
+  if (existsSync(protocolsDir)) {
+    lines.push("Protocols:");
+    for (const file of readdirSync(protocolsDir).sort()) {
+      if (!file.endsWith(".md")) continue;
+      const parsed = parseSkillFile(readFileSync(join(protocolsDir, file), "utf-8"));
+      const name = parsed?.frontmatter?.name ?? parsed?.frontmatter?.topic ?? file;
+      lines.push(`  ${name}`);
+    }
+    lines.push("");
+  }
+
+  if (lines.length === 0) return "No skills loaded.";
+  const total = skills.size + (existsSync(knowledgeDir) ? readdirSync(knowledgeDir).filter(f => f.endsWith(".md")).length : 0) + (existsSync(protocolsDir) ? readdirSync(protocolsDir).filter(f => f.endsWith(".md")).length : 0);
+  lines.push(`Total: ${total} entries`);
+  return lines.join("\n");
 }
 
 export default function (pi: ExtensionAPI) {
-  // Register /skills command for listing available tool skills
+  // Register /skills command for listing all available skills
   pi.registerCommand("skills", {
-    description: "List available tool skills",
+    description: "List all available skills (tool skills, knowledge, protocols)",
     handler: async (_args, ctx) => {
-      const text = listSkills();
+      const text = listAllSkills();
       if (ctx.hasUI) {
         ctx.ui.notify(text, "info");
       }

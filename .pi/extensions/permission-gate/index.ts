@@ -62,11 +62,13 @@ function getPermissionMode(): "auto" | "accept-all" | "manual" {
 }
 
 /**
- * Resolve a `cd` command's target and check whether it lands in the current
- * working directory.  AIs frequently emit `cd <project> && …` even when they
- * are already in the right directory.  Rather than blocking every `cd`, we
- * allow it when the resolved target equals cwd (a harmless no-op) and block
- * genuine directory changes that would confuse the single-directory harness.
+ * Resolve a `cd` command's target and check whether it lands within the
+ * current working directory tree.  AIs frequently emit `cd <subdir> && …`
+ * to navigate into a subdirectory before running further commands.  Rather
+ * than blocking every `cd`, we allow it when the resolved target is equal
+ * to cwd or a strict descendant of cwd (a harmless tree-downward move) and
+ * block genuine escapes that would confuse the single-directory harness
+ * (e.g. `cd /tmp`, `cd ~`, `cd ..` from the repo root).
  *
  * Handles:
  *   cd                 → $HOME
@@ -92,7 +94,10 @@ export function isNoopCd(command: string, cwd: string): boolean {
   // before the first `&&` or `;`.
   const arg = rawArg.split(/\s*&&|;/)[0].trim();
   const target = expandCdPath(arg, cwd);
-  return normalize(resolve(target)) === normalize(resolve(cwd));
+  const normalizedTarget = normalize(resolve(target));
+  const normalizedCwd = normalize(resolve(cwd));
+  // Allow if target is cwd itself or a strict descendant of cwd.
+  return normalizedTarget === normalizedCwd || normalizedTarget.startsWith(normalizedCwd + "/");
 }
 
 function expandCdPath(arg: string, cwd: string): string {

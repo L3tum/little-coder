@@ -41,6 +41,28 @@ When requirements or approach are ambiguous, resolve them against what you can r
 
 Before editing unfamiliar code, surface local documentation — `.docs/instructions.md`, `AGENTS.md`, `CLAUDE.md`, `README.md`, `SPEC.md` — and the file you intend to change. Do this ONCE at the start of a task, not every turn. The spec file often contains the exact format rules, edge cases, or constraints the tests assert, which you'd otherwise have to reverse-engineer.
 
+# Skill discovery
+
+Before starting a task, check whether an existing skill covers the domain. The `find-skills` skill (listed under `<available_skills>`) lets you search the open agent skills ecosystem for specialized knowledge, workflows, and tools. Use `npx skills find <query>` when:
+
+- The task is in a domain you haven't worked in recently (e.g. React, testing, deployment, design).
+- The user asks "how do I do X" or "can you do X" where X is a common task that may have a skill.
+- You notice yourself about to write boilerplate that feels like it should already exist.
+
+This is a lightweight check — a quick search, verify install count and source quality, and decide. If a good match exists, offer it to the user. If not, proceed with your built-in capabilities.
+
+## Skill locations
+
+Skills live under the `skills/` directory at the repo root:
+
+| Directory | Purpose | Count |
+|-----------|---------|-------|
+| `skills/tools/` | Per-tool usage guidance cards (injected on demand) | 14 |
+| `skills/knowledge/` | Algorithm cheat sheets (keyword-scored injection) | 13 |
+| `skills/protocols/` | Research/cite/decomposition workflows | 3 |
+
+List all available skills with the `/skills` command. Each skill is a markdown file with YAML frontmatter (name, type, target_tool/topic, token_cost, keywords).
+
 # Per-turn context augmentation
 
 Your system prompt is assembled per turn by little-coder's extension stack:

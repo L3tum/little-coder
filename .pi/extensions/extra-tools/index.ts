@@ -5,6 +5,27 @@ import { glob } from "glob";
 // Ports of tools.py::_glob, _webfetch, _websearch. Pi ships its own grep/find,
 // so those are not re-registered here.
 export default function (pi: ExtensionAPI) {
+  // ── /tools command ────────────────────────────────────────────────────
+  pi.registerCommand("tools", {
+    description: "List all loaded tools",
+    handler: async (_args, ctx) => {
+      const allTools: ToolInfo[] = pi.getAllTools();
+      const lines: string[] = ["Loaded Tools:", ""];
+      const sorted = [...allTools].sort((a, b) => a.name.localeCompare(b.name));
+      for (const tool of sorted) {
+        const desc = (tool.description ?? "").split("\n")[0].slice(0, 80);
+        lines.push(`  ${tool.name} — ${desc}`);
+      }
+      lines.push("");
+      lines.push(`Total: ${sorted.length} tools`);
+      const text = lines.join("\n");
+      if (ctx.hasUI) {
+        ctx.ui.notify(text, "info");
+      }
+      return { content: [{ type: "text" as const, text }] };
+    },
+  });
+
   // ── glob ────────────────────────────────────────────────────────────────
   pi.registerTool({
     name: "glob",

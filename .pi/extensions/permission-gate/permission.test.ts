@@ -73,6 +73,12 @@ describe("isNoopCd", () => {
     expect(isNoopCd("cd", homedir())).toBe(true); // cd with no args → $HOME; only no-op if cwd === $HOME
   });
 
+  it("allows cd to a subdirectory of cwd", () => {
+    expect(isNoopCd("cd subdir", cwd)).toBe(true);
+    expect(isNoopCd("cd sub/dir", cwd)).toBe(true);
+    expect(isNoopCd("cd ./sub", cwd)).toBe(true);
+  });
+
   it("allows cd <cwd-basename> when it resolves to cwd via .", () => {
     // cd . is the canonical no-op; cd <basename> from parent would not
     // resolve to cwd (it'd be cwd/basename), so test the real case.
