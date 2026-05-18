@@ -30,6 +30,15 @@ export default function (pi: ExtensionAPI) {
     const message = (event as any).message;
     if (!message) return;
 
+    // Skip quality checks on aborted turns — the user intentionally stopped
+    // the agent; injecting a correction is confusing and unwanted.
+    const stopReason = (message as any).stopReason;
+    if (stopReason === "aborted" || stopReason === "error") {
+      previousToolCalls = [];
+      consecutiveFailures = 0;
+      return;
+    }
+
     // Extract assistant text + tool calls from pi's content-block format
     const content = Array.isArray(message.content) ? message.content : [];
     const text = content
@@ -60,7 +69,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    const correction = buildCorrectionMessage(verdict.reason);
+    const correction = buildCorrectionMessage(verdict.reason, knownTools);
     ctx.ui.notify(
       `quality-monitor: ${verdict.reason} → injecting correction`,
       "warning",

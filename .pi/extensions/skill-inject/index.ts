@@ -169,7 +169,30 @@ const RESEARCH_DIRECTIVE = [
   "",
 ].join("\n");
 
+function listSkills(): string {
+  loadSkills();
+  if (skills.size === 0) return "No skills loaded.";
+  const lines: string[] = [];
+  const sorted = [...skills.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [name, sk] of sorted) {
+    lines.push(`  ${name}  (${sk.tokenCost} tok)`);
+  }
+  return `${skills.size} skills loaded:\n${lines.join("\n")}`;
+}
+
 export default function (pi: ExtensionAPI) {
+  // Register /skills command for listing available tool skills
+  pi.registerCommand("skills", {
+    description: "List available tool skills",
+    handler: async (_args, ctx) => {
+      const text = listSkills();
+      if (ctx.hasUI) {
+        ctx.ui.notify(text, "info");
+      }
+      return { content: [{ type: "text" as const, text }] };
+    },
+  });
+
   // Track tool usage across the whole session so recency + error-recovery
   // state is available on the next before_agent_start.
   pi.on("tool_result", async (event) => {
@@ -213,6 +236,12 @@ export default function (pi: ExtensionAPI) {
     for (const t of preferred) {
       if (!recentToolCalls.includes(t)) recentToolCalls.unshift(t);
     }
+
+    // Don't inject skills if the system prompt is already large (same guard
+    // as knowledge-inject: skip when base prompt exceeds 40% of context).
+    const contextLimit: number = lc.contextLimit ?? 8192;
+    const basePrompt = event.systemPrompt ?? "";
+    if (basePrompt.length > contextLimit * 0.4 * 4) return; // ~4 chars/token est.
 
     const selected = selectSkills(event.prompt ?? "", budget, allowed);
     const researchTask = looksLikeResearchTask(event.prompt ?? "");

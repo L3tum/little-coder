@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { glob as globSync } from "node:fs/promises";
+import { glob } from "glob";
 
 // Ports of tools.py::_glob, _webfetch, _websearch. Pi ships its own grep/find,
 // so those are not re-registered here.
@@ -18,12 +18,8 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, { pattern, path }) {
       try {
         const base = path || process.cwd();
-        const matches: string[] = [];
-        // Node 22's fs/promises.glob — returns an async iterator
-        for await (const m of globSync(pattern, { cwd: base })) {
-          matches.push(`${base}/${m}`);
-          if (matches.length >= 500) break;
-        }
+        let matches: string[] = await glob(pattern, { cwd: base });
+        if (matches.length > 500) matches = matches.slice(0, 500);
         matches.sort();
         const text = matches.length === 0 ? "No files matched" : matches.join("\n");
         return {

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
 /**
- * Resolve the Write tool's `file_path` argument to a concrete on-disk path.
+ * Resolve the Write tool's `path` argument to a concrete on-disk path.
  *
  * Two deterministic rewrites:
  *
@@ -24,16 +24,16 @@ import { dirname, isAbsolute, join } from "node:path";
  * left untouched.
  */
 export function normalizeWritePath(
-  filePath: string,
+  inputPath: string,
   cwd: string = process.cwd(),
 ): { path: string; rewrittenFrom?: string } {
-  if (/^\/[^/]+$/.test(filePath)) {
-    return { path: join(cwd, filePath.slice(1)), rewrittenFrom: filePath };
+  if (/^\/[^/]+$/.test(inputPath)) {
+    return { path: join(cwd, inputPath.slice(1)), rewrittenFrom: inputPath };
   }
-  if (!isAbsolute(filePath)) {
-    return { path: join(cwd, filePath) };
+  if (!isAbsolute(inputPath)) {
+    return { path: join(cwd, inputPath) };
   }
-  return { path: filePath };
+  return { path: inputPath };
 }
 
 // Port of tools.py::_write. Preserves the exact Edit-recipe error string so
@@ -52,17 +52,17 @@ export default function (pi: ExtensionAPI) {
       "A path of the form `/<filename>` with no intermediate directories is treated as cwd-relative " +
       "(use `/etc/hosts` etc. if you really mean the filesystem root).",
     parameters: Type.Object({
-      file_path: Type.String({ description: "File path (relative to cwd, or absolute)" }),
+      path: Type.String({ description: "File path (relative to cwd, or absolute)" }),
       content: Type.String({ description: "Full file content" }),
     }),
-    async execute(_id, { file_path, content }) {
-      const { path: resolved, rewrittenFrom } = normalizeWritePath(file_path);
+    async execute(_id, { path, content }) {
+      const { path: resolved, rewrittenFrom } = normalizeWritePath(path);
       if (existsSync(resolved)) {
         const recipe =
           `Error: Write refused — ${resolved} already exists.\n` +
           `\n` +
           `Write is only for creating NEW files. To change an existing file, use Edit:\n` +
-          `  {"name": "Edit", "input": {"file_path": "${resolved}", ` +
+          `  {"name": "Edit", "input": {"path": "${resolved}", ` +
           `"old_string": "<exact text currently in the file>", ` +
           `"new_string": "<replacement text>"}}\n` +
           `\n` +
@@ -85,7 +85,7 @@ export default function (pi: ExtensionAPI) {
         const lc = content.split("\n").length - (content.endsWith("\n") ? 1 : 0) +
           (content.length > 0 && !content.endsWith("\n") ? 1 : 0);
         const suffix = rewrittenFrom
-          ? ` (rewrote ${rewrittenFrom} → cwd; root-path single-segment write redirected)`
+          ? ` (note: rewrote "${rewrittenFrom}" to "${resolved}" — single-segment root paths are treated as cwd-relative)`
           : "";
         return {
           content: [{ type: "text", text: `Created ${resolved} (${lc} lines)${suffix}` }],

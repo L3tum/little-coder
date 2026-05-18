@@ -14,8 +14,13 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "ls", "cat", "head", "tail", "wc", "pwd", "echo", "printf", "date",
   "which", "type", "env", "printenv", "uname", "whoami", "id",
+  // Read-only git commands (no writes to the repo)
   "git log", "git status", "git diff", "git show", "git branch",
-  "git remote", "git stash list", "git tag",
+  "git remote", "git stash list", "git tag", "git blame",
+  "git reflog", "git shortlog", "git describe", "git ls-files",
+  "git ls-tree", "git cat-file", "git rev-parse", "git config --get",
+  "git config --list", "git for-each-ref", "git name-rev",
+  "git cherry", "git bisect log", "git worktree list",
   "find ", "grep ", "rg ", "ag ", "fd ",
   "python ", "python3 ", "node ", "ruby ", "perl ",
   "pip show", "pip list", "npm list", "cargo metadata",

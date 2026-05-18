@@ -50,35 +50,51 @@ export function assessResponse(
   return { ok: true };
 }
 
-export function buildCorrectionMessage(reason: string): string {
+function formatToolList(knownTools: Set<string>): string {
+  if (knownTools.size === 0) return "Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch";
+  return [...knownTools].sort().join(", ");
+}
+
+export function buildCorrectionMessage(reason: string, knownTools: Set<string> = new Set()): string {
+  const tools = formatToolList(knownTools);
   const corrections: Record<string, string> = {
     empty_response:
-      "Your previous response was empty. Please respond with either " +
-      "text or a tool call to make progress on the task.",
+      "STOP: Your previous response was empty. You MUST respond with either:\n" +
+      "1. A text explanation of what you're doing, OR\n" +
+      "2. A tool call to make progress.\n" +
+      "Do not output nothing. Pick one action and execute it now.",
     empty_tool_name:
-      "Your tool call had an empty name. Please specify a valid tool name. " +
-      "Available tools include: Read, Write, Edit, Bash, Glob, Grep.",
+      "STOP: Your tool call had an empty tool name. You must specify WHICH tool.\n" +
+      "Format: {\"name\": \"<tool_name>\", \"input\": {<args>}}\n" +
+      `Available tools: ${tools}.\n` +
+      "Pick the right tool for what you need to do and call it properly.",
     repeated_tool_call:
-      "You just made the exact same tool call as your previous turn. " +
-      "This suggests you may be stuck in a loop. Please try a different " +
-      "approach or explain what you're trying to accomplish.",
+      "STOP: You just repeated the exact same tool call with the same arguments " +
+      "as your previous turn. This means you're stuck in a loop.\n" +
+      "Do NOT repeat the same call. Instead:\n" +
+      "1. Read the file/content you need first (use Read or Bash)\n" +
+      "2. Check if the file already exists before writing (use Glob)\n" +
+      "3. If Edit failed, re-Read the file to get the exact current text\n" +
+      "4. Try a completely different approach if the first one didn't work",
   };
 
   if (reason.startsWith("unknown_tool:")) {
     const toolName = reason.slice("unknown_tool:".length);
     return (
-      `Tool '${toolName}' does not exist. ` +
-      "Available tools are: Read, Write, Edit, Bash, Glob, Grep, " +
-      "WebFetch, WebSearch. Please use one of these."
+      `STOP: Tool '${toolName}' does not exist. You tried to use a tool that isn't available.\n` +
+      `Available tools: ${tools}.\n` +
+      "Pick one of these and call it with the correct name."
     );
   }
   if (reason.startsWith("malformed_args:")) {
     const toolName = reason.slice("malformed_args:".length);
     return (
-      `The arguments for tool '${toolName}' were malformed (not valid JSON). ` +
-      "Please provide the arguments as a proper JSON object."
+      `STOP: The arguments for '${toolName}' were not valid JSON.\n` +
+      "Tool arguments MUST be a valid JSON object, e.g.:\n" +
+      `  {"name": "${toolName}", "input": {"key": "value"}}\n` +
+      "Check: all quotes are closed, no trailing commas, keys are in double quotes."
     );
   }
 
-  return corrections[reason] ?? `Issue detected: ${reason}. Please try again.`;
+  return corrections[reason] ?? `Issue detected: ${reason}. Please review your last action and try a different approach.`;
 }
