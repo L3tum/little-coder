@@ -31,13 +31,13 @@ const INTENT_MAP: Record<string, string[]> = {
   write: ["Write"], create: ["Write", "Bash"],
   implement: ["Write", "Read"], code: ["Write", "Read"],
   function: ["Write", "Edit"], class: ["Write", "Edit"],
-  edit: ["Edit"], change: ["Edit"], modify: ["Edit"],
-  fix: ["Edit"], update: ["Edit"], replace: ["Edit"],
-  add: ["Edit", "Write"], refactor: ["Edit", "Read"],
+  edit: ["Edit", "ReadEditVerify"], change: ["Edit", "ReadEditVerify"], modify: ["Edit", "ReadEditVerify"],
+  fix: ["Edit", "ReadEditVerify"], update: ["Edit", "ReadEditVerify"], replace: ["Edit", "ReadEditVerify"],
+  add: ["Edit", "Write", "ReadEditVerify"], refactor: ["Edit", "Read", "ReadEditVerify"],
   run: ["Bash"], execute: ["Bash"], install: ["Bash"],
   build: ["Bash"], test: ["Bash"],
-  find: ["Glob", "Grep"], search: ["Grep"],
-  grep: ["Grep"], glob: ["Glob"],
+  find: ["Glob", "Grep", "FindRead"], search: ["Grep", "FindRead"],
+  grep: ["Grep"], glob: ["Glob", "FindRead"],
   fetch: ["WebFetch"], download: ["WebFetch"], url: ["WebFetch"],
   web: ["WebSearch"],
   // Research / browser / evidence
@@ -56,6 +56,13 @@ const INTENT_MAP: Record<string, string[]> = {
   browse: ["BrowserNavigate", "BrowserExtract"],
   page: ["BrowserExtract"],
   click: ["BrowserClick"],
+  // Composite tools
+  findread: ["FindRead"],
+  readeditverify: ["ReadEditVerify"],
+  verify: ["ReadEditVerify"],
+  batchedit: ["ReadEditVerify"],
+  multiedit: ["ReadEditVerify"],
+  apply: ["ReadEditVerify"],
 };
 
 function skillsDir(): string {
