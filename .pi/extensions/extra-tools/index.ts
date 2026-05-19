@@ -113,8 +113,10 @@ export default function (pi: ExtensionAPI) {
       "Find files matching a glob pattern and read their contents in one call. " +
       "Combines glob + read so you don't need two separate tool calls. " +
       "Returns each file's path followed by its content, separated by headers. " +
-      "Use maxFiles to limit how many files are read (default 10). " +
-      "Use maxLines to limit lines per file (default 200, 0 = unlimited).",
+      "Use maxFiles to limit how many files are read (default 5). " +
+      "Use maxLines to limit lines per file (default 100, 0 = unlimited). " +
+      "WARNING: this tool can easily overload the context window — always use the lowest maxFiles/maxLines that gets the job done."
+    ,
     parameters: Type.Object({
       pattern: Type.String({ description: "Glob pattern e.g. **/*.py" }),
       path: Type.Optional(Type.String({ description: "Base directory (default: cwd)" })),
@@ -131,9 +133,9 @@ export default function (pi: ExtensionAPI) {
           return { content: [{ type: "text", text: "No files matched" }], details: {} };
         }
 
-        const limit = Math.min(maxFiles ?? 10, 50);
+        const limit = Math.min(maxFiles ?? 5, 50);
         const capped = matches.slice(0, limit);
-        const lineLimit = maxLines ?? 200;
+        const lineLimit = maxLines ?? 100;
         const truncated: string[] = [];
 
         const parts: string[] = [];

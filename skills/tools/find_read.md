@@ -10,29 +10,37 @@ user-invocable: false
 Find files matching a glob pattern and read their contents in one call. Combines Glob + Read so you don't need two separate tool calls.
 
 REQUIRED: pattern (glob pattern like "**/*.py")
-OPTIONAL: path (base directory, defaults to cwd), maxFiles (default 10, max 50), maxLines per file (default 200, 0 = unlimited)
+OPTIONAL: path (base directory, defaults to cwd), maxFiles (default 5, max 50), maxLines per file (default 100, 0 = unlimited)
 
 RULES:
 - Use ** for recursive matching across directories
 - Returns each file's absolute path followed by its content, separated by headers
-- Use maxFiles to avoid flooding context when a glob matches many files
-- Use maxLines to cap large files; set to 0 for no limit
+- **Always use conservative limits** — this tool can easily overload the context window
+- Default maxFiles is 5 and default maxLines is 100; increase only when needed
+- Never use maxFiles > 10 or maxLines > 200 without a specific reason
 - Paths are resolved relative to the `path` argument or cwd
 
 WHEN TO USE FindRead:
 - You need to discover files AND read them (the common Glob → Read pattern)
 - You want to inspect several files matching a pattern without multiple tool calls
+- You need a quick overview of a directory's contents
 
 WHEN TO USE Glob INSTEAD:
 - You only need the file paths, not their contents
 - You want to pick specific files to read one at a time
+- The glob might match many files and you only need to see names
 
-EXAMPLE:
+WHEN TO USE codebase_memory_search_graph INSTEAD:
+- You're looking for where a function/class/variable is defined
+- You want to know what calls a function or what a function calls
+- You need structural code navigation (call graph, type hierarchy, references)
+
+EXAMPLE (conservative — preferred):
 ```tool
-{"name": "FindRead", "input": {"pattern": "**/*.py", "maxFiles": 5}}
+{"name": "FindRead", "input": {"pattern": "**/*.py", "maxFiles": 3, "maxLines": 50}}
 ```
 
-EXAMPLE with line limit:
+EXAMPLE (with line limit):
 ```tool
-{"name": "FindRead", "input": {"pattern": "src/**/*.ts", "path": "/home/user/project", "maxFiles": 20, "maxLines": 100}}
+{"name": "FindRead", "input": {"pattern": "src/**/*.ts", "path": "/home/user/project", "maxFiles": 5, "maxLines": 100}}
 ```

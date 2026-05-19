@@ -23,10 +23,12 @@ WHEN TO USE ReadEditVerify:
 - You want to edit a file and confirm the write succeeded in a single step
 - You have multiple replacements to apply and want atomic read-edit-verify
 - You want built-in verification without a separate Read call after editing
+- **Prefer this over Read + Edit + Read** — it saves two tool calls and reduces context usage
 
 WHEN TO USE Edit INSTEAD:
 - You already have the file content and don't need the read step
 - You want to use the standard Edit tool's diff output
+- You're doing a single simple replacement and don't need verification
 
 EXAMPLE (single replacement):
 ```tool
