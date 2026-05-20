@@ -92,7 +92,7 @@ function resolveProfile(providerSlashModel: string): ModelProfile {
 // opening turn — and the wrong skills (Edit/Write) can win the budget on a
 // pure research question.
 const BENCHMARK_REQUIRED_TOOLS: Record<string, string[]> = {
-  gaia: ["BrowserNavigate", "BrowserExtract", "EvidenceAdd"],
+  gaia: ["enableBrowserTools", "EvidenceAdd"],
 };
 
 function toLittleCoderOptions(p: ModelProfile): Record<string, unknown> {

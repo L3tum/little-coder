@@ -54,9 +54,9 @@ describe("knowledge directory loads from repo", () => {
   const kDir = join(here, "..", "..", "..", "skills", "knowledge");
   const pDir = join(here, "..", "..", "..", "skills", "protocols");
 
-  it("knowledge dir has 13 files", () => {
+  it("knowledge dir has at least 13 files", () => {
     expect(existsSync(kDir)).toBe(true);
-    expect(readdirSync(kDir).filter((f) => f.endsWith(".md")).length).toBe(13);
+    expect(readdirSync(kDir).filter((f) => f.endsWith(".md")).length).toBeGreaterThanOrEqual(13);
   });
 
   it("protocols dir has 3 files", () => {

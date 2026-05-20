@@ -25,6 +25,14 @@ describe("assessResponse", () => {
     const result = assessResponse("", [{ name: "FakeTool", input: {} }], [], known);
     expect(result).toEqual({ ok: false, reason: "unknown_tool:FakeTool" });
   });
+  it("detects case-mismatch as unknown tool", () => {
+    const result = assessResponse("", [{ name: "bash", input: {} }], [], known);
+    expect(result).toEqual({ ok: false, reason: "unknown_tool:bash" });
+  });
+  it("detects all-lowercase as unknown tool", () => {
+    const result = assessResponse("", [{ name: "read", input: {} }], [], known);
+    expect(result).toEqual({ ok: false, reason: "unknown_tool:read" });
+  });
   it("skips hallucination check when registry empty", () => {
     expect(
       assessResponse("", [{ name: "Anything", input: {} }], [], new Set()),
@@ -59,6 +67,30 @@ describe("buildCorrectionMessage", () => {
     const m = buildCorrectionMessage("unknown_tool:FakeTool");
     expect(m).toContain("'FakeTool'");
     expect(m).toContain("does not exist");
+  });
+  it("suggests similar tool names for unknown tool", () => {
+    const m = buildCorrectionMessage("unknown_tool:Grape", known);
+    expect(m).toContain("Did you mean");
+    expect(m).toContain("Grep");
+  });
+  it("suggests similar tool names for close misspelling", () => {
+    const m = buildCorrectionMessage("unknown_tool:Bahs", known);
+    expect(m).toContain("Did you mean");
+    expect(m).toContain("Bash");
+  });
+  it("omits suggestions when no similar tools exist", () => {
+    const m = buildCorrectionMessage("unknown_tool:XYZ123", known);
+    expect(m).not.toContain("Did you mean");
+  });
+  it("suggests correct-casing tool for case-mismatch", () => {
+    const m = buildCorrectionMessage("unknown_tool:bash", known);
+    expect(m).toContain("Did you mean");
+    expect(m).toContain("Bash");
+  });
+  it("suggests correct-casing tool for all-lowercase", () => {
+    const m = buildCorrectionMessage("unknown_tool:read", known);
+    expect(m).toContain("Did you mean");
+    expect(m).toContain("Read");
   });
   it("generates malformed-args message", () => {
     const m = buildCorrectionMessage("malformed_args:Read");

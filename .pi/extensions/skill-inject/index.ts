@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,19 +28,19 @@ let lastFailedTool: string | null = null;
 
 // ── Intent keywords → likely tools ──────────────────────────────────────
 const INTENT_MAP: Record<string, string[]> = {
-  read: ["Read"], show: ["Read"], view: ["Read"], cat: ["Read"],
-  write: ["Write"], create: ["Write", "Bash"],
-  implement: ["Write", "Read"], code: ["Write", "Read"],
+  read: ["read"], show: ["read"], view: ["read"], cat: ["read"],
+  write: ["write"], create: ["write", "bash"],
+  implement: ["write", "read"], code: ["write", "read"],
   // function/class are defined later (code graph) — JS last-wins
-  edit: ["Edit", "ReadEditVerify"], change: ["Edit", "ReadEditVerify"], modify: ["Edit", "ReadEditVerify"],
-  fix: ["Edit", "ReadEditVerify"], update: ["Edit", "ReadEditVerify"], replace: ["Edit", "ReadEditVerify"],
-  add: ["Edit", "Write", "ReadEditVerify"], refactor: ["Edit", "Read", "ReadEditVerify"],
-  run: ["Bash"], execute: ["Bash"], install: ["Bash"],
-  build: ["Bash"], test: ["Bash"],
-  find: ["Glob", "Grep", "FindRead", "codebase_memory_search_graph"], search: ["Grep", "FindRead", "codebase_memory_search_graph"],
-  grep: ["Grep"], glob: ["Glob", "FindRead"],
+  edit: ["edit", "readEditVerify"], change: ["edit", "readEditVerify"], modify: ["edit", "readEditVerify"],
+  fix: ["edit", "readEditVerify"], update: ["edit", "readEditVerify"], replace: ["edit", "readEditVerify"],
+  add: ["edit", "write", "readEditVerify"], refactor: ["edit", "read", "readEditVerify"],
+  run: ["bash"], execute: ["bash"], install: ["bash"],
+  build: ["bash"], test: ["bash"],
+  find: ["glob", "grep", "findRead", "codebase_memory_search_graph"], search: ["grep", "findRead", "codebase_memory_search_graph"],
+  grep: ["grep"], glob: ["glob", "findRead"],
   // Code graph / structural code search
-  function: ["codebase_memory_search_graph", "Grep"], class: ["codebase_memory_search_graph", "Grep"],
+  function: ["codebase_memory_search_graph", "grep"], class: ["codebase_memory_search_graph", "grep"],
   where: ["codebase_memory_search_graph"], calls: ["codebase_memory_search_graph"],
   callsite: ["codebase_memory_search_graph"], caller: ["codebase_memory_search_graph"],
   implementation: ["codebase_memory_search_graph"], implements: ["codebase_memory_search_graph"],
@@ -65,31 +66,31 @@ const INTENT_MAP: Record<string, string[]> = {
   "type hierarchy": ["codebase_memory_search_graph"], "class hierarchy": ["codebase_memory_search_graph"],
   "rename across": ["codebase_memory_search_graph"], "safe delete": ["codebase_memory_search_graph"],
   "impact analysis": ["codebase_memory_search_graph"], "affected by": ["codebase_memory_search_graph"],
-  fetch: ["WebFetch"], download: ["WebFetch"], url: ["WebFetch"],
-  web: ["WebSearch"],
+  fetch: ["webfetch"], download: ["webfetch"], url: ["webfetch"],
+  web: ["websearch"],
   // Research / browser / evidence
-  research: ["BrowserNavigate", "BrowserExtract", "EvidenceAdd"],
-  researching: ["BrowserNavigate", "BrowserExtract", "EvidenceAdd"],
-  wikipedia: ["BrowserNavigate", "BrowserExtract", "EvidenceAdd"],
-  article: ["BrowserNavigate", "BrowserExtract", "EvidenceAdd"],
-  citation: ["EvidenceAdd", "BrowserExtract"],
+  research: ["enableBrowserTools", "EvidenceAdd"],
+  researching: ["enableBrowserTools", "EvidenceAdd"],
+  wikipedia: ["enableBrowserTools", "EvidenceAdd"],
+  article: ["enableBrowserTools", "EvidenceAdd"],
+  citation: ["EvidenceAdd", "enableBrowserTools"],
   cite: ["EvidenceAdd"],
-  source: ["EvidenceAdd", "BrowserExtract"],
+  source: ["EvidenceAdd", "enableBrowserTools"],
   fact: ["EvidenceAdd"],
-  factcheck: ["EvidenceAdd", "BrowserExtract"],
-  question: ["EvidenceAdd", "BrowserExtract"],
+  factcheck: ["EvidenceAdd", "enableBrowserTools"],
+  question: ["EvidenceAdd", "enableBrowserTools"],
   answer: ["EvidenceAdd", "EvidenceList"],
-  navigate: ["BrowserNavigate"],
-  browse: ["BrowserNavigate", "BrowserExtract"],
-  page: ["BrowserExtract"],
-  click: ["BrowserClick"],
+  navigate: ["enableBrowserTools"],
+  browse: ["enableBrowserTools"],
+  page: ["enableBrowserTools"],
+  click: ["enableBrowserTools"],
   // Composite tools
-  findread: ["FindRead"],
-  readeditverify: ["ReadEditVerify"],
-  verify: ["ReadEditVerify"],
-  batchedit: ["ReadEditVerify"],
-  multiedit: ["ReadEditVerify"],
-  apply: ["ReadEditVerify"],
+  findread: ["findRead"],
+  readeditverify: ["readEditVerify"],
+  verify: ["readEditVerify"],
+  batchedit: ["readEditVerify"],
+  multiedit: ["readEditVerify"],
+  apply: ["readEditVerify"],
 };
 
 function skillsDir(): string {
@@ -195,11 +196,11 @@ function looksLikeResearchTask(text: string): boolean {
 const RESEARCH_DIRECTIVE = [
   "",
   "## Research-first directive",
-  "This task involves online research. Before producing a final answer:",
-  "1. Use BrowserNavigate / BrowserExtract (or WebSearch for first hops) to gather facts.",
-  "2. Save each citable fact via EvidenceAdd before relying on it.",
-  "3. Only after evidence is in place should you consider any Edit/Write tool calls.",
-  "Skipping the gather step (going straight to Edit/Write or guessing from memory) is wrong — restart with the browse step instead.",
+  "This task involves online research.",
+  "1. If Browser* tools are not active yet, call enableBrowserTools first.",
+  "2. Gather facts with BrowserNavigate / BrowserExtract (or websearch for first hops).",
+  "3. Save each citable fact via EvidenceAdd before relying on it.",
+  "4. Only then answer or make file edits.",
   "",
 ].join("\n");
 
@@ -261,7 +262,17 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) {
         ctx.ui.notify(text, "info");
       }
-      return { content: [{ type: "text" as const, text }] };
+    },
+  });
+
+  pi.registerTool({
+    name: "skills",
+    label: "Skills",
+    description: "List all available skills (tool skills, knowledge entries, protocols).",
+    promptSnippet: "skills(): list installed tool skills, knowledge entries, and protocols.",
+    parameters: Type.Object({}),
+    async execute() {
+      return { content: [{ type: "text", text: listAllSkills() }], details: {} };
     },
   });
 

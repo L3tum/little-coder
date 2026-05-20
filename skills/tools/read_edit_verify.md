@@ -1,7 +1,7 @@
 ---
 name: read-edit-verify-guidance
 type: tool-guidance
-target_tool: ReadEditVerify
+target_tool: readEditVerify
 priority: 10
 token_cost: 130
 user-invocable: false
@@ -9,17 +9,17 @@ user-invocable: false
 ## ReadEditVerify Tool
 Read a file, apply text replacements in place, write back, and verify — all in one call. Combines Read + Edit + Verify so you don't need multiple tool calls.
 
-REQUIRED: path (file to edit), replacements (array of {oldText, newText})
+REQUIRED: path (file to edit), replacements (array of {old_string, new_string})
 OPTIONAL: none
 
 RULES:
-- Each `oldText` must match EXACTLY (whitespace, indentation, line endings all matter)
+- Each `old_string` must match EXACTLY (whitespace, indentation, line endings all matter)
 - Replacements are applied sequentially in order — later replacements operate on the output of earlier ones
-- If `oldText` is not found, that replacement is skipped (reported in output)
+- If `old_string` is not found, that replacement is skipped (reported in output)
 - After writing, the tool reads back the file and confirms content matches — reports OK or MISMATCH
 - The file must already exist (this edits in place, it does not create new files)
 
-WHEN TO USE ReadEditVerify:
+WHEN TO USE readEditVerify:
 - You want to edit a file and confirm the write succeeded in a single step
 - You have multiple replacements to apply and want atomic read-edit-verify
 - You want built-in verification without a separate Read call after editing
@@ -32,10 +32,10 @@ WHEN TO USE Edit INSTEAD:
 
 EXAMPLE (single replacement):
 ```tool
-{"name": "ReadEditVerify", "input": {"path": "/absolute/path/file.py", "replacements": [{"oldText": "MAX = 10", "newText": "MAX = 20"}]}}
+{"name": "readEditVerify", "input": {"path": "/absolute/path/file.py", "replacements": [{"old_string": "MAX = 10", "new_string": "MAX = 20"}]}}
 ```
 
 EXAMPLE (multiple replacements):
 ```tool
-{"name": "ReadEditVerify", "input": {"path": "/absolute/path/file.py", "replacements": [{"oldText": "MAX = 10", "newText": "MAX = 20"}, {"oldText": "TIMEOUT = 5", "newText": "TIMEOUT = 30"}]}}
+{"name": "readEditVerify", "input": {"path": "/absolute/path/file.py", "replacements": [{"old_string": "MAX = 10", "new_string": "MAX = 20"}, {"old_string": "TIMEOUT = 5", "new_string": "TIMEOUT = 30"}]}}
 ```

@@ -51,10 +51,19 @@ export default function (pi: ExtensionAPI) {
       "A bare filename like `foo.md` resolves to <cwd>/foo.md. " +
       "A path of the form `/<filename>` with no intermediate directories is treated as cwd-relative " +
       "(use `/etc/hosts` etc. if you really mean the filesystem root).",
+    promptSnippet: "write(path, content): create a new file only; use edit for existing files.",
     parameters: Type.Object({
       path: Type.String({ description: "File path (relative to cwd, or absolute)" }),
       content: Type.String({ description: "Full file content" }),
     }),
+    prepareArguments(args) {
+      if (!args || typeof args !== "object") return args as any;
+      const input = args as Record<string, unknown>;
+      return {
+        path: typeof input.path === "string" ? input.path : input.file_path,
+        content: input.content,
+      } as any;
+    },
     async execute(_id, { path, content }) {
       const { path: resolved, rewrittenFrom } = normalizeWritePath(path);
       if (existsSync(resolved)) {

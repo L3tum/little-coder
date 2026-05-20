@@ -1,7 +1,7 @@
 ---
 name: webfetch-guidance
 type: tool-guidance
-target_tool: WebFetch
+target_tool: webfetch
 priority: 6
 token_cost: 80
 user-invocable: false
@@ -18,5 +18,5 @@ RULES:
 
 EXAMPLE:
 ```tool
-{"name": "WebFetch", "input": {"url": "https://docs.python.org/3/library/json.html"}}
+{"name": "webfetch", "input": {"url": "https://docs.python.org/3/library/json.html"}}
 ```

@@ -6,10 +6,10 @@ priority: 5
 token_cost: 80
 user-invocable: true
 ---
-## Skills Command
+## skills Tool / Command
 List all available skills (tool skills, knowledge entries, protocols).
 
-Usage: `/skills`
+Usage: `skills` or `/skills`
 
 Shows three categories:
 - **Tool Skills** — per-tool usage guidance cards injected into the system prompt on demand (error-recovery > recency > intent priority).

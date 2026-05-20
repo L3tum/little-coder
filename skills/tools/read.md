@@ -1,7 +1,7 @@
 ---
 name: read-guidance
 type: tool-guidance
-target_tool: Read
+target_tool: read
 priority: 10
 token_cost: 100
 user-invocable: false
@@ -19,10 +19,10 @@ RULES:
 
 EXAMPLE:
 ```tool
-{"name": "Read", "input": {"path": "/absolute/path/to/file.py"}}
+{"name": "read", "input": {"path": "/absolute/path/to/file.py"}}
 ```
 
 EXAMPLE with range:
 ```tool
-{"name": "Read", "input": {"path": "/absolute/path/to/file.py", "limit": 50, "offset": 100}}
+{"name": "read", "input": {"path": "/absolute/path/to/file.py", "limit": 50, "offset": 100}}
 ```

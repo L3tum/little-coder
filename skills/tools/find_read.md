@@ -1,12 +1,12 @@
 ---
 name: find-read-guidance
 type: tool-guidance
-target_tool: FindRead
+target_tool: findRead
 priority: 10
 token_cost: 120
 user-invocable: false
 ---
-## FindRead Tool
+## findRead Tool
 Find files matching a glob pattern and read their contents in one call. Combines Glob + Read so you don't need two separate tool calls.
 
 REQUIRED: pattern (glob pattern like "**/*.py")
@@ -20,7 +20,7 @@ RULES:
 - Never use maxFiles > 10 or maxLines > 200 without a specific reason
 - Paths are resolved relative to the `path` argument or cwd
 
-WHEN TO USE FindRead:
+WHEN TO USE findRead:
 - You need to discover files AND read them (the common Glob → Read pattern)
 - You want to inspect several files matching a pattern without multiple tool calls
 - You need a quick overview of a directory's contents
@@ -37,10 +37,10 @@ WHEN TO USE codebase_memory_search_graph INSTEAD:
 
 EXAMPLE (conservative — preferred):
 ```tool
-{"name": "FindRead", "input": {"pattern": "**/*.py", "maxFiles": 3, "maxLines": 50}}
+{"name": "findRead", "input": {"pattern": "**/*.py", "maxFiles": 3, "maxLines": 50}}
 ```
 
 EXAMPLE (with line limit):
 ```tool
-{"name": "FindRead", "input": {"pattern": "src/**/*.ts", "path": "/home/user/project", "maxFiles": 5, "maxLines": 100}}
+{"name": "findRead", "input": {"pattern": "src/**/*.ts", "path": "/home/user/project", "maxFiles": 5, "maxLines": 100}}
 ```

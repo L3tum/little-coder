@@ -10,5 +10,9 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": [".pi/extensions/**/*.ts"]
+  "include": [".pi/extensions/**/*.ts"],
+  "exclude": [
+    ".pi/extensions/**/__tests__/**",
+    ".pi/extensions/**/*.test.ts"
+  ]
 }

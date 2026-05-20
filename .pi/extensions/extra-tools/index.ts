@@ -2,29 +2,91 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { glob } from "glob";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Ports of tools.py::_glob, _webfetch, _websearch. Pi ships its own grep/find,
 // so those are not re-registered here.
+
+const BROWSER_TOOL_NAMES = [
+  "BrowserNavigate",
+  "BrowserClick",
+  "BrowserType",
+  "BrowserScroll",
+  "BrowserExtract",
+  "BrowserBack",
+  "BrowserHistory",
+];
+
+function browserToolDescriptions(): string[] {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const dir = join(here, "..", "..", "..", "skills", "tools");
+  const out: string[] = [];
+  const mapping: Record<string, string> = {
+    BrowserNavigate: "browser_navigate.md",
+    BrowserClick: "browser_click.md",
+    BrowserType: "browser_type.md",
+    BrowserExtract: "browser_extract.md",
+  };
+  for (const name of BROWSER_TOOL_NAMES) {
+    const file = mapping[name];
+    if (!file) {
+      out.push(`  ${name} — available on demand; see /enable-browser-tools`);
+      continue;
+    }
+    try {
+      const text = readFileSync(join(dir, file), "utf-8");
+      const body = text.split("---").slice(2).join("---").trim();
+      const first = body.split("\n").find((line) => line.trim().length > 0) ?? "available on demand";
+      out.push(`  ${name} — ${first.replace(/^##\s+/, "").slice(0, 90)}`);
+    } catch {
+      out.push(`  ${name} — available on demand; see /enable-browser-tools`);
+    }
+  }
+  return out;
+}
+
+function renderToolsListing(pi: ExtensionAPI): string {
+  const allTools = pi.getAllTools() as Array<{ name: string; description?: string }>;
+  const lines: string[] = ["Loaded Tools:", ""];
+  const sorted = [...allTools].sort((a, b) => a.name.localeCompare(b.name));
+  const loadedNames = new Set(sorted.map((t) => t.name));
+  for (const tool of sorted) {
+    const desc = (tool.description ?? "").split("\n")[0].slice(0, 80);
+    lines.push(`  ${tool.name} — ${desc}`);
+  }
+  const hiddenBrowser = BROWSER_TOOL_NAMES.filter((name) => !loadedNames.has(name));
+  if (hiddenBrowser.length > 0) {
+    lines.push("");
+    lines.push("Browser tools available on demand:");
+    lines.push(...browserToolDescriptions());
+    lines.push("  Use enableBrowserTools (tool) or /enable-browser-tools (command) to load them.");
+  }
+  lines.push("");
+  lines.push(`Total: ${sorted.length} tools`);
+  return lines.join("\n");
+}
+
 export default function (pi: ExtensionAPI) {
   // ── /tools command ────────────────────────────────────────────────────
   pi.registerCommand("tools", {
     description: "List all loaded tools",
     handler: async (_args, ctx) => {
-      const allTools: ToolInfo[] = pi.getAllTools();
-      const lines: string[] = ["Loaded Tools:", ""];
-      const sorted = [...allTools].sort((a, b) => a.name.localeCompare(b.name));
-      for (const tool of sorted) {
-        const desc = (tool.description ?? "").split("\n")[0].slice(0, 80);
-        lines.push(`  ${tool.name} — ${desc}`);
-      }
-      lines.push("");
-      lines.push(`Total: ${sorted.length} tools`);
-      const text = lines.join("\n");
+      const text = renderToolsListing(pi);
       if (ctx.hasUI) {
         ctx.ui.notify(text, "info");
       }
-      return { content: [{ type: "text" as const, text }] };
+    },
+  });
+
+  pi.registerTool({
+    name: "tools",
+    label: "Tools",
+    description: "List the current tool registry, including Browser* tools that are discoverable on demand.",
+    promptSnippet: "tools(): list currently loaded tools and on-demand Browser* tools.",
+    parameters: Type.Object({}),
+    async execute() {
+      return { content: [{ type: "text", text: renderToolsListing(pi) }], details: {} };
     },
   });
 
@@ -117,20 +179,31 @@ export default function (pi: ExtensionAPI) {
       "Use maxLines to limit lines per file (default 100, 0 = unlimited). " +
       "WARNING: this tool can easily overload the context window — always use the lowest maxFiles/maxLines that gets the job done."
     ,
+    promptSnippet: "findRead(pattern, path?, maxFiles?, maxLines?): glob + read in one call.",
     parameters: Type.Object({
       pattern: Type.String({ description: "Glob pattern e.g. **/*.py" }),
       path: Type.Optional(Type.String({ description: "Base directory (default: cwd)" })),
       maxFiles: Type.Optional(Type.Number({ description: "Max files to read (default 10, max 50)" })),
       maxLines: Type.Optional(Type.Number({ description: "Max lines per file (default 200, 0 = unlimited)" })),
     }),
-    async execute(_id, { pattern, path, maxFiles, maxLines }) {
+    prepareArguments(args) {
+      if (!args || typeof args !== "object") return args as any;
+      const input = args as Record<string, unknown>;
+      return {
+        pattern: input.pattern,
+        path: typeof input.path === "string" ? input.path : input.file_path,
+        maxFiles: typeof input.maxFiles === "number" ? input.maxFiles : input.max_files,
+        maxLines: typeof input.maxLines === "number" ? input.maxLines : input.max_lines,
+      } as any;
+    },
+    async execute(_id, { pattern, path, maxFiles, maxLines }): Promise<any> {
       try {
         const base = path || process.cwd();
         let matches: string[] = await glob(pattern, { cwd: base });
         matches.sort();
 
         if (matches.length === 0) {
-          return { content: [{ type: "text", text: "No files matched" }], details: {} };
+          return { content: [{ type: "text", text: "No files matched" }], details: { filesRead: 0, totalMatched: 0 } };
         }
 
         const limit = Math.min(maxFiles ?? 5, 50);
@@ -176,7 +249,7 @@ export default function (pi: ExtensionAPI) {
       } catch (e) {
         return {
           content: [{ type: "text", text: `Error: ${(e as Error).message}` }],
-          details: {},
+          details: { verified: false, applied: 0, skipped: 0, lines: 0 },
           isError: true,
         };
       }
@@ -190,25 +263,55 @@ export default function (pi: ExtensionAPI) {
     description:
       "Read a file, apply text replacements in place, write back, and verify — all in one call. " +
       "Combines read + edit + verify so you don't need multiple tool calls. " +
-      "Each replacement is an oldText → newText pair applied sequentially. " +
+      "Each replacement is an old_string → new_string pair applied sequentially. " +
       "After writing, the tool reads back the file and confirms the content matches.",
+    promptSnippet: "readEditVerify(path, replacements): read, patch, write, and verify in one call.",
     parameters: Type.Object({
       path: Type.String({ description: "Path of the file to edit" }),
       replacements: Type.Array(
         Type.Object({
-          oldText: Type.String({ description: "Exact text to find" }),
-          newText: Type.String({ description: "Replacement text" }),
+          old_string: Type.String({ description: "Exact text to find" }),
+          new_string: Type.String({ description: "Replacement text" }),
         }),
         { description: "Sequential text replacements to apply" },
       ),
     }),
-    async execute(_id, { path, replacements }) {
+    prepareArguments(args) {
+      if (!args || typeof args !== "object") return args as any;
+      const input = args as Record<string, unknown> & {
+        replacements?: Array<Record<string, unknown>>;
+        replacement?: Record<string, unknown>;
+      };
+      const replacements = Array.isArray(input.replacements)
+        ? input.replacements
+        : input.replacement && typeof input.replacement === "object"
+          ? [input.replacement]
+          : [];
+      const topLevelOld = typeof input.old_string === "string"
+        ? input.old_string
+        : input.oldText;
+      const topLevelNew = typeof input.new_string === "string"
+        ? input.new_string
+        : input.newText;
+      const normalized = replacements.map((r) => ({
+        old_string: typeof r.old_string === "string" ? r.old_string : r.oldText,
+        new_string: typeof r.new_string === "string" ? r.new_string : r.newText,
+      }));
+      if (typeof topLevelOld === "string" && typeof topLevelNew === "string") {
+        normalized.push({ old_string: topLevelOld, new_string: topLevelNew });
+      }
+      return {
+        path: typeof input.path === "string" ? input.path : input.file_path,
+        replacements: normalized,
+      } as any;
+    },
+    async execute(_id, { path, replacements }): Promise<any> {
       try {
         const abs = isAbsolute(path) ? path : join(process.cwd(), path);
         if (!existsSync(abs)) {
           return {
             content: [{ type: "text", text: `Error: File not found: ${abs}` }],
-            details: {},
+            details: { verified: false, applied: 0, skipped: 0, lines: 0 },
             isError: true,
           };
         }
@@ -220,7 +323,7 @@ export default function (pi: ExtensionAPI) {
         } catch (e) {
           return {
             content: [{ type: "text", text: `Error reading file: ${(e as Error).message}` }],
-            details: {},
+            details: { verified: false, applied: 0, skipped: 0, lines: 0 },
             isError: true,
           };
         }
@@ -229,9 +332,9 @@ export default function (pi: ExtensionAPI) {
         const applied: number[] = [];
         const skipped: number[] = [];
         for (let i = 0; i < replacements.length; i++) {
-          const { oldText, newText } = replacements[i];
-          if (content.includes(oldText)) {
-            content = content.split(oldText).join(newText);
+          const { old_string, new_string } = replacements[i] as { old_string: string; new_string: string };
+          if (content.includes(old_string)) {
+            content = content.split(old_string).join(new_string);
             applied.push(i);
           } else {
             skipped.push(i);
@@ -244,7 +347,7 @@ export default function (pi: ExtensionAPI) {
         } catch (e) {
           return {
             content: [{ type: "text", text: `Error writing file: ${(e as Error).message}` }],
-            details: {},
+            details: { verified: false, applied: applied.length, skipped: skipped.length, lines: 0 },
             isError: true,
           };
         }
@@ -262,7 +365,7 @@ export default function (pi: ExtensionAPI) {
             content: [
               { type: "text", text: `Written but verification read failed: ${(e as Error).message}` },
             ],
-            details: { verified: false },
+            details: { verified: false, applied: applied.length, skipped: skipped.length, lines: 0 },
             isError: true,
           };
         }
@@ -286,7 +389,7 @@ export default function (pi: ExtensionAPI) {
       } catch (e) {
         return {
           content: [{ type: "text", text: `Error: ${(e as Error).message}` }],
-          details: {},
+          details: { verified: false, applied: 0, skipped: 0, lines: 0 },
           isError: true,
         };
       }

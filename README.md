@@ -57,7 +57,9 @@ little-coder --model lmstudio/local-model       # local LM Studio (whatever mode
 little-coder --list-models                      # see everything pi knows about
 ```
 
-The agent uses the directory you launched it from as its working directory — `Read` / `Write` / `Edit` / `Bash` operate on your project, not on little-coder's install path.
+The agent uses the directory you launched it from as its working directory — `read` / `write` / `edit` / `bash` operate on your project, not on little-coder's install path.
+
+In the TUI you can use `/tools` to list loaded tools and `/skills` to list available skills. The agent can also call `tools`, `skills`, and `enableBrowserTools` directly.
 
 For local providers (llama.cpp, Ollama, LM Studio) pi expects *some* value in the API-key env even though local servers ignore it:
 

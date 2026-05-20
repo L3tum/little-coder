@@ -102,12 +102,7 @@ function textResult(text: string) {
   return { content: [{ type: "text" as const, text }], details: {} };
 }
 
-export default function (pi: ExtensionAPI) {
-  pi.on("session_shutdown", async () => {
-    await resetBrowserSession();
-  });
-
-  // ── BrowserNavigate ──────────────────────────────────────────────────
+function registerBrowserTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "BrowserNavigate",
     label: "BrowserNavigate",
@@ -136,7 +131,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── BrowserClick ─────────────────────────────────────────────────────
   pi.registerTool({
     name: "BrowserClick",
     label: "BrowserClick",
@@ -170,7 +164,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── BrowserType ──────────────────────────────────────────────────────
   pi.registerTool({
     name: "BrowserType",
     label: "BrowserType",
@@ -201,7 +194,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── BrowserScroll ────────────────────────────────────────────────────
   pi.registerTool({
     name: "BrowserScroll",
     label: "BrowserScroll",
@@ -225,7 +217,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── BrowserExtract ───────────────────────────────────────────────────
   pi.registerTool({
     name: "BrowserExtract",
     label: "BrowserExtract",
@@ -241,9 +232,7 @@ export default function (pi: ExtensionAPI) {
       try {
         if (!sess.extractCache.has("full")) {
           let text: string = await sess.page.evaluate(readablePageText);
-          if (!text) {
-            text = await sess.page.evaluate(fallbackPageText);
-          }
+          if (!text) text = await sess.page.evaluate(fallbackPageText);
           sess.extractCache.set("full", text ?? "");
         }
         const full = sess.extractCache.get("full") ?? "";
@@ -255,11 +244,7 @@ export default function (pi: ExtensionAPI) {
         const end = Math.min(start + CHUNK_SIZE, full.length);
         const chunk = full.slice(start, end);
         const hasMore = end < full.length;
-        const footerBits = [
-          `cursor=${start}`,
-          `next=${hasMore ? end : "null"}`,
-          `total=${full.length}`,
-        ];
+        const footerBits = [`cursor=${start}`, `next=${hasMore ? end : "null"}`, `total=${full.length}`];
         if (hasMore) footerBits.push("has_more=true");
         return textResult(`${chunk}\n[${footerBits.join(" ")}]`);
       } catch (e: any) {
@@ -268,7 +253,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── BrowserBack ──────────────────────────────────────────────────────
   pi.registerTool({
     name: "BrowserBack",
     label: "BrowserBack",
@@ -287,7 +271,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── BrowserHistory ───────────────────────────────────────────────────
   pi.registerTool({
     name: "BrowserHistory",
     label: "BrowserHistory",
@@ -299,6 +282,43 @@ export default function (pi: ExtensionAPI) {
       if (sess.history.length === 0) return textResult("(no pages visited yet)");
       const lines = sess.history.slice(-20).map((u, i) => `${i + 1}. ${u}`);
       return textResult(lines.join("\n"));
+    },
+  });
+}
+
+export default function (pi: ExtensionAPI) {
+  let browserToolsEnabled = false;
+
+  const enable = (): string => {
+    if (!browserToolsEnabled) {
+      registerBrowserTools(pi);
+      browserToolsEnabled = true;
+    }
+    return browserToolsEnabled
+      ? "Browser tools enabled: BrowserNavigate, BrowserClick, BrowserType, BrowserScroll, BrowserExtract, BrowserBack, BrowserHistory"
+      : "Browser tools unavailable";
+  };
+
+  pi.on("session_shutdown", async () => {
+    await resetBrowserSession();
+  });
+
+  pi.registerCommand("enable-browser-tools", {
+    description: "Load Browser* tools into the active tool registry",
+    handler: async (_args, ctx) => {
+      const text = enable();
+      if (ctx.hasUI) ctx.ui.notify(text, "info");
+    },
+  });
+
+  pi.registerTool({
+    name: "enableBrowserTools",
+    label: "EnableBrowserTools",
+    description: "Load Browser* tools into the active registry on demand. Call this before BrowserNavigate/BrowserExtract when a task needs interactive browsing.",
+    promptSnippet: "enableBrowserTools(): load BrowserNavigate/BrowserExtract/BrowserClick and related Browser* tools on demand.",
+    parameters: Type.Object({}),
+    async execute() {
+      return { content: [{ type: "text", text: enable() }], details: {} };
     },
   });
 }

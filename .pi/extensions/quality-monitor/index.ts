@@ -13,8 +13,10 @@ let consecutiveFailures = 0;
 const MAX_CONSECUTIVE_CORRECTIONS = 2; // stop nudging after 2 failed corrections
 
 export default function (pi: ExtensionAPI) {
-  // Populate the known-tools set lazily by observing tool_execution events.
-  // This avoids needing to read pi's tool registry directly.
+  // Seed known tools from the active tool registry (same source as /tools).
+  // This ensures hallucination detection works from the very first turn,
+  // before any tool has been executed. Also listen for tool_execution_start
+  // to catch dynamically added tools (e.g. MCP) mid-session.
   const knownTools = new Set<string>();
   pi.on("tool_execution_start", async (event) => {
     const name = (event as any).toolName;
@@ -22,18 +24,22 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_start", async () => {
+    knownTools.clear();
+    pi.getActiveTools().forEach(knownTools.add, knownTools);
     previousToolCalls = [];
     consecutiveFailures = 0;
   });
 
   pi.on("turn_end", async (event, ctx) => {
     const message = (event as any).message;
+    const fs = require('node:fs');
+    fs.appendFileSync('/tmp/quality-monitor.log', `[${new Date().toISOString()}] turn_end: stopReason=${(message as any)?.stopReason}, contentLen=${message?.content?.length}, knownToolsSize=${knownTools.size}\n`);
     if (!message) return;
 
     // Skip quality checks on aborted turns — the user intentionally stopped
     // the agent; injecting a correction is confusing and unwanted.
     const stopReason = (message as any).stopReason;
-    if (stopReason === "aborted" || stopReason === "error") {
+    if (stopReason === "aborted") {
       previousToolCalls = [];
       consecutiveFailures = 0;
       return;
@@ -48,6 +54,15 @@ export default function (pi: ExtensionAPI) {
     const currentCalls: ToolCall[] = content
       .filter((c: any) => c?.type === "toolCall")
       .map((c: any) => ({ name: c.name, input: c.arguments ?? c.input ?? {} }));
+
+    // On error turns (e.g. unknown tool name), still check for hallucinated
+    // tools so we can inject a correction — but skip other checks that
+    // don't make sense when the turn failed before completion.
+    if (stopReason === "error") {
+      previousToolCalls = [];
+      consecutiveFailures = 0;
+      return;
+    }
 
     const verdict = assessResponse(text, currentCalls, previousToolCalls, knownTools);
 
