@@ -1,7 +1,7 @@
 // little-coder update check.
-// Polls the npm registry for a newer published version and (in TTY mode)
-// offers to install it before the agent starts. Cached so we don't call out
-// on every invocation. Best-effort throughout: if anything fails, we skip
+// Polls L3tum fork's package.json on GitHub for a newer version and (in TTY
+// mode) offers to install it before the agent starts. Cached so we don't call
+// out on every invocation. Best-effort throughout: if anything fails, we skip
 // silently — never block the agent over a version check.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -10,7 +10,8 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
 
-const REGISTRY = "https://registry.npmjs.org/little-coder/latest";
+const VERSION_SOURCE = "https://raw.githubusercontent.com/L3tum/little-coder/main/package.json";
+const INSTALL_TARGET = "github:L3tum/little-coder";
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000;   // 12 h
 const FETCH_TIMEOUT_MS = 2000;
 
@@ -72,7 +73,7 @@ async function fetchLatest() {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(REGISTRY, { signal: ctrl.signal });
+    const res = await fetch(VERSION_SOURCE, { signal: ctrl.signal });
     if (!res.ok) return null;
     const json = await res.json();
     return typeof json?.version === "string" ? json.version : null;
@@ -139,7 +140,7 @@ export async function checkForUpdate(currentVersion, opts = {}) {
     `\n📦 little-coder v${latest} is available (you have v${currentVersion}).`;
 
   if (skip === "notice-only") {
-    process.stderr.write(`${headline}\n   Update with: npm install -g little-coder\n\n`);
+    process.stderr.write(`${headline}\n   Update with: npm install -g ${INSTALL_TARGET}\n\n`);
     return false;
   }
 
@@ -150,8 +151,8 @@ export async function checkForUpdate(currentVersion, opts = {}) {
     return false;
   }
 
-  process.stderr.write(`\n   Running: npm install -g little-coder@${latest}\n\n`);
-  const result = spawnSync("npm", ["install", "-g", `little-coder@${latest}`], {
+  process.stderr.write(`\n   Running: npm install -g ${INSTALL_TARGET}\n\n`);
+  const result = spawnSync("npm", ["install", "-g", INSTALL_TARGET], {
     stdio: "inherit",
   });
   if (result.status === 0) {

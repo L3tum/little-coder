@@ -2,13 +2,16 @@
   "name": "little-coder",
   "version": "1.4.3",
   "description": "A pi-based coding agent optimized for small local language models. Reproduces the whitepaper's scaffold-model-fit adaptations as pi extensions.",
-  "homepage": "https://github.com/itayinbarr/little-coder",
+  "homepage": "https://github.com/L3tum/little-coder",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/itayinbarr/little-coder.git"
+    "url": "git+https://github.com/L3tum/little-coder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/L3tum/little-coder/issues"
   },
   "license": "Apache-2.0",
-  "author": "Itay Inbar",
+  "author": "L3tum",
   "type": "module",
   "littleCoder": {
     "packages": [
@@ -23,7 +26,7 @@
     "little-coder": "bin/little-coder.mjs"
   },
   "engines": {
-    "node": ">=20.6.0"
+    "node": ">=22.19.0"
   },
   "files": [
     "bin/",

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# install.sh — one-line installer for little-coder
+# install.sh — one-line installer for L3tum's little-coder fork
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/itayinbarr/little-coder/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/L3tum/little-coder/main/install.sh | bash
 set -euo pipefail
 
 say() { printf '\033[1;36m[little-coder]\033[0m %s\n' "$*"; }
@@ -30,15 +30,15 @@ fi
 say "Node $NODE_V detected."
 
 # 3. install
-say "Installing little-coder globally via npm..."
-if npm install -g little-coder; then
+say "Installing little-coder fork globally from GitHub..."
+if npm install -g github:L3tum/little-coder; then
   say "Installed."
   say "Run:    cd ~/your-project && little-coder --model llamacpp/qwen3.6-35b-a3b"
   say "Models: little-coder --list-models"
 else
   err "Install failed."
   err "If it was a permissions error (EACCES), one of these usually fixes it:"
-  err "  sudo npm install -g little-coder"
+  err "  sudo npm install -g github:L3tum/little-coder"
   err "  or configure a user-writable npm prefix:"
   err "  https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally"
   exit 1

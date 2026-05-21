@@ -1,10 +1,19 @@
 # little-coder
 
-**A coding agent tuned for small local models, built on top of [pi](https://pi.dev).**
+**L3tum's fork of little-coder: a coding agent tuned for small local models, built on top of [pi](https://pi.dev).**
 
 ![little-coder startup view](docs/assets/startup.svg)
 
-The research story behind all this — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[*Honey, I Shrunk the Coding Agent*](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**. Start there if you want the "why"; stay here for the "how".
+> **Fork note.** Maintained by **L3tum**. Historical paper / benchmark results in this README remain attributed to Itay Inbar's original little-coder work. Fork-era benchmarks: **TBD**.
+
+The research story behind source little-coder — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[*Honey, I Shrunk the Coding Agent*](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**.
+
+## Highlights
+
+- Carries forward recent little-coder work: pi-based scaffold, benchmark harness, ShellSession / Browser / Evidence tool families, GAIA / Terminal-Bench / Aider support.
+- Post-fork cleanup: removed confusing `readEditVerify`, tightened compatibility repair around tool calls, made `tools` / `skills` agent-callable, and moved Browser tools behind explicit `enableBrowserTools` loading.
+- Latest fork polish: bundled extension loading now comes from `package.json`, `bash` accepts `cwd`, out-of-worktree reads ask by default, `findRead` gained `maxCharacters`, and tool branding/messages were cleaned up.
+- Benchmarks for this fork: **TBD**.
 
 ## How it relates to pi
 
@@ -19,24 +28,24 @@ If you've never used pi, it's useful to skim [pi.dev](https://pi.dev) first — 
 One-line install (Node.js 22.19+ required):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/itayinbarr/little-coder/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/L3tum/little-coder/main/install.sh | bash
 ```
 
-Or with npm directly:
+Or with npm directly from this fork:
 
 ```bash
-npm install -g little-coder
+npm install -g github:L3tum/little-coder
 ```
 
 Or with [bun](https://bun.sh):
 
 ```bash
-bun add -g little-coder
+bun add -g github:L3tum/little-coder
 ```
 
 That's the whole install. No clone, no `npm install` in a workspace, no PATH fiddling. `little-coder` is now on your PATH and works from any directory.
 
-> **Note for `bun add -g` users.** The launcher (`bin/little-coder.mjs`) is a Node.js script with `#!/usr/bin/env node` at the top, so Node ≥ 22.19 still has to be on your PATH for the binary to start — bun is fine for installing/updating the package, but the runtime is Node. If you want a fully node-less setup, replace the shebang in `$(bun pm bin -g)/little-coder` with `#!/usr/bin/env bun`.
+> **Note for `bun add -g` users.** The launcher (`bin/little-coder.mjs`) is a Node.js script with `#!/usr/bin/env node` at the top, so Node ≥ 22.19 still has to be on your PATH for the binary to start — bun is fine for installing/updating this fork, but the runtime is Node. If you want a fully node-less setup, replace the shebang in `$(bun pm bin -g)/little-coder` with `#!/usr/bin/env bun`.
 
 ## Run
 
@@ -150,7 +159,7 @@ All small-model-specific extensions auto-disable for large/cloud models so they 
 
 ## Configuring models
 
-The shipped model list lives in **`models.json`** at the package root. The `llama-cpp-provider` extension reads it at startup and registers each provider via pi's `registerProvider()`. Editing this file in your global install **does** take effect — but it's overwritten on `npm install -g little-coder@latest`, so for anything you want to keep, use a user override file instead.
+The shipped model list lives in **`models.json`** at the package root. The `llama-cpp-provider` extension reads it at startup and registers each provider via pi's `registerProvider()`. Editing this file in your global install **does** take effect — but it's overwritten on the next `npm install -g github:L3tum/little-coder`, so for anything you want to keep, use a user override file instead.
 
 User override resolution (first match wins):
 
@@ -218,7 +227,9 @@ Write/Edit confirmations are pi's responsibility; little-coder doesn't intercept
 
 ---
 
-## Paper / benchmark results
+## Historical paper / benchmark results (source project)
+
+Fork benchmark reruns under L3tum: **TBD**. Table below preserves source-project results for attribution and context.
 
 | Release | Model | Benchmark | Result |
 |---|---|---|---|
@@ -235,18 +246,13 @@ All runs used a consumer laptop: i9-14900HX, 32 GB RAM, **8 GB VRAM** on RTX 507
 
 ## Roadmap
 
-**Phase 1 — wide benchmark baseline: complete.** The paper established that scaffold–model fit moves a 9.7 B model from 19 % to 45 % on Aider Polyglot, and the goal of Phase 1 was to find out how wide that impact radius is. We now have a four-benchmark baseline on a single laptop-class GPU:
+Current fork direction under **L3tum**:
 
-1. **Aider Polyglot** — 45.56 % (paper, Qwen3.5-9B) and 78.67 % (v0.0.5, Qwen3.6-35B-A3B).
-2. **Terminal-Bench-Core v0.1.1** — 40.0 % (v0.1.4).
-3. **Terminal-Bench 2.0** — accepted to the [official leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.0): Qwen3.6-35B-A3B at **24.6 % ± 3.2** (rank 120) and Qwen3.5-9B at **9.2 % ± 2.4** (rank 142). The v0.1.24 prompt-repetition fix (re-add tool descriptions + concision guideline, validated by a 4 / 4 pilot on the previously-regressing `prove-plus-comm` task) was the prompt for both submissions.
-4. **GAIA** — validation set at v0.1.27: **40.00 %** (66 / 165) on Qwen3.6-35B-A3B. Per-level L1 60.4 % / L2 37.2 % / L3 7.7 %.
+1. Keep source project's benchmark-backed scaffold intact while tightening runtime/tooling behavior.
+2. Land fork-specific quality-of-life changes first: compatibility cleanup, safer file access defaults, better tool loading, better CI automation.
+3. Re-run benchmarks only after this fork stabilizes enough for numbers to mean something.
 
-That spans short coding exercises (Polyglot), interactive shell-bound tasks (Terminal-Bench), and tool-using research (GAIA), all on the same scaffold. The data needed to choose what to fix next is now in hand.
-
-**Phase 2 — iterative improvement on real-world tasks: starting now.** The motivating question shifts from *how wide is the impact radius?* to *which scaffolding changes compound on long-horizon real work?* The signal we have already points at concrete things to try — thinking-budget / quality-monitor behavior on long-horizon tasks, deliberate.py-style parallel branches on failure, better shell-session recovery for interactive-process traps, evidence-handling on multi-document GAIA L3 tasks — but the priority order comes from real-world use, not from a benchmark suite. Expect smaller, more frequent releases driven by what little-coder actually struggles with on day-to-day coding work.
-
-**Future benchmarks (deferred).** New benchmarks like **ProgramBench**, SWE-bench Verified (multi-file real-world patches), and a GAIA test-split run come back into scope after Phase 2 has produced enough scaffolding signal to make a fresh measurement worth running. Re-benchmarking before the next round of changes lands would mostly re-measure the same baseline.
+**Benchmarks:** TBD.
 
 ---
 
@@ -264,7 +270,7 @@ That spans short coding exercises (Polyglot), interactive shell-bound tasks (Ter
 
 **No pi "Update Available" banner** — that's intentional. little-coder defaults `PI_SKIP_VERSION_CHECK=1` so the bundled pi runtime doesn't nag about updating itself; little-coder pins pi to a known-good version per release. If you actually want the banner back, `export PI_SKIP_VERSION_CHECK=0` before launching.
 
-**Extension load failures on startup** — run `little-coder --list-models --verbose`; extension errors surface there. If the install looks corrupt: `npm uninstall -g little-coder && npm install -g little-coder`.
+**Extension load failures on startup** — run `little-coder --list-models --verbose`; extension errors surface there. If the install looks corrupt: `npm uninstall -g little-coder && npm install -g github:L3tum/little-coder`.
 
 **Node version too old** — little-coder needs Node ≥ 22.19.0 (matching the minimum of the bundled `@earendil-works/pi-coding-agent` v0.75+). Check with `node --version`. Easiest fix: `nvm install 22 && nvm use 22`.
 
@@ -275,7 +281,7 @@ That spans short coding exercises (Polyglot), interactive shell-bound tasks (Ter
 If you want to hack on the extensions or skills:
 
 ```bash
-git clone https://github.com/itayinbarr/little-coder.git
+git clone https://github.com/L3tum/little-coder.git
 cd little-coder
 npm install
 npm link            # makes the local checkout available as `little-coder`
@@ -338,6 +344,8 @@ little-coder/
 
 ## Reproducing the paper (v0.0.2)
 
+For exact paper-era code, use upstream repository and tags:
+
 ```bash
 git clone https://github.com/itayinbarr/little-coder.git
 cd little-coder
@@ -366,6 +374,10 @@ The paper ran `ollama/qwen3.5` through the Python little-coder at commit **`1d62
 ---
 
 ## Attribution
+
+This fork is maintained by **L3tum**.
+
+Source project: [Itay Inbar's little-coder](https://github.com/itayinbarr/little-coder), Apache 2.0. Historical paper claims, benchmark figures, and release links in this README refer to that source project unless noted otherwise.
 
 little-coder v0.0.x was a derivative work of [CheetahClaws / ClawSpring](https://github.com/SafeRL-Lab/clawspring) by SafeRL-Lab, Apache 2.0. That upstream provided the Python agent substrate, tool system, multi-provider support, and REPL.
 

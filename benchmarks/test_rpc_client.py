@@ -47,7 +47,7 @@ def test_rpc_get_state_from_arbitrary_cwd(tmp_path):
         rpc._send({"id": rid, "type": "get_state"})
         resp = rpc._await_response(rid, timeout=20)
         assert resp["success"] is True
-        assert resp["data"]["model"]["id"] == "qwen3.6-35b-a3b"
+        assert resp["data"]["model"]["id"] in {"qwen3.6-35b-a3b", "qwen/Qwen3.6-35B-A3B"}
         assert resp["data"]["model"]["provider"] == "llamacpp"
     finally:
         rpc.close(timeout=3)

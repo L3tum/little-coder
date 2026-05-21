@@ -61,14 +61,14 @@ try {
   console.error(
     `little-coder: cannot resolve pi cli entry under ${piPkgRoot}.\n` +
       `Underlying error: ${err?.message ?? err}\n` +
-      `Try reinstalling: npm install -g little-coder`,
+      `Try reinstalling: npm install -g github:L3tum/little-coder`,
   );
   process.exit(1);
 }
 if (!existsSync(piEntry)) {
   console.error(
     `little-coder: cannot find pi at ${piEntry}.\n` +
-      `Try reinstalling: npm install -g little-coder`,
+      `Try reinstalling: npm install -g github:L3tum/little-coder`,
   );
   process.exit(1);
 }

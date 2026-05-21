@@ -1,14 +1,26 @@
-little-coder
-Copyright 2026 Itay Inbar
+little-coder (L3tum fork)
+Copyright 2026 L3tum
+Portions Copyright 2026 Itay Inbar
 
 Licensed under the Apache License, Version 2.0 (the "License"); see the
 accompanying LICENSE file for the full text.
 
 --------------------------------------------------------------------------
+Attribution to source project
+--------------------------------------------------------------------------
+
+This fork is based on little-coder
+(https://github.com/itayinbarr/little-coder), Copyright 2026 Itay Inbar,
+licensed under the Apache License, Version 2.0.
+
+Historical benchmark results, paper links, and core scaffold work in this
+fork trace to that source project unless stated otherwise.
+
+--------------------------------------------------------------------------
 Attribution to upstream project
 --------------------------------------------------------------------------
 
-This product is a derivative work based on CheetahClaws / ClawSpring
+This product is also a derivative work based on CheetahClaws / ClawSpring
 (https://github.com/SafeRL-Lab/clawspring), Copyright SafeRL-Lab,
 licensed under the Apache License, Version 2.0.
 
