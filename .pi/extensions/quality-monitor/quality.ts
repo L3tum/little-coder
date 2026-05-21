@@ -14,6 +14,7 @@ export function assessResponse(
   toolCalls: ToolCall[],
   recentToolCalls: ToolCall[],
   knownTools: Set<string>,
+  recentToolCallsErrorTools: Set<string> = new Set(),
 ): QualityResult {
   // 1. Empty response with no tool calls
   if (!text.trim() && toolCalls.length === 0) {
@@ -28,13 +29,19 @@ export function assessResponse(
     }
   }
 
-  // 3. Repeated tool call loop (exact name+input match with previous turn)
+  // 3. Repeated tool call loop (exact name+input match with previous turn).
+  // Skip the check for tools that errored in the previous turn — retrying a
+  // failed call is legitimate.  Only flag as a loop when the same tool+input
+  // repeats after a *successful* execution of that call.
   if (toolCalls.length > 0 && recentToolCalls.length > 0) {
     for (const tc of toolCalls) {
       for (const prev of recentToolCalls) {
         if (tc.name === prev.name &&
             JSON.stringify(tc.input) === JSON.stringify(prev.input)) {
-          return { ok: false, reason: "repeated_tool_call" };
+          // Only flag if this tool did NOT error in the previous turn
+          if (!recentToolCallsErrorTools.has(tc.name)) {
+            return { ok: false, reason: "repeated_tool_call" };
+          }
         }
       }
     }

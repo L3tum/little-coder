@@ -9,7 +9,7 @@ import {
   parseExtraPrefixes,
   resolveWorkspacePath,
 } from "./index.ts";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 describe("isSafeBash", () => {
   it("allows whitelisted read-only commands", () => {
@@ -185,6 +185,22 @@ describe("getExternalWorkspaceAccess", () => {
     });
     expect(getExternalWorkspaceAccess("findRead", { pattern: "../*.ts" }, cwd)).toEqual({
       summary: "/home/me/proj (pattern escapes base: ../*.ts)",
+    });
+  });
+
+  it("allows trusted bash temp output files outside workspace", () => {
+    const tmp = tmpdir();
+    expect(getExternalWorkspaceAccess("read", { path: `${tmp}/pi-bash-abc123.log` }, cwd)).toBeNull();
+    expect(getExternalWorkspaceAccess("findRead", { path: tmp, pattern: "pi-bash-*.log" }, cwd)).toBeNull();
+  });
+
+  it("still blocks unrelated temp files outside workspace", () => {
+    const tmp = tmpdir();
+    expect(getExternalWorkspaceAccess("read", { path: `${tmp}/notes.txt` }, cwd)).toEqual({
+      summary: `${tmp}/notes.txt`,
+    });
+    expect(getExternalWorkspaceAccess("findRead", { path: tmp, pattern: "*.log" }, cwd)).toEqual({
+      summary: tmp,
     });
   });
 });

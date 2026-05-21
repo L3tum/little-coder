@@ -9,6 +9,9 @@ import { assessResponse, buildCorrectionMessage, type ToolCall } from "./quality
 // Session-scoped state. Pi reuses extensions across turns within a session;
 // a fresh extension instance is loaded per session via the session lifecycle.
 let previousToolCalls: ToolCall[] = [];
+// Track which specific tools had errors in the previous turn.
+// Only those tools are exempt from the repeated_tool_call check on the next turn.
+let previousTurnErrorTools = new Set<string>();
 let consecutiveFailures = 0;
 const MAX_CONSECUTIVE_CORRECTIONS = 2; // stop nudging after 2 failed corrections
 
@@ -27,13 +30,12 @@ export default function (pi: ExtensionAPI) {
     knownTools.clear();
     pi.getActiveTools().forEach(knownTools.add, knownTools);
     previousToolCalls = [];
+    previousTurnErrorTools = new Set();
     consecutiveFailures = 0;
   });
 
   pi.on("turn_end", async (event, ctx) => {
     const message = (event as any).message;
-    const fs = require('node:fs');
-    fs.appendFileSync('/tmp/quality-monitor.log', `[${new Date().toISOString()}] turn_end: stopReason=${(message as any)?.stopReason}, contentLen=${message?.content?.length}, knownToolsSize=${knownTools.size}\n`);
     if (!message) return;
 
     // Skip quality checks on aborted turns — the user intentionally stopped
@@ -41,6 +43,7 @@ export default function (pi: ExtensionAPI) {
     const stopReason = (message as any).stopReason;
     if (stopReason === "aborted") {
       previousToolCalls = [];
+      previousTurnErrorTools = new Set();
       consecutiveFailures = 0;
       return;
     }
@@ -55,19 +58,35 @@ export default function (pi: ExtensionAPI) {
       .filter((c: any) => c?.type === "toolCall")
       .map((c: any) => ({ name: c.name, input: c.arguments ?? c.input ?? {} }));
 
-    // On error turns (e.g. unknown tool name), still check for hallucinated
-    // tools so we can inject a correction — but skip other checks that
-    // don't make sense when the turn failed before completion.
+    // Turns that fail before completion should not seed repeat-loop detection.
     if (stopReason === "error") {
       previousToolCalls = [];
+      previousTurnErrorTools = new Set();
       consecutiveFailures = 0;
       return;
     }
 
-    const verdict = assessResponse(text, currentCalls, previousToolCalls, knownTools);
+    const toolResults = Array.isArray((event as any).toolResults) ? (event as any).toolResults : [];
+
+    // Build the set of tool names that errored this turn.
+    const currentErrorTools = new Set<string>();
+    for (const result of toolResults) {
+      if (result?.isError && result?.toolName) {
+        currentErrorTools.add(result.toolName);
+      }
+    }
+
+    const verdict = assessResponse(
+      text,
+      currentCalls,
+      previousToolCalls,
+      knownTools,
+      previousTurnErrorTools,
+    );
 
     // Update rolling state for next turn regardless of verdict
     previousToolCalls = currentCalls;
+    previousTurnErrorTools = currentErrorTools;
 
     if (verdict.ok) {
       consecutiveFailures = 0;

@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve, normalize, relative, isAbsolute, join } from "node:path";
-import { homedir } from "node:os";
+import { resolve, normalize, relative, isAbsolute, join, basename } from "node:path";
+import { homedir, tmpdir } from "node:os";
 import { normalizeWritePath } from "../write-guard/index.ts";
 
 const BUILTIN_SAFE_PREFIXES: readonly string[] = [
@@ -120,6 +120,21 @@ export function hasParentTraversal(value: string): boolean {
   return value.split(/[\\/]+/).includes("..");
 }
 
+function isTrustedToolTempFilePath(target: string): boolean {
+  const normalizedTarget = normalize(resolve(target));
+  const normalizedTmpDir = normalize(resolve(tmpdir()));
+  if (!isWithinWorkspace(normalizedTmpDir, normalizedTarget)) return false;
+  const fileName = basename(normalizedTarget);
+  return /^pi-bash-[^.]+\.log$/i.test(fileName);
+}
+
+function isTrustedToolTempGlob(base: string, pattern: string): boolean {
+  const normalizedBase = normalize(resolve(base));
+  const normalizedTmpDir = normalize(resolve(tmpdir()));
+  if (normalizedBase !== normalizedTmpDir) return false;
+  return /^pi-bash-.*\.log$/i.test(pattern) && !hasParentTraversal(pattern);
+}
+
 export function getExternalWorkspaceAccess(
   toolName: string,
   input: Record<string, unknown> | undefined,
@@ -131,6 +146,7 @@ export function getExternalWorkspaceAccess(
     const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
     if (!path) return null;
     const resolved = resolveWorkspacePath(path, cwd);
+    if (isTrustedToolTempFilePath(resolved)) return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
@@ -157,8 +173,9 @@ export function getExternalWorkspaceAccess(
   if (toolName === "findRead") {
     const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
     const base = resolveWorkspacePath(baseInput, cwd);
-    if (!isWithinWorkspace(cwd, base)) return { summary: base };
     const pattern = typeof input.pattern === "string" ? input.pattern : "";
+    if (isTrustedToolTempGlob(base, pattern)) return null;
+    if (!isWithinWorkspace(cwd, base)) return { summary: base };
     if (pattern && hasParentTraversal(pattern)) {
       return { summary: `${base} (pattern escapes base: ${pattern})` };
     }
