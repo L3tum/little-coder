@@ -46,6 +46,31 @@ function buildHeader(theme: Theme): string[] {
   const tagline = theme.fg("muted", TAGLINE);
   const dim = (s: string) => theme.fg("dim", s);
   const sep = theme.fg("muted", " · ");
+  const extensionLine1 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/caveman full"),
+    theme.fg("muted", " for terse mode"),
+    sep,
+    theme.fg("text", "/plannotator"),
+    theme.fg("muted", " or "),
+    theme.fg("text", "--plan"),
+    theme.fg("muted", " for plan review"),
+  ].join("");
+  const extensionLine2 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "todo"),
+    theme.fg("muted", " / "),
+    theme.fg("text", "/todos"),
+    theme.fg("muted", " to track steps"),
+    sep,
+    theme.fg("text", "Alt+S"),
+    theme.fg("muted", " to stash editor text"),
+  ].join("");
+  const extensionLine3 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/workspace-permissions"),
+    theme.fg("muted", " for out-of-workspace file access policy"),
+  ].join("");
   const hints = [
     `${dim("esc")} interrupt`,
     `${dim("ctrl-l/ctrl-c")} clear/exit`,
@@ -53,7 +78,17 @@ function buildHeader(theme: Theme): string[] {
     `${dim("!")} bash`,
     `${dim("ctrl-r")} more`,
   ].join(sep);
-  return ["", logo, tagline, "", hints, ""];
+  return ["", logo, tagline, extensionLine1, extensionLine2, extensionLine3, "", hints, ""];
+}
+
+function applyHeader(ctx: { ui: { setHeader: Function; setTitle: Function }; cwd: string }): void {
+  ctx.ui.setHeader((_tui: unknown, theme: Theme) => ({
+    render(_width: number): string[] {
+      return buildHeader(theme);
+    },
+    invalidate() {},
+  }));
+  setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
 }
 
 function setTitleForCwd(setTitle: (t: string) => void, cwd: string): void {
@@ -71,23 +106,18 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
-    ctx.ui.setHeader((_tui, theme) => ({
-      render(_width: number): string[] {
-        return buildHeader(theme);
-      },
-      invalidate() {},
-    }));
-
-    setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
+    applyHeader(ctx);
+    setTimeout(() => applyHeader(ctx), 0);
+    setTimeout(() => applyHeader(ctx), 150);
   });
 
   pi.on("turn_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
-    setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
+    applyHeader(ctx);
   });
 
   pi.on("turn_end", async (_event, ctx) => {
     if (!ctx.hasUI) return;
-    setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
+    applyHeader(ctx);
   });
 }

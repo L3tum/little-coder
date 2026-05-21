@@ -32,9 +32,9 @@ const INTENT_MAP: Record<string, string[]> = {
   write: ["write"], create: ["write", "bash"],
   implement: ["write", "read"], code: ["write", "read"],
   // function/class are defined later (code graph) — JS last-wins
-  edit: ["edit", "readEditVerify"], change: ["edit", "readEditVerify"], modify: ["edit", "readEditVerify"],
-  fix: ["edit", "readEditVerify"], update: ["edit", "readEditVerify"], replace: ["edit", "readEditVerify"],
-  add: ["edit", "write", "readEditVerify"], refactor: ["edit", "read", "readEditVerify"],
+  edit: ["edit"], change: ["edit"], modify: ["edit"],
+  fix: ["edit"], update: ["edit"], replace: ["edit"],
+  add: ["edit", "write"], refactor: ["edit", "read"],
   run: ["bash"], execute: ["bash"], install: ["bash"],
   build: ["bash"], test: ["bash"],
   find: ["glob", "grep", "findRead", "codebase_memory_search_graph"], search: ["grep", "findRead", "codebase_memory_search_graph"],
@@ -86,11 +86,6 @@ const INTENT_MAP: Record<string, string[]> = {
   click: ["enableBrowserTools"],
   // Composite tools
   findread: ["findRead"],
-  readeditverify: ["readEditVerify"],
-  verify: ["readEditVerify"],
-  batchedit: ["readEditVerify"],
-  multiedit: ["readEditVerify"],
-  apply: ["readEditVerify"],
 };
 
 function skillsDir(): string {

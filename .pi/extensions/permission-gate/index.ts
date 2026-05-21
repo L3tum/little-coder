@@ -1,22 +1,12 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolve, normalize } from "node:path";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { resolve, normalize, relative, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
-
-// Port of tools.py::_SAFE_PREFIXES + agent.py::_check_permission. Bash
-// commands not matching the whitelist are blocked in "auto" mode. In
-// "accept-all" mode all commands pass (benchmark runs set this explicitly).
-// Write/Edit confirmations are deferred to the TUI's own prompt; we simply
-// add an extra guardrail on bash here to match little-coder's behavior.
-//
-// Per-deployment customization (issue #15):
-//   LITTLE_CODER_PERMISSION_MODE=auto|accept-all|manual
-//   LITTLE_CODER_BASH_ALLOW="cmd1,cmd2 sub,..."  extra allow-prefixes,
-//                                                merged with the built-in list.
+import { normalizeWritePath } from "../write-guard/index.ts";
 
 const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "ls", "cat", "head", "tail", "wc", "pwd", "echo", "printf", "date",
   "which", "type", "env", "printenv", "uname", "whoami", "id",
-  // Read-only git commands (no writes to the repo)
   "git log", "git status", "git diff", "git show", "git branch",
   "git remote", "git stash list", "git tag", "git blame",
   "git reflog", "git shortlog", "git describe", "git ls-files",
@@ -28,15 +18,47 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "pip show", "pip list", "npm list", "cargo metadata",
   "df ", "du ", "free ", "top -bn", "ps ",
   "curl -I", "curl --head",
-  // Routine filesystem scaffolding. Trailing space = word boundary, so
-  // "cp " matches "cp a b" but not "cpufetch". rm stays off the list by
-  // design; use LITTLE_CODER_BASH_ALLOW=rm if a deployment needs it.
   "cp ", "mv ", "mkdir ", "touch ",
 ];
 
-// Trailing whitespace is meaningful — it acts as a word boundary in startsWith
-// matching ("find " refuses "findbug"). We only strip leading whitespace so
-// callers retain control over that boundary.
+export type ExternalFilePolicy = "deny" | "ask" | "accept";
+
+interface WorkspaceBoundaryConfig {
+  externalFilePolicy: ExternalFilePolicy;
+}
+
+interface ExternalAccessRequest {
+  summary: string;
+}
+
+const CONFIG_PATH = join(homedir(), ".pi", "agent", "little-coder-workspace-boundary.json");
+const DEFAULT_CONFIG: WorkspaceBoundaryConfig = { externalFilePolicy: "ask" };
+const POLICY_OPTIONS: ExternalFilePolicy[] = ["deny", "ask", "accept"];
+
+let saveConfigQueue: Promise<void> = Promise.resolve();
+
+async function loadConfig(): Promise<WorkspaceBoundaryConfig> {
+  try {
+    const raw = JSON.parse(await readFile(CONFIG_PATH, "utf8"));
+    return {
+      externalFilePolicy: POLICY_OPTIONS.includes(raw.externalFilePolicy)
+        ? raw.externalFilePolicy
+        : DEFAULT_CONFIG.externalFilePolicy,
+    };
+  } catch {
+    return { ...DEFAULT_CONFIG };
+  }
+}
+
+async function saveConfig(config: WorkspaceBoundaryConfig): Promise<void> {
+  const snapshot = JSON.stringify(config, null, 2) + "\n";
+  saveConfigQueue = saveConfigQueue.then(async () => {
+    await mkdir(join(homedir(), ".pi", "agent"), { recursive: true });
+    await writeFile(CONFIG_PATH, snapshot, "utf8");
+  });
+  return saveConfigQueue;
+}
+
 export function parseExtraPrefixes(raw: string | undefined): string[] {
   if (!raw) return [];
   return raw
@@ -61,80 +83,184 @@ function getPermissionMode(): "auto" | "accept-all" | "manual" {
   return "auto";
 }
 
-/**
- * Resolve a `cd` command's target and check whether it lands within the
- * current working directory tree.  AIs frequently emit `cd <subdir> && …`
- * to navigate into a subdirectory before running further commands.  Rather
- * than blocking every `cd`, we allow it when the resolved target is equal
- * to cwd or a strict descendant of cwd (a harmless tree-downward move) and
- * block genuine escapes that would confuse the single-directory harness
- * (e.g. `cd /tmp`, `cd ~`, `cd ..` from the repo root).
- *
- * Handles:
- *   cd                 → $HOME
- *   cd ~               → $HOME
- *   cd ~/foo           → $HOME/foo
- *   cd foo             → cwd/foo
- *   cd /abs/path       → /abs/path
- *   cd ./foo           → cwd/foo
- *   cd ..              → cwd/..
- *   cd foo && rest     → resolved from the cd segment only
- */
 export function isNoopCd(command: string, cwd: string): boolean {
-  // Strip common leading noise the model may prepend.
   const trimmed = command.trim();
-
-  // Only intercept bare `cd …` — not `scd`, `cdcd`, etc.
   const cdMatch = trimmed.match(/^cd\s+(.*)$/) ?? trimmed.match(/^cd$/);
-  if (!cdMatch) return false; // not a cd command; let normal whitelist handle it
+  if (!cdMatch) return false;
 
-  // Extract the argument.  `cd` with no args → $HOME.
   const rawArg = (cdMatch[1] ?? "").trim();
-  // If the cd is chained (e.g. "cd foo && ls"), only look at the segment
-  // before the first `&&` or `;`.
   const arg = rawArg.split(/\s*&&|;/)[0].trim();
   const target = expandCdPath(arg, cwd);
   const normalizedTarget = normalize(resolve(target));
   const normalizedCwd = normalize(resolve(cwd));
-  // Allow if target is cwd itself or a strict descendant of cwd.
   return normalizedTarget === normalizedCwd || normalizedTarget.startsWith(normalizedCwd + "/");
 }
 
 function expandCdPath(arg: string, cwd: string): string {
   if (arg === "") return homedir();
   if (arg.startsWith("~")) {
-    // ~ → $HOME, ~/foo → $HOME/foo
     return resolve(homedir(), arg.slice(1).replace(/^\/?/, "./"));
   }
   return resolve(cwd, arg);
 }
 
+export function resolveWorkspacePath(inputPath: string, cwd: string): string {
+  if (inputPath === "~") return homedir();
+  if (inputPath.startsWith("~/")) return resolve(homedir(), "." + inputPath.slice(1));
+  if (isAbsolute(inputPath)) return resolve(inputPath);
+  return resolve(cwd, inputPath);
+}
+
+export function isWithinWorkspace(root: string, target: string): boolean {
+  const rel = relative(resolve(root), resolve(target));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+export function hasParentTraversal(value: string): boolean {
+  return value.split(/[\\/]+/).includes("..");
+}
+
+export function getExternalWorkspaceAccess(
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+  cwd: string,
+): ExternalAccessRequest | null {
+  if (!input || typeof input !== "object") return null;
+
+  if (toolName === "read") {
+    const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
+    if (!path) return null;
+    const resolved = resolveWorkspacePath(path, cwd);
+    return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
+  }
+
+  if (toolName === "edit") {
+    const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
+    if (!path) return null;
+    const resolved = resolveWorkspacePath(path, cwd);
+    return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
+  }
+
+  if (toolName === "write") {
+    const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
+    if (!path) return null;
+    const resolved = normalizeWritePath(path, cwd).path;
+    return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
+  }
+
+  if (toolName === "grep") {
+    const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
+    const base = resolveWorkspacePath(baseInput, cwd);
+    return isWithinWorkspace(cwd, base) ? null : { summary: base };
+  }
+
+  if (toolName === "findRead") {
+    const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
+    const base = resolveWorkspacePath(baseInput, cwd);
+    if (!isWithinWorkspace(cwd, base)) return { summary: base };
+    const pattern = typeof input.pattern === "string" ? input.pattern : "";
+    if (pattern && hasParentTraversal(pattern)) {
+      return { summary: `${base} (pattern escapes base: ${pattern})` };
+    }
+  }
+
+  return null;
+}
+
 export default function (pi: ExtensionAPI) {
-  pi.on("tool_call", async (event, _ctx) => {
+  let config: WorkspaceBoundaryConfig = { ...DEFAULT_CONFIG };
+  let configLoadPromise: Promise<void> | null = null;
+
+  const ensureConfigLoaded = async () => {
+    if (!configLoadPromise) {
+      configLoadPromise = (async () => {
+        config = await loadConfig();
+      })();
+    }
+    await configLoadPromise;
+  };
+
+  const setExternalFilePolicy = async (policy: ExternalFilePolicy) => {
+    config.externalFilePolicy = policy;
+    await saveConfig(config);
+  };
+
+  pi.registerCommand("workspace-permissions", {
+    description: "Show or set external file access policy (deny, ask, accept)",
+    handler: async (args, ctx) => {
+      await ensureConfigLoaded();
+      const arg = args[0]?.toLowerCase();
+      if (arg === "deny" || arg === "ask" || arg === "accept") {
+        await setExternalFilePolicy(arg);
+        if (ctx.hasUI) ctx.ui.notify(`External file access policy set to '${arg}'.`, "info");
+        return;
+      }
+      if (!ctx.hasUI) return;
+      const choice = await ctx.ui.select(
+        "External file access policy",
+        POLICY_OPTIONS.map((p) => `${p}${p === config.externalFilePolicy ? " (current)" : ""}`),
+      );
+      if (!choice) return;
+      const selected = choice.split(" ")[0] as ExternalFilePolicy;
+      await setExternalFilePolicy(selected);
+      ctx.ui.notify(`External file access policy set to '${selected}'.`, "info");
+    },
+  });
+
+  pi.on("session_start", async () => {
+    await ensureConfigLoaded();
+  });
+
+  pi.on("tool_call", async (event, ctx: ExtensionContext) => {
+    await ensureConfigLoaded();
+
     const mode = getPermissionMode();
-    if (mode === "accept-all") return;
+    if (mode !== "accept-all") {
+      const toolName = (event as any).toolName;
+      const input: any = (event as any).input ?? (event as any).args;
+
+      if (toolName === "bash" || toolName === "Bash") {
+        const cmd = input?.command;
+        if (typeof cmd === "string") {
+          if (/^cd(\s|$)/.test(cmd.trim()) && isNoopCd(cmd, ctx.cwd)) {
+            return;
+          }
+          if (!isSafeBash(cmd)) {
+            if (mode === "manual") {
+              return { block: true, reason: "manual permission mode: bash command not pre-approved" };
+            }
+            return { block: true, reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES` };
+          }
+        }
+      }
+    }
 
     const toolName = (event as any).toolName;
     const input: any = (event as any).input ?? (event as any).args;
+    const external = getExternalWorkspaceAccess(toolName, input, ctx.cwd);
+    if (!external || config.externalFilePolicy === "accept") return;
 
-    // Only gate bash-family tools for now; pi has its own confirmation flow
-    // for destructive edits via the TUI.
-    if (toolName === "bash" || toolName === "Bash") {
-      const cmd = input?.command;
-      if (typeof cmd === "string") {
-        // Allow `cd` when it resolves to cwd (no-op).  AIs frequently emit
-        // `cd <project> && …` even when already in the right directory.
-        if (/^cd(\s|$)/.test(cmd.trim()) && isNoopCd(cmd, process.cwd())) {
-          return;
-        }
-        if (!isSafeBash(cmd)) {
-          if (mode === "manual") {
-            return { block: true, reason: "manual permission mode: bash command not pre-approved" };
-          }
-          // auto: block when not whitelisted
-          return { block: true, reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES` };
-        }
-      }
+    const reasonBase = `external file access outside workspace: ${external.summary}`;
+    if (config.externalFilePolicy === "deny") {
+      return { block: true, reason: reasonBase };
+    }
+    if (!ctx.hasUI) {
+      return { block: true, reason: `${reasonBase} (policy=ask but no UI available)` };
+    }
+
+    const allowed = await ctx.ui.confirm(
+      "Allow external file access?",
+      [
+        `${toolName} wants to access a path outside the current workspace.`,
+        "",
+        `Target: ${external.summary}`,
+        `Workspace: ${ctx.cwd}`,
+        "",
+        "Use /workspace-permissions deny|ask|accept to change this policy.",
+      ].join("\n"),
+    );
+    if (!allowed) {
+      return { block: true, reason: `external file access denied by user: ${external.summary}` };
     }
   });
 }

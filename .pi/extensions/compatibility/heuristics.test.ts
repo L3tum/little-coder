@@ -7,7 +7,7 @@ describe("findCompatibleToolName", () => {
   });
 
   it("matches camel/snake and plural heuristics", () => {
-    expect(findCompatibleToolName("Readeditverify", ["readEditVerify", "findRead"])).toBe("readEditVerify");
+    expect(findCompatibleToolName("Findread", ["findRead", "glob"])).toBe("findRead");
   });
 });
 

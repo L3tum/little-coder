@@ -10,14 +10,14 @@ user-invocable: false
 Find files matching a glob pattern and read their contents in one call. Combines Glob + Read so you don't need two separate tool calls.
 
 REQUIRED: pattern (glob pattern like "**/*.py")
-OPTIONAL: path (base directory, defaults to cwd), maxFiles (default 5, max 50), maxLines per file (default 100, 0 = unlimited)
+OPTIONAL: path (base directory, defaults to cwd), maxFiles (default 5, max 50), maxCharacters per file (default 4000, 0 = unlimited)
 
 RULES:
 - Use ** for recursive matching across directories
 - Returns each file's absolute path followed by its content, separated by headers
 - **Always use conservative limits** — this tool can easily overload the context window
-- Default maxFiles is 5 and default maxLines is 100; increase only when needed
-- Never use maxFiles > 10 or maxLines > 200 without a specific reason
+- Default maxFiles is 5 and default maxCharacters is 4000; increase only when needed
+- Never use maxFiles > 10 or maxCharacters > 10000 without a specific reason
 - Paths are resolved relative to the `path` argument or cwd
 
 WHEN TO USE findRead:
@@ -37,10 +37,10 @@ WHEN TO USE codebase_memory_search_graph INSTEAD:
 
 EXAMPLE (conservative — preferred):
 ```tool
-{"name": "findRead", "input": {"pattern": "**/*.py", "maxFiles": 3, "maxLines": 50}}
+{"name": "findRead", "input": {"pattern": "**/*.py", "maxFiles": 3, "maxCharacters": 4000}}
 ```
 
-EXAMPLE (with line limit):
+EXAMPLE (with character limit):
 ```tool
-{"name": "findRead", "input": {"pattern": "src/**/*.ts", "path": "/home/user/project", "maxFiles": 5, "maxLines": 100}}
+{"name": "findRead", "input": {"pattern": "src/**/*.ts", "path": "/home/user/project", "maxFiles": 5, "maxCharacters": 8000}}
 ```

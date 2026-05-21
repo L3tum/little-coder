@@ -73,7 +73,78 @@ if (!existsSync(piEntry)) {
   process.exit(1);
 }
 
+function readJson(path) {
+  try {
+    return JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function resolveExtensionEntry(resourcePath) {
+  if (!existsSync(resourcePath)) return null;
+  try {
+    if (!statSync(resourcePath).isDirectory()) return resourcePath;
+    for (const name of ["index.ts", "index.js", "index.mjs", "index.cjs"]) {
+      const candidate = join(resourcePath, name);
+      if (existsSync(candidate)) return candidate;
+    }
+    const pkg = readJson(join(resourcePath, "package.json"));
+    if (typeof pkg?.main === "string") {
+      const mainPath = resolve(resourcePath, pkg.main);
+      if (existsSync(mainPath)) return mainPath;
+    }
+    const codeFiles = readdirSync(resourcePath)
+      .filter((name) => /\.(?:[cm]?js|ts)$/.test(name))
+      .filter((name) => !name.endsWith(".d.ts"))
+      .sort();
+    if (codeFiles.length === 1) return join(resourcePath, codeFiles[0]);
+  } catch {
+    return null;
+  }
+  return resourcePath;
+}
+
+function addPiResources(args, flag, baseDir, resources) {
+  if (!Array.isArray(resources)) return;
+  for (const resource of resources) {
+    if (typeof resource !== "string" || resource.length === 0) continue;
+    const requestedPath = resolve(baseDir, resource);
+    const resolvedPath = flag === "--extension"
+      ? resolveExtensionEntry(requestedPath)
+      : requestedPath;
+    if (!resolvedPath || !existsSync(resolvedPath)) {
+      console.warn(`little-coder: skipping missing ${flag.slice(2)} resource ${requestedPath}`);
+      continue;
+    }
+    args.push(flag, resolvedPath);
+  }
+}
+
+function bundledPackageArgs(pkgJson) {
+  const args = [];
+  const packageNames = Array.isArray(pkgJson?.littleCoder?.packages)
+    ? pkgJson.littleCoder.packages
+    : [];
+
+  for (const packageName of packageNames) {
+    if (typeof packageName !== "string" || packageName.length === 0) continue;
+    const pkgJsonPath = join(pkgRoot, "node_modules", ...packageName.split("/"), "package.json");
+    const depPkgJson = readJson(pkgJsonPath);
+    const manifest = depPkgJson?.pi;
+    if (!manifest || typeof manifest !== "object") continue;
+    const depRoot = dirname(pkgJsonPath);
+    addPiResources(args, "--extension", depRoot, manifest.extensions);
+    addPiResources(args, "--skill", depRoot, manifest.skills);
+    addPiResources(args, "--prompt-template", depRoot, manifest.prompts);
+    addPiResources(args, "--theme", depRoot, manifest.themes);
+  }
+
+  return args;
+}
+
 // ---- 4. Auto-discover bundled extensions ----
+const rootPkgJson = readJson(join(pkgRoot, "package.json")) ?? {};
 const extDir = join(pkgRoot, ".pi", "extensions");
 const extArgs = [];
 if (existsSync(extDir)) {
@@ -89,15 +160,10 @@ if (existsSync(extDir)) {
     }
   }
 }
+const packageArgs = bundledPackageArgs(rootPkgJson);
 
 // ---- 5. Update check (best-effort, blocks on TTY prompt only) ----
-let currentVersion = "0.0.0";
-try {
-  const pkgJson = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf-8"));
-  if (typeof pkgJson?.version === "string") currentVersion = pkgJson.version;
-} catch {
-  // ignore — update-check just won't fire if we can't read the version
-}
+const currentVersion = typeof rootPkgJson?.version === "string" ? rootPkgJson.version : "0.0.0";
 const exitAfterCheck = await checkForUpdate(currentVersion);
 if (exitAfterCheck) {
   // Successful update happened; user needs to re-run the new binary.
@@ -117,6 +183,7 @@ const piArgs = [
   "--no-extensions",
   ...(existsSync(agentsMd) ? ["--system-prompt", agentsMd] : []),
   ...extArgs,
+  ...packageArgs,
   ...userArgs,
 ];
 

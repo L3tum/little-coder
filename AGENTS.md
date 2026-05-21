@@ -12,6 +12,7 @@ Instead, proactively write the necessary background scripts (Python, shell, etc.
 
 - **write refuses on existing files.** Use **edit** with exact `old_string` / `new_string` to modify. If `old_string` appears multiple times, add surrounding context until it is unique.
 - **bash / ShellSession default timeout is 30 s.** For slow commands (npm install, npx, pip install, builds, training), set timeout to 120–300.
+- **Prefer tool-native cwd over `cd && ...`.** When `bash` supports `cwd`, use it instead of prepending `cd <dir> &&`.
 - **Inspectability matters.** Use `tools` (tool) or `/tools` (command) to inspect the current tool registry. Use `skills` or `/skills` to inspect installed skills.
 - **Browser tools are on-demand.** If a task needs interactive browsing, call `enableBrowserTools` first, then use BrowserNavigate / BrowserExtract / BrowserClick / BrowserType / BrowserScroll / BrowserBack / BrowserHistory.
 
@@ -28,7 +29,6 @@ Use the actual tool names exactly as registered.
 ## Composite / high-leverage tools
 
 - `findRead` > `glob` + `read`
-- `readEditVerify` > `read` + `edit` + `read`
 - `codebase_memory_search_graph` > `grep` for structural code navigation
 
 ## Discovery / capability tools
@@ -65,7 +65,7 @@ Skills live under the `skills/` directory at the repo root:
 
 | Directory | Purpose | Count |
 |-----------|---------|-------|
-| `skills/tools/` | Per-tool usage guidance cards (injected on demand) | 14 |
+| `skills/tools/` | Per-tool usage guidance cards (injected on demand) | 13 |
 | `skills/knowledge/` | Algorithm cheat sheets (keyword-scored injection) | 13 |
 | `skills/protocols/` | Research/cite/decomposition workflows | 3 |
 
@@ -85,12 +85,14 @@ When you see these blocks, trust them — they were selected for the current tur
 **Prefer composite/efficient tools over naive alternatives.** Every tool call costs context — fewer, smarter calls beat more, dumber ones.
 
 - **findRead** > `glob` + `read`
-- **readEditVerify** > `read` + `edit` + `read`
 - **codebase_memory_search_graph** > `grep` for structural code navigation
 - **grep** > `findRead` when you only need text matches
 - **glob** > `findRead` when you only need file paths
+- **glob`/`read`/`findRead`** > ad-hoc `bash`/`python` for file listing, path checks, and file reading
 
-**Context budget is precious.** Before calling `findRead`, ask: do you really need all of that content? Start with `maxFiles: 3` and `maxLines: 50`, then increase only if needed.
+**Context budget is precious.** Before calling `findRead`, ask: do you really need all of that content? Start with `maxFiles: 3` and `maxCharacters: 4000`, then increase only if needed.
+
+Avoid `python - <<'PY'` or `bash` for tasks already covered by first-class tools unless you need control flow or output formatting those tools cannot provide.
 
 # Guidelines
 

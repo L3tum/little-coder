@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { glob } from "glob";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -176,27 +176,32 @@ export default function (pi: ExtensionAPI) {
       "Combines glob + read so you don't need two separate tool calls. " +
       "Returns each file's path followed by its content, separated by headers. " +
       "Use maxFiles to limit how many files are read (default 5). " +
-      "Use maxLines to limit lines per file (default 100, 0 = unlimited). " +
-      "WARNING: this tool can easily overload the context window — always use the lowest maxFiles/maxLines that gets the job done."
+      "Use maxCharacters to limit characters per file (default 4000, 0 = unlimited). " +
+      "WARNING: this tool can easily overload the context window — always use the lowest maxFiles/maxCharacters that gets the job done."
     ,
-    promptSnippet: "findRead(pattern, path?, maxFiles?, maxLines?): glob + read in one call.",
+    promptSnippet: "findRead(pattern, path?, maxFiles?, maxCharacters?): glob + read in one call.",
     parameters: Type.Object({
       pattern: Type.String({ description: "Glob pattern e.g. **/*.py" }),
       path: Type.Optional(Type.String({ description: "Base directory (default: cwd)" })),
       maxFiles: Type.Optional(Type.Number({ description: "Max files to read (default 10, max 50)" })),
-      maxLines: Type.Optional(Type.Number({ description: "Max lines per file (default 200, 0 = unlimited)" })),
+      maxCharacters: Type.Optional(Type.Number({ description: "Max characters per file (default 4000, 0 = unlimited)" })),
     }),
     prepareArguments(args) {
       if (!args || typeof args !== "object") return args as any;
       const input = args as Record<string, unknown>;
+      const maxCharacters = typeof input.maxCharacters === "number"
+        ? input.maxCharacters
+        : typeof input.max_characters === "number"
+          ? input.max_characters
+          : undefined;
       return {
         pattern: input.pattern,
         path: typeof input.path === "string" ? input.path : input.file_path,
         maxFiles: typeof input.maxFiles === "number" ? input.maxFiles : input.max_files,
-        maxLines: typeof input.maxLines === "number" ? input.maxLines : input.max_lines,
+        maxCharacters,
       } as any;
     },
-    async execute(_id, { pattern, path, maxFiles, maxLines }): Promise<any> {
+    async execute(_id, { pattern, path, maxFiles, maxCharacters }): Promise<any> {
       try {
         const base = path || process.cwd();
         let matches: string[] = await glob(pattern, { cwd: base });
@@ -208,7 +213,7 @@ export default function (pi: ExtensionAPI) {
 
         const limit = Math.min(maxFiles ?? 5, 50);
         const capped = matches.slice(0, limit);
-        const lineLimit = maxLines ?? 100;
+        const charLimit = maxCharacters ?? 4000;
         const truncated: string[] = [];
 
         const parts: string[] = [];
@@ -221,12 +226,9 @@ export default function (pi: ExtensionAPI) {
           try {
             const buf = readFileSync(abs);
             let text = buf.toString("utf-8");
-            if (lineLimit > 0) {
-              const lines = text.split("\n");
-              if (lines.length > lineLimit) {
-                text = lines.slice(0, lineLimit).join("\n");
-                truncated.push(rel);
-              }
+            if (charLimit > 0 && text.length > charLimit) {
+              text = text.slice(0, charLimit);
+              truncated.push(rel);
             }
             parts.push(`--- ${abs} ---\n${text}`);
           } catch (e) {
@@ -239,152 +241,12 @@ export default function (pi: ExtensionAPI) {
           suffix.push(`\n[Showing ${limit} of ${matches.length} matched files. Increase maxFiles to see more.]`);
         }
         if (truncated.length > 0) {
-          suffix.push(`[Truncated to ${lineLimit} lines: ${truncated.join(", ")}]`);
+          suffix.push(`[Truncated to ${charLimit} characters: ${truncated.join(", ")}]`);
         }
 
         return {
           content: [{ type: "text", text: parts.join("\n\n") + suffix.join("\n") }],
           details: { filesRead: capped.length, totalMatched: matches.length },
-        };
-      } catch (e) {
-        return {
-          content: [{ type: "text", text: `Error: ${(e as Error).message}` }],
-          details: { verified: false, applied: 0, skipped: 0, lines: 0 },
-          isError: true,
-        };
-      }
-    },
-  });
-
-  // ── readEditVerify ────────────────────────────────────────────────────
-  pi.registerTool({
-    name: "readEditVerify",
-    label: "ReadEditVerify",
-    description:
-      "Read a file, apply text replacements in place, write back, and verify — all in one call. " +
-      "Combines read + edit + verify so you don't need multiple tool calls. " +
-      "Each replacement is an old_string → new_string pair applied sequentially. " +
-      "After writing, the tool reads back the file and confirms the content matches.",
-    promptSnippet: "readEditVerify(path, replacements): read, patch, write, and verify in one call.",
-    parameters: Type.Object({
-      path: Type.String({ description: "Path of the file to edit" }),
-      replacements: Type.Array(
-        Type.Object({
-          old_string: Type.String({ description: "Exact text to find" }),
-          new_string: Type.String({ description: "Replacement text" }),
-        }),
-        { description: "Sequential text replacements to apply" },
-      ),
-    }),
-    prepareArguments(args) {
-      if (!args || typeof args !== "object") return args as any;
-      const input = args as Record<string, unknown> & {
-        replacements?: Array<Record<string, unknown>>;
-        replacement?: Record<string, unknown>;
-      };
-      const replacements = Array.isArray(input.replacements)
-        ? input.replacements
-        : input.replacement && typeof input.replacement === "object"
-          ? [input.replacement]
-          : [];
-      const topLevelOld = typeof input.old_string === "string"
-        ? input.old_string
-        : input.oldText;
-      const topLevelNew = typeof input.new_string === "string"
-        ? input.new_string
-        : input.newText;
-      const normalized = replacements.map((r) => ({
-        old_string: typeof r.old_string === "string" ? r.old_string : r.oldText,
-        new_string: typeof r.new_string === "string" ? r.new_string : r.newText,
-      }));
-      if (typeof topLevelOld === "string" && typeof topLevelNew === "string") {
-        normalized.push({ old_string: topLevelOld, new_string: topLevelNew });
-      }
-      return {
-        path: typeof input.path === "string" ? input.path : input.file_path,
-        replacements: normalized,
-      } as any;
-    },
-    async execute(_id, { path, replacements }): Promise<any> {
-      try {
-        const abs = isAbsolute(path) ? path : join(process.cwd(), path);
-        if (!existsSync(abs)) {
-          return {
-            content: [{ type: "text", text: `Error: File not found: ${abs}` }],
-            details: { verified: false, applied: 0, skipped: 0, lines: 0 },
-            isError: true,
-          };
-        }
-
-        // Read
-        let content: string;
-        try {
-          content = readFileSync(abs, "utf-8");
-        } catch (e) {
-          return {
-            content: [{ type: "text", text: `Error reading file: ${(e as Error).message}` }],
-            details: { verified: false, applied: 0, skipped: 0, lines: 0 },
-            isError: true,
-          };
-        }
-
-        // Apply replacements sequentially
-        const applied: number[] = [];
-        const skipped: number[] = [];
-        for (let i = 0; i < replacements.length; i++) {
-          const { old_string, new_string } = replacements[i] as { old_string: string; new_string: string };
-          if (content.includes(old_string)) {
-            content = content.split(old_string).join(new_string);
-            applied.push(i);
-          } else {
-            skipped.push(i);
-          }
-        }
-
-        // Write back
-        try {
-          writeFileSync(abs, content, "utf-8");
-        } catch (e) {
-          return {
-            content: [{ type: "text", text: `Error writing file: ${(e as Error).message}` }],
-            details: { verified: false, applied: applied.length, skipped: skipped.length, lines: 0 },
-            isError: true,
-          };
-        }
-
-        // Verify: read back and compare
-        let verified = false;
-        let lineCount = 0;
-        try {
-          const written = readFileSync(abs, "utf-8");
-          verified = written === content;
-          lineCount = written.split("\n").length - (written.endsWith("\n") ? 1 : 0) +
-            (written.length > 0 && !written.endsWith("\n") ? 1 : 0);
-        } catch (e) {
-          return {
-            content: [
-              { type: "text", text: `Written but verification read failed: ${(e as Error).message}` },
-            ],
-            details: { verified: false, applied: applied.length, skipped: skipped.length, lines: 0 },
-            isError: true,
-          };
-        }
-
-        const lines: string[] = [
-          `Edited ${abs} (${lineCount} lines)`,
-          `Replacements: ${applied.length} applied, ${skipped.length} skipped`,
-          `Verification: ${verified ? "OK — content matches" : "MISMATCH — written content differs from expected"}`,
-        ];
-        if (applied.length > 0) {
-          lines.push(`Applied indices: ${applied.join(", ")}`);
-        }
-        if (skipped.length > 0) {
-          lines.push(`Skipped (text not found): ${skipped.join(", ")}`);
-        }
-
-        return {
-          content: [{ type: "text", text: lines.join("\n") }],
-          details: { verified, applied: applied.length, skipped: skipped.length, lines: lineCount },
         };
       } catch (e) {
         return {

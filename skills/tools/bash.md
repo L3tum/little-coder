@@ -10,17 +10,18 @@ user-invocable: false
 Execute a shell command and return stdout+stderr.
 
 REQUIRED: command (shell command string)
-OPTIONAL: timeout (seconds, default 30 - use 120-300 for installs/builds)
+OPTIONAL: timeout (seconds, default 30 - use 120-300 for installs/builds), cwd (working directory under current workspace; defaults to current working directory)
 
 RULES:
-- Stateless: each call starts fresh (cd does not persist)
-- Use absolute paths or chain with && (e.g. "cd /path && make")
+- Stateless: each call starts fresh
+- Prefer `cwd` over `cd /path && ...`
+- Prefer `glob` / `read` / `findRead` over bash for simple file listing and file reads
 - Use timeout=120 for: pip install, npm install, builds, downloads
 - Returns combined stdout and stderr
 
 EXAMPLE:
 ```tool
-{"name": "bash", "input": {"command": "ls -la /path/to/project/"}}
+{"name": "bash", "input": {"command": "ls -la", "cwd": "/path/to/project"}}
 ```
 
 EXAMPLE with timeout:
