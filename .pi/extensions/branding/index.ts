@@ -22,6 +22,13 @@ import { fileURLToPath } from "node:url";
 
 const TAGLINE = "A coding agent tuned for small local models";
 
+// Brand accent — "honey" #E15A1F from the brand book (v1.0). Emitted as a
+// 24-bit truecolor SGR so the cursor matches the documented hex exactly,
+// independent of the active pi theme's named "accent" colour. \x1b[39m resets
+// only the foreground, leaving any surrounding bold/style intact.
+const HONEY = "\x1b[38;2;225;90;31m";
+const honeyFg = (s: string): string => `${HONEY}${s}\x1b[39m`;
+
 function readVersion(): string {
   // .pi/extensions/branding/index.ts → up 3 → package root (where package.json lives).
   // The same path math works in the local checkout (loaded via tsx) and in the
@@ -40,8 +47,15 @@ function readVersion(): string {
 const VERSION = readVersion();
 
 function buildHeader(theme: Theme): string[] {
+  // Brand-book "prompt lockup" (the variant the brand reserves for terminals
+  // and dark surfaces): a honey prompt caret, the wordmark in the foreground,
+  // and the honey block cursor — "lc▌"'s ready-to-type punchline, applied to
+  // the full wordmark. Honey stays the only accent, well under the brand's
+  // ~10%-of-layout cap.
   const logo =
-    theme.bold(theme.fg("accent", "little-coder")) +
+    honeyFg("> ") +
+    theme.bold("little-coder") +
+    honeyFg("▌") +
     theme.fg("dim", ` v${VERSION}`);
   const tagline = theme.fg("muted", TAGLINE);
   const dim = (s: string) => theme.fg("dim", s);

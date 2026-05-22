@@ -2,6 +2,45 @@
 
 All notable changes to little-coder are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and little-coder's public interface (CLI, providers, tools, skills) follows semver starting at `v0.0.1` post-rename.
 
+## [v1.5.1] — 2026-05-22
+
+A branding release — no behaviour changes. little-coder now wears the v1.0 brand book: the warm **paper / ink / honey** palette (`#F2EBDC` · `#1A1410` · `#E15A1F`), the `lc▌` block-cursor mark, and IBM Plex Mono. The "ready to type" cursor is the punchline — it ties the CLI heritage into the identity without saying so.
+
+### Changed
+- **README hero is now the brand-book terminal banner.** A single self-contained SVG (`assets/banner.svg`, recreating the brand book's "github readme · hero" slide) replaces the old startup screenshot: ink terminal card, `lc▌` monogram in honey, the wordmark + tagline, and the verifiable headline numbers (`qwen3.6-35b-a3b`, terminal-bench 2.0 24.6%, aider polyglot 45.56%). IBM Plex Mono is embedded so it renders in-face on GitHub, with a `ui-monospace` fallback.
+- **TUI header adopts the honey "prompt lockup."** The interactive startup header (`.pi/extensions/branding/index.ts`) now renders `> little-coder▌` with a honey prompt caret and block cursor — the brand's variant for terminals and dark surfaces. Honey is emitted as a 24-bit truecolor SGR so it matches `#E15A1F` exactly regardless of the active pi theme.
+
+### Removed
+- The stale purple (`#7c3aed`) `docs/assets/startup.svg` mockup (`v0.0.1` / `ollama/qwen3.5`), now superseded by the on-brand banner.
+
+---
+
+## [v1.5.0] — 2026-05-22
+
+A reliability + UX release centered on the harness's intervention machinery. Issue [#8](https://github.com/itayinbarr/little-coder/issues/8) reproduced on 1.4.3 through a *new* mechanism, and chasing it down fixed a cluster of related symptoms: thinking never actually turning off after a budget breach, a spurious "empty response" nag after interrupts, and a noisy stack of warnings around every harness decision. Harness interventions now speak with one voice, and the thinking-budget cap is more generous.
+
+### Fixed
+- **Thinking-budget recovery no longer dies on a stale `pi` ([#8](https://github.com/itayinbarr/little-coder/issues/8), second reproduction).** The v1.0.0 fix deferred recovery (`setThinkingLevel("off")` + the commit-to-an-implementation follow-up) to a `turn_end` handler that ran, after a `setImmediate` yield, against the module-scope `pi` (`ExtensionAPI`). But the over-budget `ctx.abort()` makes pi's `agent_end` run auto-retry / auto-compaction (both enabled in `.pi/settings.json`; `agent-session.js:761` "compact before sending — catches aborted responses"), which **replaces the session** — `dispose()` → `ExtensionRunner.invalidate()` (`agent-session.js:516`) marks the captured `pi` stale. The `setImmediate` yield was exactly what let that replacement land *before* the deferred recovery, so the recovery touched a stale `pi` and threw (`"This extension ctx is stale after session replacement or reload"`). Net effect: thinking was never disabled (so the *next* step kept thinking) and the follow-up never reached the model (so the agent appeared to stop). The fix does the entire recovery **synchronously inside `message_update`, before `ctx.abort()`**, while `pi` is still live — no deferred handler, no `setImmediate`, nothing that can run against a stale reference. Thanks to the reporter on #8 for the minimal repro and the stale-`ctx` diagnosis.
+- **Thinking stays off across the forced restart turn.** Even with recovery firing, the post-abort run could re-resolve the thinking level back to the profile default. A `forcedOff` latch now re-asserts `"off"` at the start of every turn from a budget breach until your *next* genuine prompt (the `input` event), at which point the level you actually had is restored — so a new task thinks normally and we don't leave thinking globally disabled. State is also cleared on `session_start` (a new session / `/clear` is a clean slate).
+- **No more spurious "your previous response was empty" after an interrupt.** `quality-monitor` assessed *every* `turn_end`, including turns the user interrupted with ESC or that the harness aborted (thinking-budget, turn-cap) — which carry partial/empty content and `stopReason: "aborted"`. It then steered an `empty_response` correction onto your *next* prompt. It now skips `stopReason: "aborted"` turns entirely; genuinely-empty *completed* turns are still flagged.
+- **Per-model profiles are no longer silently skipped on colon-style model ids.** `benchmark-profiles` prefix-matched model keys literally, so a hyphenated profile key (`llamacpp/qwen3.6-35b-a3b`) never matched a runtime id using a colon (`llamacpp/qwen3.6:35b-a3b`) and every such model fell back to `default_model_profile`. Matching is now separator-insensitive (`:` ≡ `-`).
+- **Existing files can no longer be silently overwritten via Write.** pi ships a built-in `write` tool that overwrites existing files (`core/tools/write.js`) and shadowed little-coder's custom guarded `write`, so the whole-file-rewrite guard the benchmark results depend on had stopped firing. The guard now runs on the `tool_call` event — it catches whichever `write` implementation executes, normalizes the path in place, and blocks writes to existing files with a corrected Edit recipe (pi's `edit` takes `edits: [{oldText, newText}]`, not `old_string`/`new_string`).
+
+### Added
+- **`/clear` command.** Starts a fresh session as if little-coder were closed and relaunched — re-renders the banner, rebuilds the AGENTS.md/system-prompt context, and resets session-scoped extension state — via `ctx.newSession()`. (pi's built-in equivalent is `/new`; `/clear` is the alias muscle-memory expects.)
+- **One-line "harness intervention" UX.** Every moment the scaffolding overrides or redirects the model — thinking-budget cap, write-guard redirect, turn-cap, finalize-warn, quality-monitor corrections, output-parser nudges — now surfaces a single, uniformly-worded line (`harness intervention: …`) instead of each extension's own ad-hoc warning. Helper at `.pi/extensions/_shared/intervention.ts`.
+- **pi's bare "Operation aborted" marker is suppressed.** With harness interventions carrying their own line and a user ESC being self-evident, the stacked red marker was noise. pi is a normal dependency (not vendored), so this ships as an idempotent, dependency-free source patch (`scripts/patch-pi.mjs`) applied on `postinstall` **and** re-applied on every launch by the launcher — it self-heals if install scripts were skipped or pi was reinstalled, and **fails safe**: if a future pi changes that code the patch silently no-ops (you'd just see the marker again) rather than breaking install or launch. A test (`scripts/patch-pi.test.mjs`) fails loudly the moment the installed pi no longer matches, so a pi bump is a caught CI signal to refresh one string — never a silent regression.
+
+### Changed
+- **Thinking-budget cap raised 2048 → 4096 tokens** across `default_model_profile` and every per-model profile (the `terminal_bench` / `gaia` benchmark overrides keep their tuned values). The hardcoded fallback in the `thinking-budget` extension matches.
+
+### Notes for upgraders
+- No CLI flag, `models.json` shape, or per-model-profile *schema* changes. The only `.pi/settings.json` value change is `thinking_budget` (2048 → 4096); if you'd pinned it lower on purpose, re-set it in your own settings.
+- The custom `write` tool the `write-guard` extension used to register is gone — writes go through pi's built-in `write`, guarded at the `tool_call` event. If you depended on the old tool's `file_path` arg name in a fork, note pi's built-in uses `path` (both are accepted by the guard).
+- The pi source patch targets `@earendil-works/pi-coding-agent` 0.75.x. If you bundle a newer pi and the abort marker reappears, run `npx vitest run scripts/patch-pi.test.mjs` — a failure tells you to refresh the find/replace in `scripts/patch-pi.mjs`.
+
+---
+
 ## [v1.4.3] — 2026-05-19
 
 Follow-up to v1.4.2: clean up two cosmetic regressions that the @earendil-works scope migration surfaced.

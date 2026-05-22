@@ -138,3 +138,20 @@ export function buildCorrectionMessage(reason: string, knownTools: Set<string> =
 
   return corrections[reason] ?? `Issue detected: ${reason}. Please review your last action and try a different approach.`;
 }
+
+// Short, user-facing phrasing for the harness-intervention line (distinct from
+// buildCorrectionMessage, which is the verbose text sent to the model).
+export function phraseForUser(reason: string): string {
+  if (reason.startsWith("unknown_tool:")) {
+    return `the model called a tool that doesn't exist (${reason.slice("unknown_tool:".length)})`;
+  }
+  if (reason.startsWith("malformed_args:")) {
+    return `the model's tool arguments were malformed (${reason.slice("malformed_args:".length)})`;
+  }
+  const phrases: Record<string, string> = {
+    empty_response: "the model returned an empty response",
+    empty_tool_name: "the model emitted a tool call with no name",
+    repeated_tool_call: "the model repeated its previous tool call verbatim",
+  };
+  return phrases[reason] ?? `quality issue (${reason})`;
+}

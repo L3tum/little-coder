@@ -60,30 +60,48 @@ function loadSettings(): void {
   }
 }
 
-function resolveProfile(providerSlashModel: string): ModelProfile {
-  loadSettings();
-  if (!settings) return {};
-  const profiles = settings.model_profiles ?? {};
-  const bench = process.env.LITTLE_CODER_BENCHMARK;
+// Normalize the separator between model-name segments so a profile key written
+// with hyphens (`llamacpp/qwen3.6-35b-a3b`) matches a runtime model id that uses
+// a colon (`llamacpp/qwen3.6:35b-a3b`) and vice-versa. Without this the prefix
+// match silently fails and EVERY model falls back to default_model_profile —
+// per-model thinking_budget / context_limit / temperature are skipped (the
+// quirk surfaced in issue #8's reproduction). Dots (`qwen3.6`) are preserved.
+export function normKey(s: string): string {
+  return s.replace(/:/g, "-");
+}
 
-  // Exact match first, then prefix match (mirrors get_model_profile)
+// Pure resolver, exported for testing. Exact match → separator-insensitive
+// prefix match → default_model_profile, then benchmark_overrides if `bench` set.
+export function resolveProfileFrom(
+  s: LittleCoderSettings | null,
+  providerSlashModel: string,
+  bench?: string,
+): ModelProfile {
+  if (!s) return {};
+  const profiles = s.model_profiles ?? {};
+  const target = normKey(providerSlashModel);
+
   let base: ModelProfile | undefined = profiles[providerSlashModel];
   if (!base) {
     for (const [pattern, p] of Object.entries(profiles)) {
-      if (providerSlashModel.startsWith(pattern)) {
+      if (target === normKey(pattern) || target.startsWith(normKey(pattern))) {
         base = p;
         break;
       }
     }
   }
-  if (!base) base = settings.default_model_profile ?? {};
+  if (!base) base = s.default_model_profile ?? {};
 
-  // Strip + apply benchmark_overrides if set
   const { benchmark_overrides, ...basePlain } = { ...base };
   if (bench && benchmark_overrides && benchmark_overrides[bench]) {
     return { ...basePlain, ...benchmark_overrides[bench] };
   }
   return basePlain;
+}
+
+function resolveProfile(providerSlashModel: string): ModelProfile {
+  loadSettings();
+  return resolveProfileFrom(settings, providerSlashModel, process.env.LITTLE_CODER_BENCHMARK);
 }
 
 // Per-benchmark tools that should always have skill cards present on turn 1,

@@ -1,18 +1,19 @@
+![little-coder — a coding agent for the laptop in front of you](assets/banner.svg)
+
+
 # little-coder
 
 **L3tum's fork of little-coder: a coding agent tuned for small local models, built on top of [pi](https://pi.dev).**
 
-![little-coder startup view](docs/assets/startup.svg)
-
 > **Fork note.** Maintained by **L3tum**. Historical paper / benchmark results in this README remain attributed to Itay Inbar's original little-coder work. Fork-era benchmarks: **TBD**.
 
-The research story behind source little-coder — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[*Honey, I Shrunk the Coding Agent*](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**.
+The research story behind all this — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[*Honey, I Shrunk the Coding Agent*](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**. Start there if you want the "why"; stay here for the "how".
 
 ## Highlights
 
 - Carries forward recent little-coder work: pi-based scaffold, benchmark harness, ShellSession / Browser / Evidence tool families, GAIA / Terminal-Bench / Aider support.
 - Post-fork cleanup: removed confusing `readEditVerify`, tightened compatibility repair around tool calls, made `tools` / `skills` agent-callable, and moved Browser tools behind explicit `enableBrowserTools` loading.
-- Latest fork polish: bundled extension loading now comes from `package.json`, `bash` accepts `cwd`, out-of-worktree reads ask by default, `findRead` gained `maxCharacters`, and tool branding/messages were cleaned up.
+- Latest upstream merge: /clear, harness-intervention UX, write-guard-on-tool-call, the Pages site, and the refreshed banner/branding are all carried forward here.
 - Benchmarks for this fork: **TBD**.
 
 ## How it relates to pi
@@ -251,6 +252,8 @@ Current fork direction under **L3tum**:
 1. Keep source project's benchmark-backed scaffold intact while tightening runtime/tooling behavior.
 2. Land fork-specific quality-of-life changes first: compatibility cleanup, safer file access defaults, better tool loading, better CI automation.
 3. Re-run benchmarks only after this fork stabilizes enough for numbers to mean something.
+
+4. Keep tracking upstream's current knowledge-base-oriented work and pull in the pieces that fit this fork.
 
 **Benchmarks:** TBD.
 

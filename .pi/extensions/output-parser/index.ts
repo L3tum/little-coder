@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parseTextToolCalls } from "./parser.ts";
+import { harnessIntervention } from "../_shared/intervention.ts";
 
 // Detects malformed/fenced tool calls in assistant text and nudges the model
 // back onto native tool-calling. Active-repair (executing extracted calls
@@ -37,9 +38,9 @@ export default function (pi: ExtensionAPI) {
     if (calls.length === 0) return;
 
     const names = calls.map((c) => c.name).join(", ");
-    ctx.ui.notify(
-      `Detected ${calls.length} text-embedded tool call(s) [${names}] — nudging model to native tool calling`,
-      "warning",
+    harnessIntervention(
+      ctx,
+      `the model wrote ${calls.length} tool call(s) as text [${names}] — nudging it back to native tool calls.`,
     );
 
     // Queue a follow-up that will be delivered after the agent finishes.

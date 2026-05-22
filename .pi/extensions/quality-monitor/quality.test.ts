@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { assessResponse, buildCorrectionMessage } from "./quality.ts";
+import { describe, it, expect, beforeEach } from "vitest";
+import { assessResponse, buildCorrectionMessage, phraseForUser } from "./quality.ts";
+import setupQualityMonitor from "./index.ts";
 
 const known = new Set(["Read", "Write", "Edit", "Bash", "Glob", "Grep"]);
 
@@ -128,5 +129,70 @@ describe("buildCorrectionMessage", () => {
   });
   it("falls back to generic on unknown reason", () => {
     expect(buildCorrectionMessage("weird_thing")).toContain("weird_thing");
+  });
+});
+
+describe("phraseForUser", () => {
+  it("phrases known reasons in plain language", () => {
+    expect(phraseForUser("empty_response")).toMatch(/empty response/i);
+    expect(phraseForUser("repeated_tool_call")).toMatch(/repeated/i);
+  });
+  it("includes the tool name for parameterized reasons", () => {
+    expect(phraseForUser("unknown_tool:Frobnicate")).toContain("Frobnicate");
+    expect(phraseForUser("malformed_args:Edit")).toContain("Edit");
+  });
+});
+
+// ── turn_end handler: must skip interrupted/aborted turns ───────────────────
+function harness() {
+  const handlers: Record<string, ((e: any, c: any) => any)[]> = {};
+  const followUps: { msg: string; opts: any }[] = [];
+  const pi = {
+    handlers,
+    on(name: string, h: (e: any, c: any) => any) {
+      (handlers[name] ??= []).push(h);
+    },
+    sendUserMessage(msg: string, opts: any) {
+      followUps.push({ msg, opts });
+    },
+  };
+  const notifies: string[] = [];
+  const ctx = { ui: { notify: (m: string) => notifies.push(m) } };
+  setupQualityMonitor(pi as any);
+  return { pi, ctx, followUps, notifies };
+}
+async function fire(h: any, name: string, event: any) {
+  for (const fn of h.pi.handlers[name] ?? []) await fn(event, h.ctx);
+}
+
+describe("quality-monitor turn_end", () => {
+  let h: ReturnType<typeof harness>;
+  beforeEach(async () => {
+    h = harness();
+    await fire(h, "session_start", {}); // reset session-scoped counters
+  });
+
+  it("skips an aborted/interrupted turn — no empty_response correction", async () => {
+    // An ESC interrupt or harness abort produces a partial/empty message with
+    // stopReason "aborted". This is the escape-interrupt bug: it must NOT steer
+    // a 'your previous response was empty' correction onto the next prompt.
+    await fire(h, "turn_end", { message: { stopReason: "aborted", content: [] } });
+    expect(h.followUps).toHaveLength(0);
+    expect(h.notifies).toHaveLength(0);
+  });
+
+  it("flags a genuinely empty COMPLETED turn and steers a correction", async () => {
+    await fire(h, "turn_end", { message: { stopReason: "stop", content: [] } });
+    expect(h.followUps).toHaveLength(1);
+    expect(h.followUps[0].opts).toEqual({ deliverAs: "steer" });
+    expect(h.notifies[0]).toMatch(/harness intervention:/i);
+  });
+
+  it("passes a normal text turn without intervention", async () => {
+    await fire(h, "turn_end", {
+      message: { stopReason: "stop", content: [{ type: "text", text: "done." }] },
+    });
+    expect(h.followUps).toHaveLength(0);
+    expect(h.notifies).toHaveLength(0);
   });
 });

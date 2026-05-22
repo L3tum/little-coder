@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import setupExtension from "./index.ts";
 
 // Exercise the char→token conversion (matches local/context_manager.py)
@@ -13,170 +13,208 @@ describe("thinking budget token estimation", () => {
     expect(charsToTokens(7)).toBe(2);
     expect(charsToTokens(3500)).toBe(1000);
   });
-  it("2048 tokens ~ 7168 chars", () => {
-    // Budget trigger boundary: ceil(7169/3.5) = 2049 > 2048
-    expect(charsToTokens(7168)).toBe(2048);
-    expect(charsToTokens(7169)).toBeGreaterThan(2048);
+  it("4096 tokens ~ 14336 chars (the v1.5.0 default budget)", () => {
+    expect(charsToTokens(14336)).toBe(4096);
+    expect(charsToTokens(14337)).toBeGreaterThan(4096);
   });
 });
 
-// ── Issue #8 regression coverage ────────────────────────────────────────
-// Mock just enough of pi's ExtensionAPI for the handler choreography.
-// We capture every registered handler keyed by event name and drive them
-// directly to assert idempotency / sequencing.
+// ── Issue #8 regression coverage (second reproduction, 1.4.3) ───────────────
+// The bug: recovery (setThinkingLevel("off") + sendUserMessage) was deferred to
+// a `turn_end` handler that ran against the module-scope `pi` AFTER ctx.abort()
+// triggered a session replacement → stale `pi` → throw → thinking never turned
+// off + follow-up never sent.
+//
+// The fix: do the whole recovery synchronously in `message_update`, BEFORE
+// ctx.abort(), while `pi` is still live. These tests pin that choreography:
+//   - no `turn_end` handler exists (nothing can run against a stale pi),
+//   - setThinkingLevel + sendUserMessage are ordered strictly before abort,
+//   - thinking is re-asserted off across the restart turn,
+//   - the prior level is restored on the next genuine user input.
 
 interface Handler {
   (event: any, ctx: any): Promise<unknown> | unknown;
 }
 
-interface MockPi {
-  on: (name: string, h: Handler) => void;
-  handlers: Record<string, Handler[]>;
-  followUps: string[];
-  thinkingLevels: string[];
-  setThinkingLevel: (lvl: string) => void;
-  sendUserMessage: (msg: string, opts?: any) => void;
-}
-
-function makePi(): MockPi {
+function makeHarness(initialLevel = "high") {
+  const calls: string[] = []; // ordered log across pi + ctx
+  const followUps: string[] = [];
+  const notifies: string[] = [];
+  let level = initialLevel;
   const handlers: Record<string, Handler[]> = {};
-  return {
+  const pi = {
     handlers,
-    followUps: [],
-    thinkingLevels: [],
-    on(name, h) {
+    on(name: string, h: Handler) {
       (handlers[name] ??= []).push(h);
     },
-    setThinkingLevel(lvl) {
-      this.thinkingLevels.push(lvl);
+    getThinkingLevel() {
+      return level;
     },
-    sendUserMessage(msg, _opts) {
-      this.followUps.push(msg);
+    setThinkingLevel(l: string) {
+      level = l;
+      calls.push(`set:${l}`);
     },
-  } as MockPi;
-}
-
-function makeCtx() {
-  const aborts: number[] = [];
+    sendUserMessage(m: string) {
+      followUps.push(m);
+      calls.push("send");
+    },
+  };
+  const ctx = {
+    abort() {
+      calls.push("abort");
+    },
+    ui: {
+      notify(m: string) {
+        notifies.push(m);
+        calls.push("notify");
+      },
+    },
+  };
   return {
-    aborts,
-    abort: () => { aborts.push(1); },
-    ui: { notify: (_m: string, _l?: string) => {} },
+    pi,
+    ctx,
+    calls,
+    followUps,
+    notifies,
+    level: () => level,
+    setLevelExternally: (l: string) => {
+      level = l;
+    },
   };
 }
 
-async function fire(pi: MockPi, name: string, event: any, ctx: any) {
-  for (const h of pi.handlers[name] ?? []) {
-    await h(event, ctx);
-  }
+async function fire(pi: any, name: string, event: any, ctx: any) {
+  for (const h of pi.handlers[name] ?? []) await h(event, ctx);
 }
 
 function thinkingDelta(s: string) {
   return { assistantMessageEvent: { type: "thinking_delta", delta: s } };
 }
 
-describe("thinking-budget idempotency (issue #8)", () => {
+// Always begin from a clean session — resets the extension's module-scoped
+// state so cases don't leak `forcedOff` / `priorLevel` into one another (and
+// mirrors real startup: session_start always precedes the first agent run).
+async function startRun(h: ReturnType<typeof makeHarness>) {
+  await fire(h.pi, "session_start", {}, h.ctx);
+  await fire(h.pi, "agent_start", {}, h.ctx);
+  await fire(h.pi, "before_agent_start", { systemPromptOptions: {} }, h.ctx);
+  await fire(h.pi, "turn_start", {}, h.ctx);
+}
+
+describe("thinking-budget recovery (issue #8)", () => {
   beforeEach(() => {
-    // Force a small budget so we can trigger with short strings.
+    process.env.LITTLE_CODER_THINKING_BUDGET = "10"; // tiny budget for short strings
+  });
+  afterEach(() => {
+    delete process.env.LITTLE_CODER_THINKING_BUDGET;
+  });
+
+  it("registers NO turn_end handler (recovery must not run against a stale pi)", () => {
+    const h = makeHarness();
+    setupExtension(h.pi as any);
+    expect(h.pi.handlers["turn_end"]).toBeUndefined();
+  });
+
+  it("on breach, runs the full recovery BEFORE abort and exactly once", async () => {
+    const h = makeHarness();
+    setupExtension(h.pi as any);
+    await startRun(h);
+
+    await fire(h.pi, "message_update", thinkingDelta("x".repeat(1000)), h.ctx);
+
+    // setThinkingLevel("off") and sendUserMessage both happen before abort.
+    expect(h.calls).toEqual(["set:off", "send", "notify", "abort"]);
+    expect(h.level()).toBe("off");
+    expect(h.followUps).toHaveLength(1);
+    expect(h.followUps[0]).toMatch(/thinking budget exceeded/i);
+    expect(h.notifies[0]).toMatch(/harness intervention:.*thought long enough/i);
+  });
+
+  it("does not double-abort across multiple bursts in the same turn", async () => {
+    const h = makeHarness();
+    setupExtension(h.pi as any);
+    await startRun(h);
+    await fire(h.pi, "message_update", thinkingDelta("x".repeat(1000)), h.ctx);
+    await fire(h.pi, "message_update", thinkingDelta("y".repeat(1000)), h.ctx);
+    await fire(h.pi, "message_update", thinkingDelta("z".repeat(1000)), h.ctx);
+
+    expect(h.calls.filter((c) => c === "abort")).toHaveLength(1);
+    expect(h.followUps).toHaveLength(1);
+  });
+
+  it("does not fire under budget", async () => {
+    const h = makeHarness();
+    setupExtension(h.pi as any);
+    await startRun(h);
+    await fire(h.pi, "message_update", thinkingDelta("ok"), h.ctx); // 2 chars < 10 tokens
+    expect(h.calls).toEqual([]);
+    expect(h.level()).toBe("high");
+  });
+
+  it("re-asserts thinking off on the restart turn even if pi re-enables it", async () => {
+    const h = makeHarness();
+    setupExtension(h.pi as any);
+    await startRun(h);
+    await fire(h.pi, "message_update", thinkingDelta("x".repeat(1000)), h.ctx); // breach → off
+
+    // Simulate the post-abort session replacement re-resolving thinking to the
+    // profile default. The bug was that this stuck; the fix re-asserts off.
+    h.setLevelExternally("high");
+    await fire(h.pi, "agent_start", {}, h.ctx); // restart run after the followUp
+    await fire(h.pi, "before_agent_start", { systemPromptOptions: {} }, h.ctx);
+    await fire(h.pi, "turn_start", {}, h.ctx);
+
+    expect(h.level()).toBe("off");
+  });
+
+  it("restores the prior thinking level on the next genuine user input", async () => {
+    const h = makeHarness("medium");
+    setupExtension(h.pi as any);
+    await startRun(h);
+    await fire(h.pi, "message_update", thinkingDelta("x".repeat(1000)), h.ctx); // breach
+    expect(h.level()).toBe("off");
+
+    // A new user prompt ends the forced-off window and restores the level.
+    await fire(h.pi, "input", { text: "next task" }, h.ctx);
+    expect(h.level()).toBe("medium");
+
+    // And the force is cleared: a subsequent turn does NOT re-disable thinking.
+    await fire(h.pi, "turn_start", {}, h.ctx);
+    expect(h.level()).toBe("medium");
+  });
+
+  it("a fresh task (no prior breach) is never forced off", async () => {
+    const h = makeHarness("low");
+    setupExtension(h.pi as any);
+    await fire(h.pi, "input", { text: "task" }, h.ctx);
+    await startRun(h);
+    await fire(h.pi, "message_update", thinkingDelta("ok"), h.ctx);
+    expect(h.level()).toBe("low");
+    expect(h.calls).toEqual([]);
+  });
+});
+
+describe("thinking-budget resolution", () => {
+  afterEach(() => {
+    delete process.env.LITTLE_CODER_THINKING_BUDGET;
+  });
+
+  it("a profile budget wins over the env budget", async () => {
     process.env.LITTLE_CODER_THINKING_BUDGET = "10";
-  });
-
-  it("fires exactly one abort + one follow-up for a single budget breach across many bursts", async () => {
-    const pi = makePi();
-    const ctx = makeCtx();
-    setupExtension(pi as any);
-    await fire(pi, "agent_start", {}, ctx);
-    await fire(pi, "before_agent_start", { systemPromptOptions: {} }, ctx);
-    await fire(pi, "turn_start", {}, ctx);
-
-    // Burst: 1000 chars of thinking, way over 10-token budget.
-    await fire(pi, "message_update", thinkingDelta("x".repeat(1000)), ctx);
-    // Second burst on the same turn — must not double-abort.
-    await fire(pi, "message_update", thinkingDelta("y".repeat(1000)), ctx);
-    // Third burst.
-    await fire(pi, "message_update", thinkingDelta("z".repeat(1000)), ctx);
-
-    await fire(pi, "turn_end", {}, ctx);
-
-    expect(ctx.aborts.length).toBe(1);
-    expect(pi.followUps.length).toBe(1);
-    expect(pi.followUps[0]).toMatch(/thinking budget exceeded/i);
-    expect(pi.thinkingLevels).toEqual(["off"]);
-  });
-
-  it("fires the recovery follow-up only once even if turn_end is re-emitted", async () => {
-    const pi = makePi();
-    const ctx = makeCtx();
-    setupExtension(pi as any);
-    await fire(pi, "agent_start", {}, ctx);
-    await fire(pi, "before_agent_start", { systemPromptOptions: {} }, ctx);
-    await fire(pi, "turn_start", {}, ctx);
-    await fire(pi, "message_update", thinkingDelta("x".repeat(1000)), ctx);
-    await fire(pi, "turn_end", {}, ctx);
-    // Pi can re-emit turn_end during retry / compaction paths — must be a no-op.
-    await fire(pi, "turn_end", {}, ctx);
-    await fire(pi, "turn_end", {}, ctx);
-
-    expect(ctx.aborts.length).toBe(1);
-    expect(pi.followUps.length).toBe(1);
-    expect(pi.thinkingLevels.length).toBe(1);
-  });
-
-  it("resets state on agent_start so a prior aborted run does not leak", async () => {
-    const pi = makePi();
-    const ctx1 = makeCtx();
-    setupExtension(pi as any);
-
-    // Run 1: trigger an abort.
-    await fire(pi, "agent_start", {}, ctx1);
-    await fire(pi, "before_agent_start", { systemPromptOptions: {} }, ctx1);
-    await fire(pi, "turn_start", {}, ctx1);
-    await fire(pi, "message_update", thinkingDelta("x".repeat(1000)), ctx1);
-    await fire(pi, "turn_end", {}, ctx1);
-
-    // Run 2: fresh agent_start — no abort should fire on the first turn
-    // even though run 1 left state behind.
-    const ctx2 = makeCtx();
-    await fire(pi, "agent_start", {}, ctx2);
-    await fire(pi, "before_agent_start", { systemPromptOptions: {} }, ctx2);
-    await fire(pi, "turn_start", {}, ctx2);
-    // A small thinking delta well under budget.
-    await fire(pi, "message_update", thinkingDelta("ok"), ctx2);
-    await fire(pi, "turn_end", {}, ctx2);
-
-    expect(ctx2.aborts.length).toBe(0);
-    // Total follow-ups: only the one from run 1.
-    expect(pi.followUps.length).toBe(1);
-  });
-
-  it("yields one tick before sendUserMessage so pi's abort barrier can settle", async () => {
-    // We can only assert this indirectly: turn_end must complete the await
-    // chain (it returns a Promise) AFTER setImmediate fires. If it didn't
-    // yield, sendUserMessage would land synchronously inside the same
-    // microtask as ctx.abort(). Verify ordering by interleaving a marker.
-    const pi = makePi();
-    const ctx = makeCtx();
-    setupExtension(pi as any);
-    await fire(pi, "agent_start", {}, ctx);
-    await fire(pi, "before_agent_start", { systemPromptOptions: {} }, ctx);
-    await fire(pi, "turn_start", {}, ctx);
-    await fire(pi, "message_update", thinkingDelta("x".repeat(1000)), ctx);
-
-    const order: string[] = [];
-    setImmediate(() => order.push("setImmediate-marker"));
-    const turnEndPromise = (pi.handlers["turn_end"] ?? []).reduce<Promise<unknown>>(
-      (p, h) => p.then(() => h({}, ctx)),
-      Promise.resolve(),
+    const h = makeHarness();
+    setupExtension(h.pi as any);
+    await fire(h.pi, "session_start", {}, h.ctx);
+    await fire(h.pi, "agent_start", {}, h.ctx);
+    // profile budget 100 tokens (~350 chars) overrides env's 10.
+    await fire(
+      h.pi,
+      "before_agent_start",
+      { systemPromptOptions: { littleCoder: { thinkingBudget: 100 } } },
+      h.ctx,
     );
-    order.push("after-call");
-    await turnEndPromise;
-    order.push("after-await");
-
-    // After-call comes first (sync), then the setImmediate marker fires
-    // (because turn_end yielded), then we resume after the await.
-    expect(order[0]).toBe("after-call");
-    // marker must appear before resolve completes
-    expect(order).toContain("setImmediate-marker");
-    expect(pi.followUps.length).toBe(1);
+    await fire(h.pi, "turn_start", {}, h.ctx);
+    // 200 chars ≈ 58 tokens — under the 100-token profile budget, over env's 10.
+    await fire(h.pi, "message_update", thinkingDelta("x".repeat(200)), h.ctx);
+    expect(h.calls).toEqual([]);
   });
 });

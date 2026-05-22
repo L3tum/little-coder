@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { assessResponse, buildCorrectionMessage, type ToolCall } from "./quality.ts";
+import { assessResponse, buildCorrectionMessage, phraseForUser, type ToolCall } from "./quality.ts";
+import { harnessIntervention } from "../_shared/intervention.ts";
 
 // Port of local/quality.py. Hooks turn_end, inspects the assistant message
 // + previous turn's tool calls, and — if we detect a failure mode — sends
@@ -28,7 +29,14 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async () => {
     knownTools.clear();
-    pi.getActiveTools().forEach(knownTools.add, knownTools);
+    const activeTools = typeof (pi as any).getActiveTools === "function"
+      ? (pi as any).getActiveTools()
+      : [];
+    if (Array.isArray(activeTools)) {
+      activeTools.forEach((name: unknown) => {
+        if (typeof name === "string") knownTools.add(name);
+      });
+    }
     previousToolCalls = [];
     previousTurnErrorTools = new Set();
     consecutiveFailures = 0;
@@ -38,8 +46,11 @@ export default function (pi: ExtensionAPI) {
     const message = (event as any).message;
     if (!message) return;
 
-    // Skip quality checks on aborted turns — the user intentionally stopped
-    // the agent; injecting a correction is confusing and unwanted.
+    // Skip turns that were interrupted/aborted — by the user pressing ESC OR by
+    // a harness abort (thinking-budget, turn-cap). Their content is
+    // legitimately partial/empty, so assessing them spuriously fires
+    // `empty_response`. Also clear the rolling state so the next completed turn
+    // doesn't inherit stale repeat-loop context from an interrupted one.
     const stopReason = (message as any).stopReason;
     if (stopReason === "aborted") {
       previousToolCalls = [];
@@ -96,18 +107,15 @@ export default function (pi: ExtensionAPI) {
     // Cap corrections so we don't burn turns in a correction loop
     consecutiveFailures++;
     if (consecutiveFailures > MAX_CONSECUTIVE_CORRECTIONS) {
-      ctx.ui.notify(
-        `quality-monitor: ${verdict.reason} (suppressed after ${consecutiveFailures} in a row)`,
-        "warning",
+      harnessIntervention(
+        ctx,
+        `${phraseForUser(verdict.reason)} — backing off after ${consecutiveFailures} in a row.`,
       );
       return;
     }
 
     const correction = buildCorrectionMessage(verdict.reason, knownTools);
-    ctx.ui.notify(
-      `quality-monitor: ${verdict.reason} → injecting correction`,
-      "warning",
-    );
+    harnessIntervention(ctx, `${phraseForUser(verdict.reason)} — redirecting the model.`);
     // "steer" delivers the correction promptly to the in-flight loop. The
     // prior "followUp" mode parked the message until the *next* user input,
     // by which point it was no longer relevant (issue #16).

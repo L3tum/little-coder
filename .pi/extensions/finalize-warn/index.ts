@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { harnessIntervention } from "../_shared/intervention.ts";
 
 // Pre-cap finalize-warn: when the agent has WARN_REMAINING turns left
 // (this turn included), inject a follow-up user message reminding it to
@@ -60,9 +61,9 @@ export default function (pi: ExtensionAPI) {
       `Do not start new tool chains; if you need a fact you don't have, ` +
       `answer with your best supported guess from EvidenceList rather than ` +
       `leaving it blank.`;
-    ctx.ui.notify(
-      `finalize-warn: ${WARN_REMAINING} turns left at ${turnsThisRun}/${capForRun}`,
-      "info",
+    harnessIntervention(
+      ctx,
+      `${WARN_REMAINING} turns left — telling the model to finalize its answer now.`,
     );
     try {
       pi.sendUserMessage(msg, { deliverAs: "followUp" });
