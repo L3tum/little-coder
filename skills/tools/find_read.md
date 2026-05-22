@@ -30,7 +30,7 @@ WHEN TO USE Glob INSTEAD:
 - You want to pick specific files to read one at a time
 - The glob might match many files and you only need to see names
 
-WHEN TO USE codebase_memory_search_graph INSTEAD:
+WHEN TO USE code_search INSTEAD:
 - You're looking for where a function/class/variable is defined
 - You want to know what calls a function or what a function calls
 - You need structural code navigation (call graph, type hierarchy, references)

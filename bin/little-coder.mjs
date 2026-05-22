@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // little-coder launcher.
-// Spawns the bundled pi runtime with our AGENTS.md, skills, and every
-// custom extension wired in — works from any working directory.
+// Spawns the bundled pi runtime with our AGENTS.md and custom extensions
+// wired in — works from any working directory.
 
 import { spawn } from "node:child_process";
 import {
@@ -135,7 +135,6 @@ function bundledPackageArgs(pkgJson) {
     if (!manifest || typeof manifest !== "object") continue;
     const depRoot = dirname(pkgJsonPath);
     addPiResources(args, "--extension", depRoot, manifest.extensions);
-    addPiResources(args, "--skill", depRoot, manifest.skills);
     addPiResources(args, "--prompt-template", depRoot, manifest.prompts);
     addPiResources(args, "--theme", depRoot, manifest.themes);
   }
@@ -171,17 +170,21 @@ if (exitAfterCheck) {
 }
 
 // ---- 6. Compose pi argv ----
-// --no-context-files : ignore the user's AGENTS.md / CLAUDE.md so OURS wins
+// --no-context-files : disable pi's automatic AGENTS.md / CLAUDE.md loading
 // --no-extensions    : skip pi's auto-discovery from cwd; explicit -e flags still load
-// --system-prompt    : load <pkgRoot>/AGENTS.md regardless of cwd
+// --system-prompt    : load <pkgRoot>/AGENTS.md as the base system prompt
+// --append-system-prompt : amend the prompt with cwd AGENTS.md when present
 //
 // Strip our own flags before forwarding to pi so it doesn't reject them.
 const userArgs = process.argv.slice(2).filter((a) => a !== "--no-update-check");
 const agentsMd = join(pkgRoot, "AGENTS.md");
+const cwdAgentsMd = join(process.cwd(), "AGENTS.md");
+
 const piArgs = [
   "--no-context-files",
   "--no-extensions",
   ...(existsSync(agentsMd) ? ["--system-prompt", agentsMd] : []),
+  ...(existsSync(cwdAgentsMd) ? ["--append-system-prompt", cwdAgentsMd] : []),
   ...extArgs,
   ...packageArgs,
   ...userArgs,

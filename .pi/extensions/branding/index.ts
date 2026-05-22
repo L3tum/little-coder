@@ -48,9 +48,6 @@ function buildHeader(theme: Theme): string[] {
   const sep = theme.fg("muted", " · ");
   const extensionLine1 = [
     theme.fg("muted", "Use "),
-    theme.fg("text", "/caveman full"),
-    theme.fg("muted", " for terse mode"),
-    sep,
     theme.fg("text", "/plannotator"),
     theme.fg("muted", " or "),
     theme.fg("text", "--plan"),

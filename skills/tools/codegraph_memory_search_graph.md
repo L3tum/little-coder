@@ -1,12 +1,12 @@
 ---
-name: codegraph-memory-search-graph-guidance
+name: code-search-guidance
 type: tool-guidance
-target_tool: codebase_memory_search_graph
+target_tool: code_search
 priority: 10
 token_cost: 150
 user-invocable: false
 ---
-## Codebase Memory Search Graph Tool
+## code_search Tool
 Search the code knowledge graph for functions, classes, routes, and variables. This is a **structural code search** — it understands code relationships, not just text.
 
 REQUIRED: project (project name)
@@ -19,7 +19,7 @@ RULES:
 - Use `relationship` to filter by call graph, type hierarchy, imports, etc.
 - Results are ranked with structural boosting: Functions/Methods +10, Routes +8, Classes/Interfaces +5
 
-WHEN TO USE codebase_memory_search_graph:
+WHEN TO USE code_search:
 - "Where is function X defined?" / "Find the implementation of Y"
 - "What calls function X?" / "Who uses class Y?"
 - "Find all usages/references of Z"
@@ -38,15 +38,15 @@ WHEN TO USE FindRead INSTEAD:
 
 EXAMPLE (find function definition):
 ```tool
-{"name": "codebase_memory_search_graph", "input": {"project": "my-project", "query": "updateUserSettings"}}
+{"name": "code_search", "input": {"project": "my-project", "query": "updateUserSettings"}}
 ```
 
 EXAMPLE (what calls a function):
 ```tool
-{"name": "codebase_memory_search_graph", "input": {"project": "my-project", "query": "validateInput", "relationship": "calls"}}
+{"name": "code_search", "input": {"project": "my-project", "query": "validateInput", "relationship": "calls"}}
 ```
 
 EXAMPLE (semantic search):
 ```tool
-{"name": "codebase_memory_search_graph", "input": {"project": "my-project", "semantic_query": ["send", "pubsub", "publish"]}}
+{"name": "code_search", "input": {"project": "my-project", "semantic_query": ["send", "pubsub", "publish"]}}
 ```

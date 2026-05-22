@@ -88,6 +88,11 @@ function bestKeyMatch(source: string, candidates: string[]): string | undefined 
   return best && best.score >= 0.72 ? best.name : undefined;
 }
 
+const TOOL_NAME_ALIASES: Record<string, string> = {
+  codebase_memory_search_graph: "code_search",
+  codebase_memory_manage_adr: "code_adr",
+};
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -161,5 +166,7 @@ export function findCompatibleToolName(toolName: string, knownTools: Iterable<st
   if (names.length === 0) return undefined;
   const exactCaseInsensitive = names.find((name) => name.toLowerCase() === toolName.toLowerCase());
   if (exactCaseInsensitive) return exactCaseInsensitive;
+  const aliased = TOOL_NAME_ALIASES[toolName.toLowerCase()];
+  if (aliased && names.includes(aliased)) return aliased;
   return bestKeyMatch(toolName, names);
 }

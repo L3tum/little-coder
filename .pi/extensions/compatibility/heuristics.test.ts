@@ -9,6 +9,11 @@ describe("findCompatibleToolName", () => {
   it("matches camel/snake and plural heuristics", () => {
     expect(findCompatibleToolName("Findread", ["findRead", "glob"])).toBe("findRead");
   });
+
+  it("maps legacy codebase-memory names to the new short aliases", () => {
+    expect(findCompatibleToolName("codebase_memory_search_graph", ["code_search", "read"])).toBe("code_search");
+    expect(findCompatibleToolName("codebase_memory_manage_adr", ["code_adr", "read"])).toBe("code_adr");
+  });
 });
 
 describe("rewriteValueToSchema", () => {

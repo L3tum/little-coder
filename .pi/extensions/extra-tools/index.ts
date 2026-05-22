@@ -90,6 +90,17 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
+  // Default vendor directory names to exclude from glob / findRead results.
+  const DEFAULT_VENDOR_DIRS = ["node_modules", ".git", "vendor"];
+
+  /** Filter out paths that live inside vendor directories. */
+  function filterVendorDirs(paths: string[], vendorDirs: string[]): string[] {
+    return paths.filter((p) => {
+      const parts = p.split("/");
+      return !parts.some((part) => vendorDirs.includes(part));
+    });
+  }
+
   // ── glob ────────────────────────────────────────────────────────────────
   pi.registerTool({
     name: "glob",
@@ -99,11 +110,17 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       pattern: Type.String({ description: "Glob pattern e.g. **/*.py" }),
       path: Type.Optional(Type.String({ description: "Base directory (default: cwd)" })),
+      ignoreDefaultExcludes: Type.Optional(Type.Boolean({
+        description: `If true (default), skip common vendor directories (${DEFAULT_VENDOR_DIRS.join(", ")}). Set to false to include them.`,
+      })),
     }),
-    async execute(_id, { pattern, path }) {
+    async execute(_id, { pattern, path, ignoreDefaultExcludes }) {
       try {
         const base = path || process.cwd();
         let matches: string[] = await glob(pattern, { cwd: base });
+        if (ignoreDefaultExcludes !== false) {
+          matches = filterVendorDirs(matches, DEFAULT_VENDOR_DIRS);
+        }
         if (matches.length > 500) matches = matches.slice(0, 500);
         matches.sort();
         const text = matches.length === 0 ? "No files matched" : matches.join("\n");
@@ -179,12 +196,15 @@ export default function (pi: ExtensionAPI) {
       "Use maxCharacters to limit characters per file (default 4000, 0 = unlimited). " +
       "WARNING: this tool can easily overload the context window — always use the lowest maxFiles/maxCharacters that gets the job done."
     ,
-    promptSnippet: "findRead(pattern, path?, maxFiles?, maxCharacters?): glob + read in one call.",
+    promptSnippet: "findRead(pattern, path?, maxFiles?, maxCharacters?, ignoreDefaultExcludes?): glob + read in one call.",
     parameters: Type.Object({
       pattern: Type.String({ description: "Glob pattern e.g. **/*.py" }),
       path: Type.Optional(Type.String({ description: "Base directory (default: cwd)" })),
       maxFiles: Type.Optional(Type.Number({ description: "Max files to read (default 10, max 50)" })),
       maxCharacters: Type.Optional(Type.Number({ description: "Max characters per file (default 4000, 0 = unlimited)" })),
+      ignoreDefaultExcludes: Type.Optional(Type.Boolean({
+        description: `If true (default), skip common vendor directories (${DEFAULT_VENDOR_DIRS.join(", ")}). Set to false to include them.`,
+      })),
     }),
     prepareArguments(args) {
       if (!args || typeof args !== "object") return args as any;
@@ -199,12 +219,20 @@ export default function (pi: ExtensionAPI) {
         path: typeof input.path === "string" ? input.path : input.file_path,
         maxFiles: typeof input.maxFiles === "number" ? input.maxFiles : input.max_files,
         maxCharacters,
+        ignoreDefaultExcludes: typeof input.ignoreDefaultExcludes === "boolean"
+          ? input.ignoreDefaultExcludes
+          : typeof input.ignore_default_excludes === "boolean"
+            ? input.ignore_default_excludes
+            : undefined,
       } as any;
     },
-    async execute(_id, { pattern, path, maxFiles, maxCharacters }): Promise<any> {
+    async execute(_id, { pattern, path, maxFiles, maxCharacters, ignoreDefaultExcludes }): Promise<any> {
       try {
         const base = path || process.cwd();
         let matches: string[] = await glob(pattern, { cwd: base });
+        if (ignoreDefaultExcludes !== false) {
+          matches = filterVendorDirs(matches, DEFAULT_VENDOR_DIRS);
+        }
         matches.sort();
 
         if (matches.length === 0) {

@@ -29,7 +29,7 @@ Use the actual tool names exactly as registered.
 ## Composite / high-leverage tools
 
 - `findRead` > `glob` + `read`
-- `codebase_memory_search_graph` > `grep` for structural code navigation
+- `code_search` > `grep` for structural code navigation
 
 ## Discovery / capability tools
 
@@ -45,13 +45,9 @@ Before writing code for a non-trivial problem, think through the structure: what
 
 When requirements or approach are ambiguous, resolve them against what you can read from the surrounding context, the tests, and the conventions already in the file. Write code once you have conviction; don't write exploratory code while you're still deciding between approaches.
 
-# Workspace discovery
-
-Before editing unfamiliar code, surface local documentation — `.docs/instructions.md`, `AGENTS.md`, `CLAUDE.md`, `README.md`, `SPEC.md` — and the file you intend to change. Do this ONCE at the start of a task, not every turn. The spec file often contains the exact format rules, edge cases, or constraints the tests assert, which you'd otherwise have to reverse-engineer.
-
 # Skill discovery
 
-Before starting a task, check whether an existing skill covers the domain. The `find-skills` skill (listed under `<available_skills>`) lets you search the open agent skills ecosystem for specialized knowledge, workflows, and tools. Use `npx skills find <query>` when:
+Before starting a task, check whether an existing skill covers the domain. Use `npx skills find <query>` when:
 
 - The task is in a domain you haven't worked in recently (e.g. React, testing, deployment, design).
 - The user asks "how do I do X" or "can you do X" where X is a common task that may have a skill.
@@ -85,7 +81,7 @@ When you see these blocks, trust them — they were selected for the current tur
 **Prefer composite/efficient tools over naive alternatives.** Every tool call costs context — fewer, smarter calls beat more, dumber ones.
 
 - **findRead** > `glob` + `read`
-- **codebase_memory_search_graph** > `grep` for structural code navigation
+- **code_search** > `grep` for structural code navigation
 - **grep** > `findRead` when you only need text matches
 - **glob** > `findRead` when you only need file paths
 - **glob`/`read`/`findRead`** > ad-hoc `bash`/`python` for file listing, path checks, and file reading

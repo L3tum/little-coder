@@ -49,8 +49,6 @@
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@earendil-works/pi-tui": "^0.74.1",
     "@juicesharp/rpiv-todo": "^1.11.0",
-    "@modelcontextprotocol/ext-apps": "^1.7.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@plannotator/pi-extension": "^0.19.20",
     "@sinclair/typebox": "^0.34.49",
     "chokidar": "^5.0.0",
