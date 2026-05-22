@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>little-coder · a coding agent tuned for small local models</title>
+<meta name="description" content="little-coder is an offline, pi-based coding agent tuned for small local models. A 9.7B model scored 45.56% on Aider Polyglot — past gpt-4.5-preview — with the wifi off." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" />
+
+<link rel="stylesheet" href="site.css" />
+</head>
+<body>
+
+<!-- ============================== nav ============================== -->
+<header class="nav" data-screen-label="nav">
+  <a class="brand" href="#top" aria-label="little-coder home">
+    <span class="mono mark">lc<span class="cursor"></span></span>
+    <span class="brand-name">little-coder</span>
+  </a>
+  <nav class="nav-links">
+    <a href="#why">why</a>
+    <a href="#install">install</a>
+    <a href="#session">how it works</a>
+    <a href="#community">community</a>
+  </nav>
+  <a class="nav-cta" href="https://github.com/itayinbarr/little-coder" target="_blank" rel="noopener">
+    <span>github.com/itayinbarr/little-coder</span>
+    <span class="arrow">↗</span>
+  </a>
+</header>
+
+<!-- ============================== hero ============================== -->
+<section id="top" class="hero" data-screen-label="hero">
+  <div class="hero-grid">
+    <span class="hero-tag reveal"><span class="dot"></span> v<span data-version>1.5.1</span></span>
+    <h1 class="hero-mark mono"><span class="ch" style="--d:0">l</span><span class="ch" style="--d:1">c</span><span class="cursor big"></span></h1>
+    <p class="hero-lead reveal" style="--d:0.4s">
+      a coding agent built for small models
+    </p>
+    <div class="hero-cta reveal" style="--d:0.6s">
+      <a class="btn primary" href="#install"><span class="prompt mono">&gt;</span> quick start</a>
+      <a class="btn ghost" href="https://github.com/itayinbarr/little-coder" target="_blank" rel="noopener">github repo</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== why / benchmark ============================== -->
+<section id="why" class="bench" data-screen-label="benchmark">
+  <div class="section-head">
+    <div class="eyebrow">// a 9.7B model walked into the aider polyglot benchmark.</div>
+    <h2 class="section-title">and walked out with a higher<br/>score than gpt-4.5-preview.</h2>
+    <p class="section-lead">this is the laptop next to you, with the wifi off.</p>
+  </div>
+
+  <div class="bench-stage" data-anim="bench">
+    <!-- challenger -->
+    <div class="bench-row challenger">
+      <div class="bench-meta">
+        <div class="role">// challenger</div>
+        <div class="who">qwen3.5 + little-coder</div>
+        <div class="specs">9.7B params · 6.6 GB · runs offline · no API</div>
+      </div>
+      <div class="bench-bar-wrap">
+        <div class="bench-bar honey" style="--target: 45.56">
+          <span class="bench-fill"></span>
+          <span class="bench-tick">0</span>
+          <span class="bench-tick" style="left:25%">12.5</span>
+          <span class="bench-tick" style="left:50%">25</span>
+          <span class="bench-tick" style="left:75%">37.5</span>
+          <span class="bench-tick right">50</span>
+        </div>
+        <div class="bench-num"><span class="count" data-to="45.56">0.00</span><small>%</small></div>
+      </div>
+    </div>
+
+    <div class="vs-bar"><span class="mono">vs</span></div>
+
+    <!-- champ -->
+    <div class="bench-row champ">
+      <div class="bench-meta">
+        <div class="role">// reigning champ</div>
+        <div class="who">gpt-4.5-preview</div>
+        <div class="specs">frontier-scale · cloud-served · undisclosed params · API metered</div>
+      </div>
+      <div class="bench-bar-wrap">
+        <div class="bench-bar ink" style="--target: 44.90">
+          <span class="bench-fill"></span>
+        </div>
+        <div class="bench-num"><span class="count" data-to="44.90">0.00</span><small>%</small></div>
+      </div>
+    </div>
+
+    <div class="bench-foot">
+      <span>fig. 1 — aider polyglot · 225 exercises · two-run mean · april 2026</span>
+      <span class="lead-by">led by <b>+0.66</b> points</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== install ============================== -->
+<section id="install" class="install" data-screen-label="install">
+  <div class="section-head">
+    <div class="eyebrow">// one command, one local model</div>
+    <h2 class="section-title">install.</h2>
+  </div>
+
+  <div class="install-grid">
+    <div class="install-terminal" data-anim="install">
+      <div class="t-bar">
+        <span class="t-dot"></span><span class="t-dot"></span><span class="t-dot honey"></span>
+        <span class="t-name mono">~/projects · zsh</span>
+      </div>
+      <div class="t-body mono">
+        <div class="t-line"><span class="p">$</span> <span class="cmd" data-type="npm install -g little-coder"></span><span class="caret"></span></div>
+        <div class="t-out" data-step="1">
+          <div class="dim">resolving dependencies...</div>
+          <div class="dim">fetching @earendil-works/pi-coding-agent</div>
+          <div class="bar-line"><span class="bar-track"><span class="bar-fill"></span></span><span class="pct mono">100%</span></div>
+          <div class="ok"><span class="check">✓</span> installed little-coder <span data-version>1.5.1</span> · node 22.19+</div>
+        </div>
+        <div class="t-line" data-step="2"><span class="p">$</span> <span class="cmd" data-type="llama-server -hf unsloth/Qwen3.6-35B-A3B-GGUF"></span><span class="caret hide"></span></div>
+        <div class="t-out" data-step="3">
+          <div class="dim">fetching Qwen3.6-35B-A3B · UD-Q4_K_M · 22.1 GB</div>
+          <div class="dim">experts → RAM, attention → GPU · 3.8 GB vram</div>
+          <div class="ok"><span class="check">✓</span> llama.cpp listening on 127.0.0.1:8888</div>
+        </div>
+        <div class="t-line" data-step="4"><span class="p">$</span> <span class="cmd" data-type="little-coder --model llamacpp/qwen3.6-35b-a3b"></span><span class="caret hide"></span></div>
+        <div class="t-out" data-step="5">
+          <div class="lc-boot">
+            <div class="lc-boot-head"><span class="mono mark sm">lc</span> <span class="paper">little-coder</span> <span class="dim">v<span data-version>1.5.1</span> · offline</span></div>
+            <div class="tf-status"><span class="dim">Context:</span> 0.4K/32K (1%) <span class="dim">·</span> <span class="dim">model:</span> <span class="tf-model">llamacpp/qwen3.6-35b-a3b</span></div>
+            <div class="dim">/help for commands · ctrl-c to quit</div>
+            <div class="lc-prompt"><span class="p honey">&gt;</span> <span class="caret blink"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <aside class="install-side">
+      <div class="step">
+        <div class="step-k mono">01</div>
+        <div class="step-v">
+          <h4>install the agent.</h4>
+          <p>one command: <code>npm install -g little-coder</code> (or the curl one-liner, or <code>bun add -g</code>). needs node 22.19+.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-k mono">02</div>
+        <div class="step-v">
+          <h4>bring a local model.</h4>
+          <p>serve one with llama.cpp — the tuned path, running the 35B-A3B MoE on 8 GB of vram via the <code>--n-cpu-moe</code> trick. ollama, lm studio, and cloud models work too; point the agent at it with <code>--model</code>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-k mono">03</div>
+        <div class="step-v">
+          <h4>start coding.</h4>
+          <p><code>little-coder</code> in your repo drops you into a repl. ask in plain english; it reads, edits, and runs against your working tree.</p>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ============================== sample session ============================== -->
+<section id="session" class="session" data-screen-label="how it works">
+  <div class="section-head">
+    <div class="eyebrow">// a sample session</div>
+    <h2 class="section-title">how it feels.</h2>
+    <p class="section-lead">you write english. it reads, edits, and runs<br/>against your working tree — all done locally.</p>
+  </div>
+
+  <div class="session-terminal" data-anim="session">
+    <div class="t-bar">
+      <span class="t-dot"></span><span class="t-dot"></span><span class="t-dot honey"></span>
+      <span class="t-name mono">~/fizzbuzz · little-coder</span>
+    </div>
+    <div class="t-body mono tf">
+      <div class="s-line"><span class="p honey">&gt;</span> <span class="user" data-type="implement the fizzbuzz exercise"></span><span class="caret"></span></div>
+      <div class="s-out" data-step="1">
+        <div class="dim">running · llamacpp/qwen3.6-35b-a3b · 3.8 GB vram</div>
+      </div>
+      <div class="s-out tf-flow" data-step="2">
+        <div class="tf-line"><span class="tf-arrow">→</span> <span class="tf-tool">Glob</span> <span class="tf-arg">**/*</span></div>
+        <div class="tf-line tf-res"><span class="ck">✓</span> → 3 lines (50 chars)</div>
+        <div class="tf-line"><span class="tf-arrow">→</span> <span class="tf-tool">Read</span> <span class="tf-arg">.docs/instructions.md</span></div>
+        <div class="tf-line tf-res"><span class="ck">✓</span> → 3 lines (183 chars)</div>
+        <div class="tf-line"><span class="tf-arrow">→</span> <span class="tf-tool">Read</span> <span class="tf-arg">fizzbuzz.py</span></div>
+        <div class="tf-line tf-res"><span class="ck">✓</span> → 2 lines (37 chars)</div>
+        <div class="tf-line"><span class="tf-arrow">→</span> <span class="tf-tool">Edit</span> <span class="tf-arg">fizzbuzz.py</span></div>
+        <div class="tf-line tf-res"><span class="ck">✓</span> → 11 lines (255 chars)</div>
+        <div class="tf-line"><span class="tf-arrow">→</span> <span class="tf-tool">Bash</span> <span class="tf-arg">python -m pytest fizzbuzz_test.py -v</span></div>
+        <div class="tf-line tf-res"><span class="ck">✓</span> → 6 lines (313 chars)</div>
+      </div>
+      <div class="s-out" data-step="3">
+        <div class="tf-pass">All tests pass.</div>
+        <div class="tf-status"><span class="dim">Context:</span> 4.2K/32K (13%) <span class="dim">· ~48 msgs until recommended new session ·</span> <span class="dim">model:</span> <span class="tf-model">llamacpp/qwen3.6-35b-a3b</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== community ============================== -->
+<section id="community" class="community" data-screen-label="community">
+  <div class="comm-grid">
+    <div class="comm-copy">
+      <div class="eyebrow">// community</div>
+      <h2 class="section-title">talk to us<br/>where the code lives.</h2>
+      <p class="section-lead">no discord, no slack, no forum subscription — just the github issues tab. file a bug, ask how to serve a model on your hardware, and you'll usually get a worked-through answer.</p>
+      <div class="comm-cta">
+        <a class="btn primary" href="https://github.com/itayinbarr/little-coder/issues" target="_blank" rel="noopener">
+          <span class="prompt mono">&gt;</span> browse issues
+          <span class="arrow">↗</span>
+        </a>
+        <a class="btn ghost" href="https://github.com/itayinbarr/little-coder/issues/new" target="_blank" rel="noopener">open an issue</a>
+      </div>
+      <div class="comm-stats">
+        <div class="cs"><div class="cs-n mono"><span class="count" data-stat="stars" data-to="1294">0</span></div><div class="cs-l">stars on github</div></div>
+        <div class="cs"><div class="cs-n mono"><span class="count" data-stat="issues" data-to="25">0</span></div><div class="cs-l">issues opened</div></div>
+        <div class="cs"><div class="cs-n mono"><span class="count" data-stat="resolved" data-to="23">0</span></div><div class="cs-l">issues resolved</div></div>
+      </div>
+    </div>
+
+    <div class="comm-board">
+      <div class="comm-tabs">
+        <span class="ct">discussions</span>
+        <span class="ct active">issues</span>
+        <span class="ct">pulls</span>
+      </div>
+      <div class="comm-thread">
+        <div class="th-cat mono honey">[closed]</div>
+        <div class="th-title">does it work with lm studio?</div>
+        <div class="th-meta">#6 · opened by AtaaEddin · 4 replies · resolved</div>
+      </div>
+      <div class="comm-thread">
+        <div class="th-cat mono">[closed]</div>
+        <div class="th-title">exceeding the thinking budget causes the agent to stop running</div>
+        <div class="th-meta">#8 · opened by diagonalfish · 3 replies · resolved</div>
+      </div>
+      <div class="comm-thread">
+        <div class="th-cat mono">[closed]</div>
+        <div class="th-title">not starting on windows</div>
+        <div class="th-meta">#23 · opened by Kaiohshin · 2 replies · resolved</div>
+      </div>
+      <div class="comm-thread">
+        <div class="th-cat mono">[closed]</div>
+        <div class="th-title">how are subagents spawned?</div>
+        <div class="th-meta">#19 · opened by rahimnathwani · 2 replies · resolved</div>
+      </div>
+      <div class="comm-thread last">
+        <div class="th-cat mono">[closed]</div>
+        <div class="th-title">context handling with llama-server</div>
+        <div class="th-meta">#3 · opened by cmhamiche · 2 replies · resolved</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================== footer ============================== -->
+<footer class="foot" data-screen-label="footer">
+  <div class="foot-top">
+    <span class="mono mark big"><span class="ch">l</span><span class="ch">c</span><span class="cursor"></span></span>
+    <div class="foot-msg">
+      <div class="eyebrow">// small things, done thoughtfully.</div>
+      <div class="foot-tag">an offline coding agent.<br/>kept small on purpose.</div>
+    </div>
+  </div>
+  <div class="foot-bottom">
+    <div class="foot-cols">
+      <div class="fc">
+        <div class="fc-k mono">// project</div>
+        <a href="https://github.com/itayinbarr/little-coder" target="_blank" rel="noopener">source</a>
+        <a href="https://github.com/itayinbarr/little-coder/releases" target="_blank" rel="noopener">releases</a>
+        <a href="https://github.com/itayinbarr/little-coder/blob/main/LICENSE" target="_blank" rel="noopener">license · apache-2.0</a>
+      </div>
+      <div class="fc">
+        <div class="fc-k mono">// community</div>
+        <a href="https://github.com/itayinbarr/little-coder/issues" target="_blank" rel="noopener">issues</a>
+        <a href="https://github.com/itayinbarr/little-coder/discussions" target="_blank" rel="noopener">discussions</a>
+        <a href="https://github.com/itayinbarr/little-coder/blob/main/CHANGELOG.md" target="_blank" rel="noopener">changelog</a>
+      </div>
+      <div class="fc">
+        <div class="fc-k mono">// reading</div>
+        <a href="#why">benchmarks</a>
+        <a href="#install">install</a>
+        <a href="https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent" target="_blank" rel="noopener">the paper</a>
+      </div>
+    </div>
+    <div class="foot-line">
+      <span>© 2026 itay inbar · apache-2.0</span>
+    </div>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+
+</body>
+</html>

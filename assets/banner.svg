@@ -36,8 +36,7 @@ text{font-family:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;}
 <text x="406" y="300" class="tag tagdim" font-size="27">A coding agent tuned for small local models</text>
 
 <!-- prompt lines -->
-<text x="56" y="392" font-size="26" class="mono"><tspan class="caret">&gt;</tspan><tspan class="paper" dx="14">model: qwen3.6-35b-a3b</tspan><tspan class="dim" dx="18">[ 35B MoE · active 3B · offline ]</tspan></text>
-<text x="56" y="432" font-size="26" class="mono"><tspan class="caret">&gt;</tspan><tspan class="paper" dx="14">terminal-bench 2.0: 24.6%</tspan><tspan class="dim" dx="18">[ rank #117 of 143 ]</tspan></text>
-<text x="56" y="472" font-size="26" class="mono"><tspan class="caret">&gt;</tspan><tspan class="paper" dx="14">aider polyglot: 45.56%</tspan><tspan class="dim" dx="18">[ n=225 · two-run mean ]</tspan></text>
-<text x="56" y="514" font-size="26" class="mono"><tspan class="cmd">$ npm install -g little-coder</tspan><tspan class="dim" dx="18"># and you're holding it.</tspan></text>
+<text x="56" y="400" font-size="26" class="mono"><tspan class="caret">&gt;</tspan><tspan class="paper" dx="14">terminal-bench 2.0: 24.6%</tspan><tspan class="dim" dx="18">[ rank #120 ]</tspan></text>
+<text x="56" y="444" font-size="26" class="mono"><tspan class="caret">&gt;</tspan><tspan class="paper" dx="14">aider polyglot: 78.7%</tspan><tspan class="dim" dx="18">[ n=225 · offline · 8 GB GPU ]</tspan></text>
+<text x="56" y="488" font-size="26" class="mono"><tspan class="cmd">$ npm install -g little-coder</tspan><tspan class="dim" dx="18"># and you're holding it.</tspan></text>
 </svg>
