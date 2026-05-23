@@ -15,7 +15,9 @@
   function countUp(el, to, duration = 1600) {
     const start = performance.now();
     const startVal = parseFloat(el.textContent) || 0;
-    const decimals = String(to).includes('.') ? 2 : 0;
+    const decimals = el.dataset.decimals !== undefined
+      ? parseInt(el.dataset.decimals, 10)
+      : (String(to).includes('.') ? 2 : 0);
     function step(now) {
       const t = Math.min(1, (now - start) / duration);
       const eased = 1 - Math.pow(1 - t, 3);

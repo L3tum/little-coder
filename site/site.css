@@ -441,8 +441,8 @@ a { color: inherit; text-decoration: none; }
 }
 .bench-row.champ .bench-fill { background: var(--paper); }
 .bench-bar.in .bench-fill {
-  /* fill to target% mapped to 50% scale → target * 2 */
-  width: calc(var(--target) * 2%);
+  /* fill to target% mapped to a 30% axis → target * (100/30) */
+  width: calc(var(--target) * 3.3333%);
 }
 .bench-tick {
   position: absolute;
