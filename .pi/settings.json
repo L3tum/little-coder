@@ -4,7 +4,6 @@
   "retry": { "enabled": true, "maxRetries": 2 },
   "little_coder": {
     "default_model_profile": {
-      "context_limit": 32768,
       "max_tokens": 4096,
       "thinking_budget": 4096,
       "skill_token_budget": 300,
@@ -14,7 +13,6 @@
     },
     "model_profiles": {
       "llamacpp/qwen3.6-27b": {
-        "context_limit": 32768,
         "max_tokens": 4096,
         "thinking_budget": 4096,
         "skill_token_budget": 300,
@@ -35,7 +33,6 @@
         }
       },
       "llamacpp/qwen3.6-35b-a3b": {
-        "context_limit": 32768,
         "max_tokens": 4096,
         "thinking_budget": 4096,
         "skill_token_budget": 300,
@@ -56,7 +53,6 @@
         }
       },
       "llamacpp/qwen3.5-9b": {
-        "context_limit": 32768,
         "max_tokens": 4096,
         "thinking_budget": 4096,
         "skill_token_budget": 300,
@@ -64,7 +60,6 @@
         "temperature": 0.3
       },
       "ollama/qwen3.5": {
-        "context_limit": 32768,
         "max_tokens": 4096,
         "thinking_budget": 4096,
         "skill_token_budget": 300,
@@ -72,7 +67,6 @@
         "temperature": 0.3
       },
       "lmstudio/local-model": {
-        "context_limit": 32768,
         "max_tokens": 4096,
         "thinking_budget": 4096,
         "skill_token_budget": 300,

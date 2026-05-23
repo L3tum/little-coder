@@ -4,12 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>little-coder · a coding agent tuned for small local models</title>
-<meta name="description" content="little-coder is an offline, pi-based coding agent tuned for small local models. A 9.7B model scored 45.56% on Aider Polyglot — past gpt-4.5-preview — with the wifi off." />
+<meta name="description" content="little-coder is an offline, pi-based coding agent tuned for small local models. On the official Terminal-Bench 2.0 leaderboard, Qwen3.6-35B-A3B + little-coder scored 24.6% ± 3.2 — above Gemini CLI on Gemini 2.5 Pro — running on an 8 GB laptop GPU with the wifi off." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" />
 
-<link rel="stylesheet" href="site.css" />
+<link rel="stylesheet" href="site.css?v=20260523f" />
 </head>
 <body>
 
@@ -37,7 +37,7 @@
     <span class="hero-tag reveal"><span class="dot"></span> v<span data-version>1.5.1</span></span>
     <h1 class="hero-mark mono"><span class="ch" style="--d:0">l</span><span class="ch" style="--d:1">c</span><span class="cursor big"></span></h1>
     <p class="hero-lead reveal" style="--d:0.4s">
-      a coding agent built for small models
+      a coding agent built <span class="lead-rotate"><span class="lead-tail">for small models</span><span class="cursor lead-cursor blink"></span></span>
     </p>
     <div class="hero-cta reveal" style="--d:0.6s">
       <a class="btn primary" href="#install"><span class="prompt mono">&gt;</span> quick start</a>
@@ -49,8 +49,8 @@
 <!-- ============================== why / benchmark ============================== -->
 <section id="why" class="bench" data-screen-label="benchmark">
   <div class="section-head">
-    <div class="eyebrow">// a 9.7B model walked into the aider polyglot benchmark.</div>
-    <h2 class="section-title">and walked out with a higher<br/>score than gpt-4.5-preview.</h2>
+    <div class="eyebrow">// an 8 GB laptop walked onto the official terminal-bench 2.0 leaderboard.</div>
+    <h2 class="section-title">and walked out ranked above<br/>gemini cli + gemini 2.5 pro.</h2>
     <p class="section-lead">this is the laptop next to you, with the wifi off.</p>
   </div>
 
@@ -59,19 +59,19 @@
     <div class="bench-row challenger">
       <div class="bench-meta">
         <div class="role">// challenger</div>
-        <div class="who">qwen3.5 + little-coder</div>
-        <div class="specs">9.7B params · 6.6 GB · runs offline · no API</div>
+        <div class="who">qwen3.6-35b-a3b + little-coder</div>
+        <div class="specs">35B-A3B · 3B active · 8 GB laptop GPU · offline · no API</div>
       </div>
       <div class="bench-bar-wrap">
-        <div class="bench-bar honey" style="--target: 45.56">
+        <div class="bench-bar honey" style="--target: 24.6">
           <span class="bench-fill"></span>
           <span class="bench-tick">0</span>
-          <span class="bench-tick" style="left:25%">12.5</span>
-          <span class="bench-tick" style="left:50%">25</span>
-          <span class="bench-tick" style="left:75%">37.5</span>
-          <span class="bench-tick right">50</span>
+          <span class="bench-tick" style="left:25%">7.5</span>
+          <span class="bench-tick" style="left:50%">15</span>
+          <span class="bench-tick" style="left:75%">22.5</span>
+          <span class="bench-tick right">30</span>
         </div>
-        <div class="bench-num"><span class="count" data-to="45.56">0.00</span><small>%</small></div>
+        <div class="bench-num"><span class="count" data-to="24.6" data-decimals="1">0.0</span><small>% ± 3.2</small></div>
       </div>
     </div>
 
@@ -80,21 +80,26 @@
     <!-- champ -->
     <div class="bench-row champ">
       <div class="bench-meta">
-        <div class="role">// reigning champ</div>
-        <div class="who">gpt-4.5-preview</div>
+        <div class="role">// frontier cloud agent</div>
+        <div class="who">Gemini 2.5 Pro + Gemini CLI</div>
         <div class="specs">frontier-scale · cloud-served · undisclosed params · API metered</div>
       </div>
       <div class="bench-bar-wrap">
-        <div class="bench-bar ink" style="--target: 44.90">
+        <div class="bench-bar ink" style="--target: 19.6">
           <span class="bench-fill"></span>
+          <span class="bench-tick">0</span>
+          <span class="bench-tick" style="left:25%">7.5</span>
+          <span class="bench-tick" style="left:50%">15</span>
+          <span class="bench-tick" style="left:75%">22.5</span>
+          <span class="bench-tick right">30</span>
         </div>
-        <div class="bench-num"><span class="count" data-to="44.90">0.00</span><small>%</small></div>
+        <div class="bench-num"><span class="count" data-to="19.6" data-decimals="1">0.0</span><small>% ± 2.9</small></div>
       </div>
     </div>
 
     <div class="bench-foot">
-      <span>fig. 1 — aider polyglot · 225 exercises · two-run mean · april 2026</span>
-      <span class="lead-by">led by <b>+0.66</b> points</span>
+      <span>fig. 1 — terminal-bench 2.0 · 89 tasks × 5 trials · official leaderboard</span>
+      <span class="lead-by">led by <b>+5.0</b> points</span>
     </div>
   </div>
 </section>
@@ -294,7 +299,7 @@
   </div>
 </footer>
 
-<script src="site.js"></script>
+<script src="site.js?v=20260523e"></script>
 
 </body>
 </html>

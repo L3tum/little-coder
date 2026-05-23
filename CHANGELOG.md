@@ -2,6 +2,70 @@
 
 All notable changes to little-coder are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and little-coder's public interface (CLI, providers, tools, skills) follows semver starting at `v0.0.1` post-rename.
 
+## [v1.8.1] — 2026-05-23
+
+### Fixed
+- **`glob` no longer exhausts memory on a recursive search from a huge root.** The tool capped *matches* at 500 but never bounded the *walk*: run from a home directory (or any tree with macOS `Library`, caches, or `node_modules`), `fs.glob` recursively descended everything and its internal traversal state grew until the Node **process** ran out of heap — a host-memory crash (`Ineffective mark-compacts near heap limit`), entirely distinct from the model's *context window* (the read-guard / window machinery operates on tool *results* in tokens; this died mid-walk, before any result existed). The walk is now bounded two ways: heavy/irrelevant directories (`node_modules`, `.git`, `dist`, `.cache`, `Library`, `venv`, `target`, …) are **pruned** — never descended — and a hard scan budget (200 000 entries) halts the walk through the one hook `fs.glob` calls per entry (`exclude`), since it exposes no signal/abort. When results are cut short the output says so, so the model narrows its search. New unit-tested `globFiles` / `renderGlobOutcome` helpers (`.pi/extensions/extra-tools/glob.ts`), verified to prune `node_modules` (0 descent) and to halt at the scan budget.
+
+### Notes for upgraders
+- For a focused search, pass a `path` (a project subdirectory) instead of globbing from a home directory. Hidden directories continue to be skipped by `fs.glob` as before.
+
+---
+
+## [v1.8.0] — 2026-05-23
+
+little-coder now **auto-detects the llama.cpp server's live context window** at startup and registers the model with it, so a `llama-server -c 131072` shows 128k instead of the declared default — no config edit. This completes [v1.7.0](#v170--2026-05-23): the budget already *followed* the registered window; now the registered window itself comes from the running server.
+
+### Added
+- **Live context-window detection for llama.cpp.** On startup `llama-cpp-provider` GETs the server's `/props` endpoint, reads its actual `n_ctx`, and registers the model with that window in place of the static `contextWindow` in `models.json`. The TUI context readout, read-guard's overflow trim, and the skill/knowledge budgets all then track the server's real window — bump `llama-server -c` and little-coder follows, no `models.json` or settings edit. The `/props` URL is derived from the provider baseUrl by stripping `/v1` (llama-server serves it at the root); the value is read from `default_generation_settings.n_ctx`. New tested helpers `propsUrlFor` / `contextWindowFromProps` / `probeContextWindow`, validated end-to-end against a live `-c 131072` server (→ 131072).
+  - **Best-effort and safe:** 1.5 s timeout, `llamacpp` provider only, and ANY failure (server down, no `/props`, non-JSON, timeout) silently falls back to the declared window — startup is never blocked or broken.
+  - **Env knobs:** `LITTLE_CODER_NO_CTX_PROBE=1` disables the probe (offline / CI); `LITTLE_CODER_LLAMACPP_PROPS_URL` overrides the `/props` URL for non-standard setups; `LITTLE_CODER_CTX_PROBE_TIMEOUT_MS` tunes the timeout.
+
+### Notes for upgraders
+- This adds one best-effort HTTP GET to the llama.cpp `/props` endpoint at launch (only for the `llamacpp` provider). If your server/proxy doesn't expose `/props`, behaviour is unchanged — the declared `models.json` `contextWindow` (default 32768) is used. Set `LITTLE_CODER_NO_CTX_PROBE=1` to skip the probe entirely.
+- No CLI-flag or public-API changes.
+
+---
+
+## [v1.7.0] — 2026-05-23
+
+little-coder's context budget now follows the model's **live registered context window** instead of a hardcoded 32 768. Whatever window your provider declares for the active model (`contextWindow` in `models.json`, user-overridable) is what the whole harness budgets against — bump the model once and the TUI's context readout, read-guard's overflow trim, and the skill/knowledge-injection budgets all move together. This closes the common report: *"I bumped llama.cpp to 128k but little-coder still says 33k."*
+
+### Changed
+- **`context_limit` is no longer a hardcoded per-profile setting.** It's removed from `default_model_profile` and every base per-model profile in `.pi/settings.json`. `benchmark-profiles` now resolves the published `littleCoder.contextLimit` from the active model's `ctx.model.contextWindow` — the same registered window pi displays and `getContextUsage()` / `read-guard` already use. Precedence: an explicit per-profile/benchmark `context_limit` override → the model's registered window → `CONTEXT_FALLBACK` (32 768). New exported, tested `resolveContextLimit()`, plus an end-to-end test that fires `before_agent_start` against the real `settings.json`.
+  - Practical effect: to run at 128k, set `contextWindow: 131072` for the model in your `models.json` (or a `~/.config/little-coder/models.json` override). There's no second knob — every budget follows it. Previously you also had to edit the now-removed `context_limit`, and the budgeting extensions silently stayed at 32 768 even after you bumped the server.
+
+### Notes for upgraders
+- Behaviour is unchanged if your `models.json` declares `contextWindow: 32768` (the shipped default) — the resolved budget is still 32 768. Only models with a larger declared window see a change.
+- The **gaia** benchmark override keeps its explicit `context_limit: 65536` (an explicit override still wins). Real interactive usage was never turn- or context-capped and still isn't.
+- No CLI-flag or public-API changes. `littleCoder.contextLimit` is published under the same name; only its source moved from settings to the live model window.
+
+---
+
+## [v1.6.1] — 2026-05-23
+
+A one-line whitelist tweak: `sed` is now an allowed bash command in `auto` permission mode. Stream-editing and line-range printing (`sed -n '1,20p' file`) are routine enough that gating them behind a per-deployment `LITTLE_CODER_BASH_ALLOW` was friction without a safety payoff — `sed` sits naturally alongside the already-allowed text-search tools (`grep`, `rg`, `find`).
+
+### Changed
+- **`sed ` added to the built-in `SAFE_PREFIXES`** (`.pi/extensions/permission-gate/index.ts`). As with every prefix on that list, the trailing space is a word boundary, so `sed …` is allowed while `sedfoo` is not. Note this also permits in-place edits (`sed -i`), the same read-write trade-off the list already makes for `cp `/`mv `; `rm` still stays off the list by design.
+
+### Notes for upgraders
+- Purely additive. No CLI flag, `models.json`, `.pi/settings.json`, or per-model-profile schema changes. If a deployment had been allowing `sed` via `LITTLE_CODER_BASH_ALLOW`, that entry is now redundant (harmless — the lists are merged).
+
+---
+
+## [v1.6.0] — 2026-05-23
+
+A new harness intervention for small-context models: oversized file reads no longer blow the context window. little-coder targets local models with small windows (`context_limit` is 32768, and the live window is often less), but pi's built-in `read` returns up to ~2000 lines in a single tool result — enough for one read to evict the conversation and derail the run. The harness now catches that read before it lands and replaces it with the file's head plus a "search, don't slurp" directive, surfaced through the same one-voice `harness intervention: …` line as the thinking-budget cap, write-guard redirect, and turn-cap.
+
+### Added
+- **`read-guard` extension — trims a Read that would overflow the context window.** On the `tool_result` event, when a successful `read`'s content would push context usage past the window (`ctx.getContextUsage().tokens + estimate(result) > contextWindow`, estimated at the same 3.5 chars/token ratio as the thinking-budget cap), the harness replaces the result with **only the file's first 30 lines** followed by a message that explains the trim and directs the model to use those lines to understand the file's structure, then narrow down — locate what it needs with `grep`/`find` or a targeted `read` (`offset`/`limit`) — rather than re-reading the whole file. The full file is still read from disk (pi already caps that at ~2000 lines), but the oversized text never reaches the model's context because the result content is swapped before it lands. `tool_result` (not `tool_call`) is used precisely because it can deliver both the 30 lines and the explanation in one result — a `tool_call` block can only return a `reason` string, and mutating `input.limit` gives lines but no message. When current usage is unknown (e.g. right after compaction, `tokens` is null), it falls back to trimming any single read that alone exceeds half the window. Image reads and error results are left untouched. New extension at `.pi/extensions/read-guard/`, auto-discovered by the launcher.
+
+### Notes for upgraders
+- No CLI flag, `models.json` shape, `.pi/settings.json`, or per-model-profile schema changes. The new extension auto-loads like every other `.pi/extensions/*/index.ts`, and only changes behaviour when a read would otherwise overflow the context window — normal reads pass through untouched. The threshold reads pi's live `getContextUsage()`, so it scales with whatever context window the active model reports.
+
+---
+
 ## [v1.5.1] — 2026-05-22
 
 A branding release — no behaviour changes. little-coder now wears the v1.0 brand book: the warm **paper / ink / honey** palette (`#F2EBDC` · `#1A1410` · `#E15A1F`), the `lc▌` block-cursor mark, and IBM Plex Mono. The "ready to type" cursor is the punchline — it ties the CLI heritage into the identity without saying so.

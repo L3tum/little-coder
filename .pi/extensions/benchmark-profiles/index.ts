@@ -10,6 +10,13 @@ import { fileURLToPath } from "node:url";
 // the resolved values on event.systemPromptOptions.littleCoder so the
 // other extensions (skill-inject, knowledge-inject, thinking-budget,
 // turn-cap) read them from a single source of truth.
+//
+// Context budget: `contextLimit` is NOT a hardcoded settings value — it
+// follows the model's live registered window (ctx.model.contextWindow, the
+// same window pi shows and read-guard/getContextUsage use), so bumping a
+// model's contextWindow in models.json propagates everywhere. An explicit
+// per-profile/benchmark `context_limit` (e.g. gaia) still wins, and
+// CONTEXT_FALLBACK (32768) is the last resort when no window is known.
 
 interface ModelProfile {
   context_limit?: number;
@@ -99,6 +106,28 @@ export function resolveProfileFrom(
   return basePlain;
 }
 
+// Last-resort context window when neither an explicit profile override nor the
+// model's registered window is available (also the shipped models.json default).
+export const CONTEXT_FALLBACK = 32768;
+
+// little-coder's context budget follows the model's live registered window.
+// Precedence: an explicit profile/benchmark context_limit (e.g. gaia) wins, then
+// the model's registered contextWindow (provider-defined, user-overridable in
+// models.json), then CONTEXT_FALLBACK. A non-positive / non-finite window is
+// treated as "unknown" and falls through.
+export function resolveContextLimit(
+  profileContextLimit?: number,
+  modelWindow?: number,
+): number {
+  if (typeof profileContextLimit === "number" && profileContextLimit > 0) {
+    return profileContextLimit;
+  }
+  if (typeof modelWindow === "number" && Number.isFinite(modelWindow) && modelWindow > 0) {
+    return modelWindow;
+  }
+  return CONTEXT_FALLBACK;
+}
+
 function resolveProfile(providerSlashModel: string): ModelProfile {
   loadSettings();
   return resolveProfileFrom(settings, providerSlashModel, process.env.LITTLE_CODER_BENCHMARK);
@@ -156,6 +185,12 @@ export default function (pi: ExtensionAPI) {
     for (const [k, v] of Object.entries(resolved)) {
       if (opts.littleCoder[k] === undefined) opts.littleCoder[k] = v;
     }
+
+    // Context budget follows the model's live registered window (the same
+    // window pi displays and read-guard reads), not a hardcoded settings value.
+    // An explicit profile/benchmark context_limit still wins; 32k is the floor.
+    const modelWindow = Number((model as any)?.contextWindow);
+    opts.littleCoder.contextLimit = resolveContextLimit(profile.context_limit, modelWindow);
 
     resolvedTemperature = opts.littleCoder.temperature;
   });

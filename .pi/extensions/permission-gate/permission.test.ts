@@ -18,6 +18,7 @@ describe("isSafeBash", () => {
     expect(isSafeBash("git log --oneline")).toBe(true);
     expect(isSafeBash("grep -r pattern .")).toBe(true);
     expect(isSafeBash("rg pattern src/")).toBe(true);
+    expect(isSafeBash("sed -n '1,20p' file.ts")).toBe(true);
   });
   it("allows routine filesystem scaffolding (cp/mv/mkdir/touch)", () => {
     expect(isSafeBash("cp a b")).toBe(true);

@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { glob } from "glob";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { globFiles, renderGlobOutcome } from "./glob.ts";
 
 // Ports of tools.py::_glob, _webfetch, _websearch. Pi ships its own grep/find,
 // so those are not re-registered here.
@@ -93,20 +93,14 @@ export default function (pi: ExtensionAPI) {
   // Default vendor directory names to exclude from glob / findRead results.
   const DEFAULT_VENDOR_DIRS = ["node_modules", ".git", "vendor"];
 
-  /** Filter out paths that live inside vendor directories. */
-  function filterVendorDirs(paths: string[], vendorDirs: string[]): string[] {
-    return paths.filter((p) => {
-      const parts = p.split("/");
-      return !parts.some((part) => vendorDirs.includes(part));
-    });
-  }
-
   // ── glob ────────────────────────────────────────────────────────────────
   pi.registerTool({
     name: "glob",
     label: "Glob",
     description:
-      "Find files matching a glob pattern. Returns a sorted list of matching paths (up to 500).",
+      "Find files matching a glob pattern. Returns a sorted list of matching paths (up to 500). " +
+      "Common dependency/build/cache dirs (node_modules, .git, dist, …) are skipped, and the walk " +
+      "is bounded — for a focused search, pass a `path` rather than globbing a whole home directory.",
     parameters: Type.Object({
       pattern: Type.String({ description: "Glob pattern e.g. **/*.py" }),
       path: Type.Optional(Type.String({ description: "Base directory (default: cwd)" })),
@@ -117,15 +111,12 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, { pattern, path, ignoreDefaultExcludes }) {
       try {
         const base = path || process.cwd();
-        let matches: string[] = await glob(pattern, { cwd: base });
-        if (ignoreDefaultExcludes !== false) {
-          matches = filterVendorDirs(matches, DEFAULT_VENDOR_DIRS);
-        }
-        if (matches.length > 500) matches = matches.slice(0, 500);
-        matches.sort();
-        const text = matches.length === 0 ? "No files matched" : matches.join("\n");
+        const outcome = await globFiles(pattern, {
+          base,
+          heavyDirs: ignoreDefaultExcludes === false ? new Set() : undefined,
+        });
         return {
-          content: [{ type: "text", text }],
+          content: [{ type: "text", text: renderGlobOutcome(outcome) }],
           details: {},
         };
       } catch (e) {
@@ -229,24 +220,25 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, { pattern, path, maxFiles, maxCharacters, ignoreDefaultExcludes }): Promise<any> {
       try {
         const base = path || process.cwd();
-        let matches: string[] = await glob(pattern, { cwd: base });
-        if (ignoreDefaultExcludes !== false) {
-          matches = filterVendorDirs(matches, DEFAULT_VENDOR_DIRS);
-        }
-        matches.sort();
+        const limit = Math.min(maxFiles ?? 5, 50);
+        const outcome = await globFiles(pattern, {
+          base,
+          maxMatches: limit,
+          heavyDirs: ignoreDefaultExcludes === false ? new Set() : undefined,
+        });
+        const matches = outcome.matches;
 
         if (matches.length === 0) {
-          return { content: [{ type: "text", text: "No files matched" }], details: { filesRead: 0, totalMatched: 0 } };
+          return { content: [{ type: "text", text: renderGlobOutcome(outcome) }], details: { filesRead: 0, totalMatched: 0 } };
         }
 
-        const limit = Math.min(maxFiles ?? 5, 50);
-        const capped = matches.slice(0, limit);
+        const capped = matches;
         const charLimit = maxCharacters ?? 4000;
         const truncated: string[] = [];
 
         const parts: string[] = [];
-        for (const rel of capped) {
-          const abs = isAbsolute(rel) ? rel : join(base, rel);
+        for (const abs of capped) {
+          const rel = abs.startsWith(base + "/") ? abs.slice(base.length + 1) : abs;
           if (!existsSync(abs)) {
             parts.push(`--- ${abs} ---\n[File not found]`);
             continue;
@@ -265,8 +257,11 @@ export default function (pi: ExtensionAPI) {
         }
 
         const suffix: string[] = [];
-        if (matches.length > limit) {
-          suffix.push(`\n[Showing ${limit} of ${matches.length} matched files. Increase maxFiles to see more.]`);
+        if (outcome.matchTruncated) {
+          suffix.push(`\n[Showing first ${limit} matched files. Increase maxFiles or narrow the pattern to see more.]`);
+        }
+        if (outcome.scanTruncated) {
+          suffix.push(`[Search stopped after scanning many entries; results may be incomplete. Narrow the base path.]`);
         }
         if (truncated.length > 0) {
           suffix.push(`[Truncated to ${charLimit} characters: ${truncated.join(", ")}]`);

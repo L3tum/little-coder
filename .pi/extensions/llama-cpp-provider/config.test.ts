@@ -3,7 +3,16 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyEnvOverrides, loadProviders, mergeProviders, resolveOverridePath, type ProviderEntry } from "./config.ts";
+import {
+  applyEnvOverrides,
+  loadProviders,
+  mergeProviders,
+  resolveOverridePath,
+  propsUrlFor,
+  contextWindowFromProps,
+  probeContextWindow,
+  type ProviderEntry,
+} from "./config.ts";
 
 const sampleProvider = (baseUrl: string, modelId: string): ProviderEntry => ({
   api: "openai-completions",
@@ -183,5 +192,67 @@ describe("shipped models.json", () => {
   it("still registers llamacpp and ollama alongside lmstudio", () => {
     const result = loadProviders(pkgRoot, {});
     expect(Object.keys(result.providers).sort()).toEqual(["llamacpp", "lmstudio", "ollama"]);
+  });
+});
+
+describe("propsUrlFor", () => {
+  it("strips a trailing /v1 and points at the server root /props", () => {
+    expect(propsUrlFor("http://127.0.0.1:8888/v1")).toBe("http://127.0.0.1:8888/props");
+    expect(propsUrlFor("http://host:8888/v1/")).toBe("http://host:8888/props");
+    expect(propsUrlFor("http://host:8888")).toBe("http://host:8888/props");
+    expect(propsUrlFor("http://host:8888/")).toBe("http://host:8888/props");
+  });
+});
+
+describe("contextWindowFromProps", () => {
+  it("reads default_generation_settings.n_ctx (real llama.cpp shape)", () => {
+    expect(contextWindowFromProps({ default_generation_settings: { n_ctx: 131072 } })).toBe(131072);
+  });
+  it("falls back to a top-level n_ctx", () => {
+    expect(contextWindowFromProps({ n_ctx: 65536 })).toBe(65536);
+  });
+  it("returns undefined when absent or non-positive", () => {
+    expect(contextWindowFromProps({})).toBeUndefined();
+    expect(contextWindowFromProps({ default_generation_settings: { n_ctx: 0 } })).toBeUndefined();
+    expect(contextWindowFromProps({ default_generation_settings: { n_ctx: "lots" } })).toBeUndefined();
+    expect(contextWindowFromProps(null)).toBeUndefined();
+  });
+});
+
+describe("probeContextWindow", () => {
+  const okRes = (body: unknown) => ({ ok: true, json: async () => body }) as Response;
+
+  it("returns the server's n_ctx on success", async () => {
+    const fetchImpl = (async () =>
+      okRes({ default_generation_settings: { n_ctx: 131072 } })) as unknown as typeof fetch;
+    expect(await probeContextWindow("http://x:8888/v1", { fetchImpl })).toBe(131072);
+  });
+
+  it("returns undefined on a non-OK response", async () => {
+    const fetchImpl = (async () => ({ ok: false }) as Response) as unknown as typeof fetch;
+    expect(await probeContextWindow("http://x:8888/v1", { fetchImpl })).toBeUndefined();
+  });
+
+  it("returns undefined when fetch throws (server down / unreachable)", async () => {
+    const fetchImpl = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    expect(await probeContextWindow("http://x:8888/v1", { fetchImpl })).toBeUndefined();
+  });
+
+  it("returns undefined when the response lacks n_ctx", async () => {
+    const fetchImpl = (async () => okRes({ total_slots: 1 })) as unknown as typeof fetch;
+    expect(await probeContextWindow("http://x:8888/v1", { fetchImpl })).toBeUndefined();
+  });
+
+  it("honors an explicit props url override", async () => {
+    let seen = "";
+    const fetchImpl = (async (u: string) => {
+      seen = u;
+      return okRes({ default_generation_settings: { n_ctx: 40960 } });
+    }) as unknown as typeof fetch;
+    const got = await probeContextWindow("http://x:8888/v1", { fetchImpl, url: "http://other/props" });
+    expect(seen).toBe("http://other/props");
+    expect(got).toBe(40960);
   });
 });

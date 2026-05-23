@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadProviders } from "./config.ts";
+import { loadProviders, probeContextWindow } from "./config.ts";
 
 // Data-driven provider registration. Reads:
 //   1. <pkgRoot>/models.json                       (shipped default)
@@ -16,7 +16,7 @@ import { loadProviders } from "./config.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..", "..", "..");
 
-export default function (pi: ExtensionAPI) {
+export default async function (pi: ExtensionAPI) {
   const result = loadProviders(pkgRoot);
 
   for (const src of result.sources) {
@@ -33,12 +33,32 @@ export default function (pi: ExtensionAPI) {
     return;
   }
 
+  // Opt-out for offline / CI / no-server launches that don't want a startup probe.
+  const probeDisabled = process.env.LITTLE_CODER_NO_CTX_PROBE === "1";
+
   for (const [name, entry] of Object.entries(result.providers)) {
+    let models = entry.models;
+
+    // Auto-detect the server's live context window so the model registers with
+    // the real n_ctx (e.g. a `-c 131072` server) instead of models.json's
+    // declared default — the TUI readout, read-guard, and context budget all
+    // follow the registered window. llama.cpp-only (the /props endpoint); any
+    // failure silently keeps the declared window, so this never breaks startup.
+    if (!probeDisabled && name === "llamacpp" && entry.models.length > 0) {
+      const probed = await probeContextWindow(entry.baseUrl, {
+        url: process.env.LITTLE_CODER_LLAMACPP_PROPS_URL || undefined,
+        timeoutMs: Number(process.env.LITTLE_CODER_CTX_PROBE_TIMEOUT_MS) || undefined,
+      });
+      if (probed) {
+        models = entry.models.map((m) => ({ ...m, contextWindow: probed }));
+      }
+    }
+
     pi.registerProvider(name, {
       baseUrl: entry.baseUrl,
       apiKey: entry.apiKey,
       api: entry.api,
-      models: entry.models,
+      models,
     });
   }
 }

@@ -146,3 +146,54 @@ export function loadProviders(pkgRoot: string, env: NodeJS.ProcessEnv = process.
   const withEnv = applyEnvOverrides(merged, env);
   return { providers: withEnv, sources };
 }
+
+// ── live context-window detection (llama.cpp /props) ────────────────────────
+// little-coder budgets against the model's registered contextWindow. Rather than
+// trust the static value in models.json, we ask a running llama.cpp server for
+// its actual n_ctx at startup, so a `-c 131072` server shows 128k instead of the
+// declared default. Best-effort: any failure falls back to the declared window.
+
+/** Derive the llama.cpp `/props` URL from an OpenAI-style baseUrl. llama-server
+ *  serves /props at the server ROOT, not under /v1 (which 404s), so strip a
+ *  trailing /v1 (and any trailing slash) before appending /props. */
+export function propsUrlFor(baseUrl: string): string {
+  const root = baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+  return `${root}/props`;
+}
+
+/** Pull the context window (n_ctx) out of a llama.cpp /props response. It lives
+ *  at default_generation_settings.n_ctx (the per-slot window — exactly what one
+ *  conversation can use); some builds also expose a top-level n_ctx. Returns
+ *  undefined when absent or not a positive number. */
+export function contextWindowFromProps(json: unknown): number | undefined {
+  const j = json as { default_generation_settings?: { n_ctx?: unknown }; n_ctx?: unknown } | null;
+  const n = Number(j?.default_generation_settings?.n_ctx ?? j?.n_ctx);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+export interface ProbeDeps {
+  fetchImpl?: typeof fetch;
+  timeoutMs?: number;
+  url?: string;
+}
+
+/** Ask a llama.cpp server for its live context window via /props. Returns
+ *  undefined on ANY failure (server down, no /props, non-JSON, timeout) so the
+ *  caller falls back to the declared window — never throws, never blocks beyond
+ *  timeoutMs. */
+export async function probeContextWindow(baseUrl: string, deps: ProbeDeps = {}): Promise<number | undefined> {
+  const fetchImpl = deps.fetchImpl ?? fetch;
+  const url = deps.url ?? propsUrlFor(baseUrl);
+  const timeoutMs = deps.timeoutMs ?? 1500;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url, { signal: ctrl.signal });
+    if (!res.ok) return undefined;
+    return contextWindowFromProps(await res.json());
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}

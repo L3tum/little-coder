@@ -13,7 +13,7 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "git ls-tree", "git cat-file", "git rev-parse", "git config --get",
   "git config --list", "git for-each-ref", "git name-rev",
   "git cherry", "git bisect log", "git worktree list",
-  "find ", "grep ", "rg ", "ag ", "fd ",
+  "find ", "grep ", "rg ", "ag ", "fd ", "sed ",
   "python ", "python3 ", "node ", "ruby ", "perl ",
   "pip show", "pip list", "npm list", "cargo metadata",
   "df ", "du ", "free ", "top -bn", "ps ",
