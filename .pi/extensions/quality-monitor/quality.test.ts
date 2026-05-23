@@ -39,10 +39,10 @@ describe("assessResponse", () => {
       assessResponse("", [{ name: "Anything", input: {} }], [], new Set()),
     ).toEqual({ ok: true });
   });
-  it("detects repeated tool call", () => {
+  it("detects repeated failing tool call", () => {
     const now = [{ name: "Read", input: { file_path: "/a" } }];
     const prev = [{ name: "Read", input: { file_path: "/a" } }];
-    expect(assessResponse("", now, prev, known)).toEqual({
+    expect(assessResponse("", now, prev, known, new Set(["Read"]), new Set(["Read"]))).toEqual({
       ok: false, reason: "repeated_tool_call",
     });
   });
@@ -51,10 +51,10 @@ describe("assessResponse", () => {
     const prev = [{ name: "Read", input: { file_path: "/b" } }];
     expect(assessResponse("", now, prev, known)).toEqual({ ok: true });
   });
-  it("does not flag exact retry when previous identical call had tool error", () => {
+  it("does not flag exact retry when only the previous identical call had tool error", () => {
     const now = [{ name: "Read", input: { file_path: "/a" } }];
     const prev = [{ name: "Read", input: { file_path: "/a" } }];
-    expect(assessResponse("", now, prev, known, new Set(["Read"]))).toEqual({ ok: true });
+    expect(assessResponse("", now, prev, known, new Set(["Read"]), new Set())).toEqual({ ok: true });
   });
   it("does not flag retry of a different tool that errored", () => {
     const now = [{ name: "Write", input: { file_path: "/b" } }];
@@ -62,19 +62,15 @@ describe("assessResponse", () => {
     // Read errored, but the current call is Write — should be fine
     expect(assessResponse("", now, prev, known, new Set(["Read"]))).toEqual({ ok: true });
   });
-  it("does not flag repeated call when the tool errored in previous turn", () => {
+  it("does not flag repeated call when the tool succeeded in previous turn", () => {
     const now = [{ name: "Bash", input: { command: "ls" } }];
     const prev = [{ name: "Bash", input: { command: "ls" } }];
-    // Bash errored last turn, retrying is OK
-    expect(assessResponse("", now, prev, known, new Set(["Bash"]))).toEqual({ ok: true });
+    expect(assessResponse("", now, prev, known, new Set(), new Set(["Bash"]))).toEqual({ ok: true });
   });
-  it("flags repeated call when the tool succeeded in previous turn", () => {
+  it("does not flag repeated call when the tool succeeds on the current turn", () => {
     const now = [{ name: "Bash", input: { command: "ls" } }];
     const prev = [{ name: "Bash", input: { command: "ls" } }];
-    // Bash succeeded last turn, repeating is a loop
-    expect(assessResponse("", now, prev, known, new Set())).toEqual({
-      ok: false, reason: "repeated_tool_call",
-    });
+    expect(assessResponse("", now, prev, known, new Set(["Bash"]), new Set())).toEqual({ ok: true });
   });
   it("detects malformed args sentinel", () => {
     const calls = [{ name: "Read", input: { _raw: "garbage" } }];

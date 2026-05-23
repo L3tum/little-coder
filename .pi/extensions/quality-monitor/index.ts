@@ -93,6 +93,7 @@ export default function (pi: ExtensionAPI) {
       previousToolCalls,
       knownTools,
       previousTurnErrorTools,
+      currentErrorTools,
     );
 
     // Update rolling state for next turn regardless of verdict

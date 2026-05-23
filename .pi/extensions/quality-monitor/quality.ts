@@ -15,6 +15,7 @@ export function assessResponse(
   recentToolCalls: ToolCall[],
   knownTools: Set<string>,
   recentToolCallsErrorTools: Set<string> = new Set(),
+  currentToolCallsErrorTools: Set<string> = new Set(),
 ): QualityResult {
   // 1. Empty response with no tool calls
   if (!text.trim() && toolCalls.length === 0) {
@@ -29,19 +30,18 @@ export function assessResponse(
     }
   }
 
-  // 3. Repeated tool call loop (exact name+input match with previous turn).
-  // Skip the check for tools that errored in the previous turn — retrying a
-  // failed call is legitimate.  Only flag as a loop when the same tool+input
-  // repeats after a *successful* execution of that call.
+  // 3. Repeated failing tool call loop (exact name+input match with previous turn).
+  // Flag only when the same call errored in both the previous and current turn.
+  // Successful repeats can be legitimate; repeated identical failures usually
+  // mean the model needs to change approach (smaller edits, different command, etc.).
   if (toolCalls.length > 0 && recentToolCalls.length > 0) {
     for (const tc of toolCalls) {
       for (const prev of recentToolCalls) {
         if (tc.name === prev.name &&
-            JSON.stringify(tc.input) === JSON.stringify(prev.input)) {
-          // Only flag if this tool did NOT error in the previous turn
-          if (!recentToolCallsErrorTools.has(tc.name)) {
-            return { ok: false, reason: "repeated_tool_call" };
-          }
+            JSON.stringify(tc.input) === JSON.stringify(prev.input) &&
+            recentToolCallsErrorTools.has(tc.name) &&
+            currentToolCallsErrorTools.has(tc.name)) {
+          return { ok: false, reason: "repeated_tool_call" };
         }
       }
     }
@@ -105,9 +105,9 @@ export function buildCorrectionMessage(reason: string, knownTools: Set<string> =
       `Available tools: ${tools}.\n` +
       "Pick the right tool for what you need to do and call it properly.",
     repeated_tool_call:
-      "STOP: You just repeated the exact same tool call with the same arguments " +
-      "as your previous turn. This means you're stuck in a loop.\n" +
-      "Do NOT repeat the same call. Instead:\n" +
+      "STOP: The same tool call with the same arguments failed twice in a row. " +
+      "This means you're stuck in a loop.\n" +
+      "Do NOT repeat the same failing call. Instead:\n" +
       "1. Read the file/content you need first (use Read or Bash)\n" +
       "2. Check if the file already exists before writing (use Glob)\n" +
       "3. If Edit failed, re-Read the file to get the exact current text\n" +
@@ -151,7 +151,7 @@ export function phraseForUser(reason: string): string {
   const phrases: Record<string, string> = {
     empty_response: "the model returned an empty response",
     empty_tool_name: "the model emitted a tool call with no name",
-    repeated_tool_call: "the model repeated its previous tool call verbatim",
+    repeated_tool_call: "the model repeated a failing tool call verbatim",
   };
   return phrases[reason] ?? `quality issue (${reason})`;
 }
