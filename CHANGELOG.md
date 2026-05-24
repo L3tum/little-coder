@@ -93,7 +93,6 @@ A reliability + UX release centered on the harness's intervention machinery. Iss
 ### Added
 - **`/clear` command.** Starts a fresh session as if little-coder were closed and relaunched — re-renders the banner, rebuilds the AGENTS.md/system-prompt context, and resets session-scoped extension state — via `ctx.newSession()`. (pi's built-in equivalent is `/new`; `/clear` is the alias muscle-memory expects.)
 - **One-line "harness intervention" UX.** Every moment the scaffolding overrides or redirects the model — thinking-budget cap, write-guard redirect, turn-cap, finalize-warn, quality-monitor corrections, output-parser nudges — now surfaces a single, uniformly-worded line (`harness intervention: …`) instead of each extension's own ad-hoc warning. Helper at `.pi/extensions/_shared/intervention.ts`.
-- **pi's bare "Operation aborted" marker is suppressed.** With harness interventions carrying their own line and a user ESC being self-evident, the stacked red marker was noise. pi is a normal dependency (not vendored), so this ships as an idempotent, dependency-free source patch (`scripts/patch-pi.mjs`) applied on `postinstall` **and** re-applied on every launch by the launcher — it self-heals if install scripts were skipped or pi was reinstalled, and **fails safe**: if a future pi changes that code the patch silently no-ops (you'd just see the marker again) rather than breaking install or launch. A test (`scripts/patch-pi.test.mjs`) fails loudly the moment the installed pi no longer matches, so a pi bump is a caught CI signal to refresh one string — never a silent regression.
 
 ### Changed
 - **Thinking-budget cap raised 2048 → 4096 tokens** across `default_model_profile` and every per-model profile (the `terminal_bench` / `gaia` benchmark overrides keep their tuned values). The hardcoded fallback in the `thinking-budget` extension matches.
@@ -101,7 +100,6 @@ A reliability + UX release centered on the harness's intervention machinery. Iss
 ### Notes for upgraders
 - No CLI flag, `models.json` shape, or per-model-profile *schema* changes. The only `.pi/settings.json` value change is `thinking_budget` (2048 → 4096); if you'd pinned it lower on purpose, re-set it in your own settings.
 - The custom `write` tool the `write-guard` extension used to register is gone — writes go through pi's built-in `write`, guarded at the `tool_call` event. If you depended on the old tool's `file_path` arg name in a fork, note pi's built-in uses `path` (both are accepted by the guard).
-- The pi source patch targets `@earendil-works/pi-coding-agent` 0.75.x. If you bundle a newer pi and the abort marker reappears, run `npx vitest run scripts/patch-pi.test.mjs` — a failure tells you to refresh the find/replace in `scripts/patch-pi.mjs`.
 
 ---
 

@@ -5,9 +5,8 @@
 //
 // Before this helper each extension emitted its own free-form `ctx.ui.notify`
 // in a different voice and severity, so a single harness decision (e.g. a
-// thinking-budget abort) surfaced as several stacked warnings plus pi's own
-// "Operation aborted" marker. Routing every such message through one helper
-// gives the user a single, consistently-worded line:
+// thinking-budget abort) surfaced in different formats. Routing every such
+// message through one helper gives the user a single, consistently-worded line:
 //
 //     harness intervention: the model has thought long enough — forcing it to
 //     start implementing.

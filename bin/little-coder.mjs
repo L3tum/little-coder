@@ -142,18 +142,6 @@ function bundledPackageArgs(pkgJson) {
   return args;
 }
 
-// ---- 3b. Re-apply little-coder's pi-runtime patches (best-effort) ----
-// pi is a normal dependency, so we can't ship a modified copy; instead we
-// re-apply small source edits (e.g. suppressing pi's bare "Operation aborted"
-// marker) on every launch. This self-heals when npm install scripts were
-// skipped or pi was reinstalled. Cosmetic only — never block launch.
-try {
-  const { applyPiPatches } = await import("../scripts/patch-pi.mjs");
-  applyPiPatches(piPkgRoot);
-} catch {
-  // patches are non-essential; ignore (missing file, read-only FS, etc.)
-}
-
 // ---- 4. Auto-discover bundled extensions ----
 const rootPkgJson = readJson(join(pkgRoot, "package.json")) ?? {};
 const extDir = join(pkgRoot, ".pi", "extensions");

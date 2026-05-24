@@ -72,8 +72,27 @@ export function getSafePrefixes(): string[] {
   return [...BUILTIN_SAFE_PREFIXES, ...parseExtraPrefixes(process.env.LITTLE_CODER_BASH_ALLOW)];
 }
 
+function hasShellControlOperator(command: string): boolean {
+  return /[;&|`$<>]/.test(command) || /\$\(|\n|\r/.test(command);
+}
+
+function isSafeDiagnosticCommand(command: string): boolean {
+  const c = command.trim().replace(/\s+/g, " ");
+  if (hasShellControlOperator(c)) return false;
+
+  return [
+    /^npm\s+(?:run\s+)?typecheck(?:\s+--\s+(?:--?[\w:-]+(?:[= ][\w:./-]+)?\s*)*)?$/,
+    /^npm\s+(?:run\s+)?lint(?:\s+--\s+(?:--?[\w:-]+(?:[= ][\w:./-]+)?\s*)*)?$/,
+    /^npm\s+(?:list|ls)(?:\s+(?:--?[\w:-]+(?:[= ][\w:./@-]+)?|[\w@./-]+))*$/,
+    /^npm\s+(?:view|info)\s+[\w@./-]+(?:\s+[\w.-]+)?(?:\s+--json)?$/,
+    /^npx\s+(?:--yes\s+)?tsc\s+--noEmit(?:\s+--?[\w:-]+(?:[= ][\w:./-]+)?)*$/,
+    /^npx\s+(?:--yes\s+)?skills\s+(?:find|list|show|info|search)(?:\s+[\w@./:,-]+)*$/,
+  ].some((pattern) => pattern.test(c));
+}
+
 export function isSafeBash(command: string, prefixes: readonly string[] = getSafePrefixes()): boolean {
   const c = command.trim();
+  if (isSafeDiagnosticCommand(c)) return true;
   return prefixes.some((p) => c.startsWith(p));
 }
 
@@ -120,6 +139,10 @@ export function hasParentTraversal(value: string): boolean {
   return value.split(/[\\/]+/).includes("..");
 }
 
+function isWithinDefaultAllowedTmp(target: string): boolean {
+  return isWithinWorkspace(normalize(resolve(tmpdir())), normalize(resolve(target)));
+}
+
 function isTrustedToolTempFilePath(target: string): boolean {
   const normalizedTarget = normalize(resolve(target));
   const normalizedTmpDir = normalize(resolve(tmpdir()));
@@ -146,7 +169,7 @@ export function getExternalWorkspaceAccess(
     const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
     if (!path) return null;
     const resolved = resolveWorkspacePath(path, cwd);
-    if (isTrustedToolTempFilePath(resolved)) return null;
+    if (isWithinDefaultAllowedTmp(resolved) || isTrustedToolTempFilePath(resolved)) return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
@@ -154,6 +177,7 @@ export function getExternalWorkspaceAccess(
     const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
     if (!path) return null;
     const resolved = resolveWorkspacePath(path, cwd);
+    if (isWithinDefaultAllowedTmp(resolved)) return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
@@ -161,12 +185,14 @@ export function getExternalWorkspaceAccess(
     const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
     if (!path) return null;
     const resolved = normalizeWritePath(path, cwd).path;
+    if (isWithinDefaultAllowedTmp(resolved)) return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
   if (toolName === "grep") {
     const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
     const base = resolveWorkspacePath(baseInput, cwd);
+    if (isWithinDefaultAllowedTmp(base)) return null;
     return isWithinWorkspace(cwd, base) ? null : { summary: base };
   }
 
@@ -174,7 +200,7 @@ export function getExternalWorkspaceAccess(
     const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
     const base = resolveWorkspacePath(baseInput, cwd);
     const pattern = typeof input.pattern === "string" ? input.pattern : "";
-    if (isTrustedToolTempGlob(base, pattern)) return null;
+    if (isWithinDefaultAllowedTmp(base) || isTrustedToolTempGlob(base, pattern)) return null;
     if (!isWithinWorkspace(cwd, base)) return { summary: base };
     if (pattern && hasParentTraversal(pattern)) {
       return { summary: `${base} (pattern escapes base: ${pattern})` };

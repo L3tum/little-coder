@@ -28,7 +28,6 @@
   },
   "files": [
     "bin/",
-    "scripts/",
     "AGENTS.md",
     "skills/",
     ".pi/extensions/",
@@ -43,8 +42,7 @@
     "pi": "pi",
     "test": "vitest run",
     "test:py": "python3 -m pytest benchmarks/test_rpc_client.py -q",
-    "typecheck": "tsc --noEmit",
-    "postinstall": "node scripts/patch-pi.mjs"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.74.1",
@@ -60,6 +58,7 @@
     "pi-powerline-footer": "^0.5.4",
     "playwright": "^1.59.1",
     "typebox": "^1.1.38",
+    "vscode-languageserver-protocol": "^3.17.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {

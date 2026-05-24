@@ -1,4 +1,6 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+import { WelcomeHeader, discoverLoadedCounts, getRecentSessions } from "pi-powerline-footer/welcome.ts";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,6 +84,66 @@ function buildHeader(theme: Theme): string[] {
     theme.fg("text", "/workspace-permissions"),
     theme.fg("muted", " for out-of-workspace file access policy"),
   ].join("");
+  const issueAgentSection = [
+    theme.bold("Issue agent:"),
+    [
+      theme.fg("muted", "Run "),
+      theme.fg("text", "/issue-agent --repos=url[,url]"),
+      theme.fg("muted", " to continuously work GitHub/Forgejo issues labeled "),
+      theme.fg("text", "ai:*"),
+    ].join(""),
+    [
+      theme.fg("muted", "States: "),
+      theme.fg("text", "ai:state:PLANNING"),
+      sep,
+      theme.fg("text", "WAITING_FOR_FEEDBACK"),
+      sep,
+      theme.fg("text", "EXECUTING"),
+      sep,
+      theme.fg("text", "WAITING_FOR_REVIEW"),
+    ].join(""),
+    [
+      theme.fg("muted", "Flow: PLAN comment → wait for "),
+      theme.fg("text", "/approve"),
+      theme.fg("muted", " or "),
+      theme.fg("text", "ai:state:EXECUTING"),
+      theme.fg("muted", " → commit, push branch, open PR"),
+    ].join(""),
+    [
+      theme.fg("muted", "Labels: "),
+      theme.fg("text", "ai:priority:N"),
+      sep,
+      theme.fg("text", "ai:planning-model:x"),
+      sep,
+      theme.fg("text", "ai:execution-model:y"),
+      sep,
+      theme.fg("text", "ai:blocked:*"),
+    ].join(""),
+    [
+      theme.fg("muted", "Provider limits add "),
+      theme.fg("text", "ai:blocked:usage-limit"),
+      theme.fg("muted", ", "),
+      theme.fg("text", "ai:provider-status:*"),
+      theme.fg("muted", ", and "),
+      theme.fg("text", "ai:retry-after:*"),
+    ].join(""),
+    [
+      theme.fg("muted", "Options: "),
+      theme.fg("text", "--dry-run"),
+      sep,
+      theme.fg("text", "--fallback-models=a,b"),
+      theme.fg("muted", " or labels "),
+      theme.fg("text", "ai:fallback-*-model:x"),
+    ].join(""),
+    [
+      theme.fg("muted", "Setup: provide an API key via "),
+      theme.fg("text", "--token"),
+      theme.fg("muted", ", "),
+      theme.fg("text", "GITHUB_TOKEN"),
+      theme.fg("muted", ", or "),
+      theme.fg("text", "FORGEJO_TOKEN"),
+    ].join(""),
+  ];
   const hints = [
     `${dim("esc")} interrupt`,
     `${dim("ctrl-l/ctrl-c")} clear/exit`,
@@ -89,15 +151,23 @@ function buildHeader(theme: Theme): string[] {
     `${dim("!")} bash`,
     `${dim("ctrl-r")} more`,
   ].join(sep);
-  return ["", logo, tagline, extensionLine1, extensionLine2, extensionLine3, "", hints, ""];
+  return ["", logo, tagline, extensionLine1, extensionLine2, extensionLine3, "", ...issueAgentSection, "", hints, ""];
 }
 
-function applyHeader(ctx: { ui: { setHeader: Function; setTitle: Function }; cwd: string }): void {
+function applyBranding(ctx: { ui: { setHeader: Function; setTitle: Function }; cwd: string; model?: { name?: string; id?: string; provider?: string } }): void {
+  const modelName = ctx.model?.name || ctx.model?.id || "No model";
+  const providerName = ctx.model?.provider || "Unknown";
+  const powerlineHeader = new WelcomeHeader(modelName, providerName, getRecentSessions(3), discoverLoadedCounts());
+
   ctx.ui.setHeader((_tui: unknown, theme: Theme) => ({
-    render(_width: number): string[] {
-      return buildHeader(theme);
+    render(width: number): string[] {
+      return [...powerlineHeader.render(width), ...buildHeader(theme)].map((line) =>
+        truncateToWidth(line, width, "…"),
+      );
     },
-    invalidate() {},
+    invalidate() {
+      powerlineHeader.invalidate();
+    },
   }));
   setTitleForCwd(ctx.ui.setTitle.bind(ctx.ui), ctx.cwd);
 }
@@ -117,18 +187,18 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
-    applyHeader(ctx);
-    setTimeout(() => applyHeader(ctx), 0);
-    setTimeout(() => applyHeader(ctx), 150);
+    applyBranding(ctx);
+    setTimeout(() => applyBranding(ctx), 0);
+    setTimeout(() => applyBranding(ctx), 150);
   });
 
   pi.on("turn_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
-    applyHeader(ctx);
+    applyBranding(ctx);
   });
 
   pi.on("turn_end", async (_event, ctx) => {
     if (!ctx.hasUI) return;
-    applyHeader(ctx);
+    applyBranding(ctx);
   });
 }

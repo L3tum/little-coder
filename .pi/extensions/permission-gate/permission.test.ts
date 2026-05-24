@@ -169,9 +169,7 @@ describe("getExternalWorkspaceAccess", () => {
     expect(getExternalWorkspaceAccess("read", { path: "../secret.txt" }, cwd)).toEqual({
       summary: "/home/me/secret.txt",
     });
-    expect(getExternalWorkspaceAccess("edit", { path: "/tmp/config.ini" }, cwd)).toEqual({
-      summary: "/tmp/config.ini",
-    });
+    expect(getExternalWorkspaceAccess("edit", { path: "/tmp/config.ini" }, cwd)).toBeNull();
     expect(getExternalWorkspaceAccess("write", { path: "/etc/hosts" }, cwd)).toEqual({
       summary: "/etc/hosts",
     });
@@ -195,14 +193,10 @@ describe("getExternalWorkspaceAccess", () => {
     expect(getExternalWorkspaceAccess("findRead", { path: tmp, pattern: "pi-bash-*.log" }, cwd)).toBeNull();
   });
 
-  it("still blocks unrelated temp files outside workspace", () => {
+  it("allows broad temp files outside workspace", () => {
     const tmp = tmpdir();
-    expect(getExternalWorkspaceAccess("read", { path: `${tmp}/notes.txt` }, cwd)).toEqual({
-      summary: `${tmp}/notes.txt`,
-    });
-    expect(getExternalWorkspaceAccess("findRead", { path: tmp, pattern: "*.log" }, cwd)).toEqual({
-      summary: tmp,
-    });
+    expect(getExternalWorkspaceAccess("read", { path: `${tmp}/notes.txt` }, cwd)).toBeNull();
+    expect(getExternalWorkspaceAccess("findRead", { path: tmp, pattern: "*.log" }, cwd)).toBeNull();
   });
 });
 
