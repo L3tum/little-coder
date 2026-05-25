@@ -17,7 +17,8 @@
     "packages": [
       "@plannotator/pi-extension",
       "@juicesharp/rpiv-todo",
-      "pi-powerline-footer"
+      "pi-powerline-footer",
+      "pi-better-openai"
     ]
   },
   "bin": {
@@ -54,6 +55,7 @@
     "chokidar": "^5.0.0",
     "glob": "^13.0.6",
     "open": "^11.0.0",
+    "pi-better-openai": "^0.1.18",
     "pi-inspect": "^0.5.0",
     "pi-powerline-footer": "^0.5.4",
     "playwright": "^1.59.1",
@@ -64,5 +66,8 @@
   "devDependencies": {
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
+  },
+  "optionalDependencies": {
+    "@tobilu/qmd": "^2.5.2"
   }
 }

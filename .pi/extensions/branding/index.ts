@@ -84,6 +84,16 @@ function buildHeader(theme: Theme): string[] {
     theme.fg("text", "/workspace-permissions"),
     theme.fg("muted", " for out-of-workspace file access policy"),
   ].join("");
+  const extensionLine4 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/lsp-doctor"),
+    theme.fg("muted", " to show recognized and usable LSP servers"),
+  ].join("");
+  const extensionLine5 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/codebase"),
+    theme.fg("muted", " to inspect the codebase-memory integration"),
+  ].join("");
   const issueAgentSection = [
     theme.bold("Issue agent:"),
     [
@@ -151,7 +161,7 @@ function buildHeader(theme: Theme): string[] {
     `${dim("!")} bash`,
     `${dim("ctrl-r")} more`,
   ].join(sep);
-  return ["", logo, tagline, extensionLine1, extensionLine2, extensionLine3, "", ...issueAgentSection, "", hints, ""];
+  return ["", logo, tagline, extensionLine1, extensionLine2, extensionLine3, extensionLine4, extensionLine5, "", ...issueAgentSection, "", hints, ""];
 }
 
 function applyBranding(ctx: { ui: { setHeader: Function; setTitle: Function }; cwd: string; model?: { name?: string; id?: string; provider?: string } }): void {

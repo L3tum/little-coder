@@ -177,6 +177,15 @@ function branchName(issue: Issue): string {
   return `ai/${issue.number}-${slug || "issue"}`;
 }
 
+function isAutoresearch(issue: Issue): boolean {
+  return issue.labels.some((l) => l === "autoresearch" || l === "ai:autoresearch");
+}
+
+function autoresearchConfig(issue: Issue): { maxIterations?: string; metric?: string; direction?: string } {
+  const value = (key: string) => issue.labels.find((l) => l.startsWith(`autoresearch:${key}=`))?.slice(`autoresearch:${key}=`.length);
+  return { maxIterations: value("max-iterations"), metric: value("metric"), direction: value("direction") };
+}
+
 function checkout(repo: string, issue: Issue, workdir: string): string {
   mkdirSync(workdir, { recursive: true });
   const dir = join(workdir, repoSlug(repo).replace("/", "__"));
@@ -255,7 +264,11 @@ async function queueIssue(pi: ExtensionAPI, repo: string, issue: Issue, cfg: Con
   const dir = cfg.dryRun ? join(cfg.workdir, repoSlug(repo).replace("/", "__")) : checkout(repo, issue, cfg.workdir);
   activeWork = { repo, issue, cfg, dir, fallbackIndex: -1 };
   const models = modelsOf(issue.labels, cfg.models);
-  const prompt = `ISSUE AGENT WORKFLOW\nRepo: ${repo}\nIssue: #${issue.number} ${issue.title}\nBranch: ${branchName(issue)}\nCheckout: ${dir}\nState: ${stateOf(issue.labels)}\nPlanning model: ${models.planning ?? "default"}\nExecution model: ${models.execution ?? "default"}\nFallback models: ${models.fallback.join(", ") || "none"}\n\nIssue body:\n${issue.body ?? ""}\n\nIf state is PLANNING, inspect the checkout and produce a PLAN only. Post the PLAN to the issue, then wait for ai:state:EXECUTING or requested changes. If state is EXECUTING, execute the approved plan. When done, call the issueAgentDone tool with optional PR text; the harness should commit, push ${branchName(issue)}, and open a PR for review. If a provider limit/error occurs, report BLOCKED_WITH_PROVIDER_ERROR so the harness can switch fallback models or pick another issue.`;
+  const ar = autoresearchConfig(issue);
+  const autoresearch = isAutoresearch(issue)
+    ? `\n\nAUTORESEARCH MODE\nThis issue has an autoresearch label. Create or resume autoresearch.md, autoresearch.sh, autoresearch.checks.sh when useful, and autoresearch.jsonl in the checkout. Run bounded experiments only: max iterations ${ar.maxIterations ?? "from issue/config, otherwise choose a small explicit cap"}; metric ${ar.metric ?? "must be stated before experiments"}; direction ${ar.direction ?? "must be stated before experiments"}. The benchmark script must emit METRIC name=value. Keep/discard changes based on benchmark plus checks. Do not run destructive commands without the existing permission gate. When done, call issueAgentDone with a structured PR body: issue link, objective/metric, baseline, best result, confidence/noise note, kept/discarded experiments, files changed, checks run, risks/follow-ups.`
+    : "";
+  const prompt = `ISSUE AGENT WORKFLOW\nRepo: ${repo}\nIssue: #${issue.number} ${issue.title}\nBranch: ${branchName(issue)}\nCheckout: ${dir}\nState: ${stateOf(issue.labels)}\nPlanning model: ${models.planning ?? "default"}\nExecution model: ${models.execution ?? "default"}\nFallback models: ${models.fallback.join(", ") || "none"}\n\nIssue body:\n${issue.body ?? ""}${autoresearch}\n\nIf state is PLANNING, inspect the checkout and produce a PLAN only. Post the PLAN to the issue, then wait for ai:state:EXECUTING or requested changes. If state is EXECUTING, execute the approved plan. When done, call the issueAgentDone tool with optional PR text; the harness should commit, push ${branchName(issue)}, and open a PR for review. If a provider limit/error occurs, report BLOCKED_WITH_PROVIDER_ERROR so the harness can switch fallback models or pick another issue.`;
   activeAgentRun = true;
   if (cfg.dryRun) {
     notify?.(`DRY RUN: Checkout ${repo} at ${branchName(issue)} into ${dir}`, "info");

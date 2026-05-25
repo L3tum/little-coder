@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectProjectForCwd } from "./index.ts";
+import { selectProjectForCwd, selectProjectForInput } from "./index.ts";
 
 describe("selectProjectForCwd", () => {
   it("matches the exact workspace root", () => {
@@ -25,5 +25,19 @@ describe("selectProjectForCwd", () => {
     expect(selectProjectForCwd([
       { name: "other", root_path: "/home/me/other" },
     ], "/home/me/proj")).toBeUndefined();
+  });
+});
+
+describe("selectProjectForInput", () => {
+  it("maps path-style project inputs to indexed project names", () => {
+    expect(selectProjectForInput([
+      { name: "home-me-proj", root_path: "/home/me/proj" },
+    ], "/home/me/proj")).toBe("home-me-proj");
+  });
+
+  it("ignores ordinary project names", () => {
+    expect(selectProjectForInput([
+      { name: "home-me-proj", root_path: "/home/me/proj" },
+    ], "home-me-proj")).toBeUndefined();
   });
 });

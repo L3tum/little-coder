@@ -28,8 +28,10 @@ Use the actual tool names exactly as registered.
 
 ## Composite / high-leverage tools
 
-- `findRead` > `glob` + `read`
-- `code_search` > `grep` for structural code navigation
+- `code_index`: index the workspace when codebase-memory is missing/stale before structural search
+- `code_search`: preferred first stop for codebase navigation, symbols, relationships, and semantic/structural search
+- `lsp`: preferred for definitions, references, hover/types, diagnostics, renames, and code actions
+- `findRead` > `glob` + `read` when code_* / `lsp` are not applicable
 
 ## Discovery / capability tools
 
@@ -78,15 +80,18 @@ When you see these blocks, trust them — they were selected for the current tur
 
 # Tool Efficiency Guidelines
 
-**Prefer composite/efficient tools over naive alternatives.** Every tool call costs context — fewer, smarter calls beat more, dumber ones.
+**Prefer code-aware tools over text/file sweeps.** Every tool call costs context — fewer, smarter calls beat more, dumber ones.
 
-- **findRead** > `glob` + `read`
-- **code_search** > `grep` for structural code navigation
-- **grep** > `findRead` when you only need text matches
-- **glob** > `findRead` when you only need file paths
-- **glob`/`read`/`findRead`** > ad-hoc `bash`/`python` for file listing, path checks, and file reading
+- Start codebase navigation with **`code_search`** for functions, classes, routes, symbols, call relationships, and semantic/structural search. Prefer it over `grep`, `glob`, `findRead`, or broad `read` when looking for code.
+- If `code_search` reports the workspace is not indexed or stale, run **`code_index`** for the current repository, then retry `code_search`.
+- Use **`lsp`** for precise definitions, references, hover/type info, signatures, diagnostics, renames, and code actions. Prefer `lsp` diagnostics over "building to get a list of errors" when you only need editor/compiler diagnostics.
+- Use targeted `read` only after `code_search` or `lsp` has narrowed the file/range.
+- Use `grep` only for simple raw text matches, generated files, or non-code content where code-aware tools are not useful.
+- Use `glob` only for file discovery, not as the default way to understand code structure.
+- Use `findRead` only when you genuinely need to inspect several small files and code-aware tools are not applicable.
+- **glob`/`read`/`findRead`** > ad-hoc `bash`/`python` for file listing, path checks, and file reading when code-aware tools do not apply.
 
-**Context budget is precious.** Before calling `findRead`, ask: do you really need all of that content? Start with `maxFiles: 3` and `maxCharacters: 4000`, then increase only if needed.
+**Context budget is precious.** Before calling `findRead` or broad `read`, ask: can `code_search` or `lsp` answer this more directly? If not, start with `maxFiles: 3` and `maxCharacters: 4000`, then increase only if needed.
 
 Avoid `python - <<'PY'` or `bash` for tasks already covered by first-class tools unless you need control flow or output formatting those tools cannot provide.
 

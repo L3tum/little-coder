@@ -25,16 +25,26 @@ function isWithinDirectory(root: string, target: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
+function completeProjects(projects: IndexedProject[]): Array<Required<Pick<IndexedProject, "name" | "root_path">>> {
+  return projects.filter((project): project is Required<Pick<IndexedProject, "name" | "root_path">> =>
+    typeof project.name === "string"
+    && project.name.length > 0
+    && typeof project.root_path === "string"
+    && project.root_path.length > 0,
+  );
+}
+
 export function selectProjectForCwd(projects: IndexedProject[], cwd: string): string | undefined {
-  return projects
-    .filter((project): project is Required<Pick<IndexedProject, "name" | "root_path">> =>
-      typeof project.name === "string"
-      && project.name.length > 0
-      && typeof project.root_path === "string"
-      && project.root_path.length > 0,
-    )
+  return completeProjects(projects)
     .filter((project) => isWithinDirectory(project.root_path, cwd))
     .sort((left, right) => right.root_path.length - left.root_path.length)[0]?.name;
+}
+
+export function selectProjectForInput(projects: IndexedProject[], inputProject: string): string | undefined {
+  const trimmed = inputProject.trim();
+  if (!trimmed) return undefined;
+  const normalizedPath = trimmed.replace(/\/+$/g, "");
+  return completeProjects(projects).find((project) => project.root_path.replace(/\/+$/g, "") === normalizedPath)?.name;
 }
 
 function pruneUndefined<T extends Record<string, unknown>>(value: T): Record<string, unknown> {
@@ -97,18 +107,39 @@ async function runBinary(binary: string, args: string[], options: { cwd?: string
   }
 }
 
+function parseCliOutput(output: string): unknown {
+  if (!output) return "";
+  try {
+    return JSON.parse(output);
+  } catch {
+    const objectStart = output.indexOf("{");
+    const objectEnd = output.lastIndexOf("}");
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      try {
+        return JSON.parse(output.slice(objectStart, objectEnd + 1));
+      } catch {
+        // fall through
+      }
+    }
+    const arrayStart = output.indexOf("[");
+    const arrayEnd = output.lastIndexOf("]");
+    if (arrayStart >= 0 && arrayEnd > arrayStart) {
+      try {
+        return JSON.parse(output.slice(arrayStart, arrayEnd + 1));
+      } catch {
+        // fall through
+      }
+    }
+    return output;
+  }
+}
+
 async function runCli(tool: string, input: Record<string, unknown>, options: { cwd?: string; timeoutMs?: number } = {}): Promise<unknown> {
   const binary = await resolveBinary();
   const payload = pruneUndefined(input);
   const args = ["cli", tool];
   if (Object.keys(payload).length > 0) args.push(JSON.stringify(payload));
-  const output = await runBinary(binary, args, options);
-  if (!output) return "";
-  try {
-    return JSON.parse(output);
-  } catch {
-    return output;
-  }
+  return parseCliOutput(await runBinary(binary, args, options));
 }
 
 async function installOrUpdateBinary(mode: "install" | "update"): Promise<string> {
@@ -149,8 +180,10 @@ async function listProjects(cwd?: string): Promise<IndexedProject[]> {
 }
 
 async function resolveProjectName(inputProject: unknown, cwd: string): Promise<string> {
-  if (typeof inputProject === "string" && inputProject.trim().length > 0) return inputProject.trim();
   const projects = await listProjects(cwd);
+  if (typeof inputProject === "string" && inputProject.trim().length > 0) {
+    return selectProjectForInput(projects, inputProject) ?? inputProject.trim();
+  }
   const matched = selectProjectForCwd(projects, cwd);
   if (matched) return matched;
   throw new Error(

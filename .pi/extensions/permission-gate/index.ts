@@ -76,18 +76,28 @@ function hasShellControlOperator(command: string): boolean {
   return /[;&|`$<>]/.test(command) || /\$\(|\n|\r/.test(command);
 }
 
-function isSafeDiagnosticCommand(command: string): boolean {
+function isSafeSingleDiagnosticCommand(command: string): boolean {
   const c = command.trim().replace(/\s+/g, " ");
   if (hasShellControlOperator(c)) return false;
 
   return [
     /^npm\s+(?:run\s+)?typecheck(?:\s+--\s+(?:--?[\w:-]+(?:[= ][\w:./-]+)?\s*)*)?$/,
     /^npm\s+(?:run\s+)?lint(?:\s+--\s+(?:--?[\w:-]+(?:[= ][\w:./-]+)?\s*)*)?$/,
+    /^npm\s+(?:run\s+)?test(?:\s+(?:--|run|--?[\w:-]+(?:[= ][\w:./@-]+)?|[\w@./:-]+))*$/,
     /^npm\s+(?:list|ls)(?:\s+(?:--?[\w:-]+(?:[= ][\w:./@-]+)?|[\w@./-]+))*$/,
     /^npm\s+(?:view|info)\s+[\w@./-]+(?:\s+[\w.-]+)?(?:\s+--json)?$/,
     /^npx\s+(?:--yes\s+)?tsc\s+--noEmit(?:\s+--?[\w:-]+(?:[= ][\w:./-]+)?)*$/,
+    /^npx\s+(?:--yes\s+)?vitest(?:\s+(?:run|--?[\w:-]+(?:[= ][\w:./@-]+)?|[\w@./:-]+))*$/,
     /^npx\s+(?:--yes\s+)?skills\s+(?:find|list|show|info|search)(?:\s+[\w@./:,-]+)*$/,
   ].some((pattern) => pattern.test(c));
+}
+
+function isSafeDiagnosticCommand(command: string): boolean {
+  const c = command.trim().replace(/\s+/g, " ");
+  if (isSafeSingleDiagnosticCommand(c)) return true;
+  if (/[;|`$<>]/.test(c) || /\$\(|\n|\r/.test(c)) return false;
+  const parts = c.split(/\s+&&\s+/);
+  return parts.length > 1 && parts.every(isSafeSingleDiagnosticCommand);
 }
 
 export function isSafeBash(command: string, prefixes: readonly string[] = getSafePrefixes()): boolean {

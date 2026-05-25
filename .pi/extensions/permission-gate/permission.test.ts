@@ -32,6 +32,14 @@ describe("isSafeBash", () => {
     expect(isSafeBash("mkdiroops")).toBe(false);
     expect(isSafeBash("touchscreen")).toBe(false);
   });
+  it("allows npm/npx test diagnostics", () => {
+    expect(isSafeBash("npm test")).toBe(true);
+    expect(isSafeBash("npm test -- .pi/extensions/compatibility/heuristics.test.ts")).toBe(true);
+    expect(isSafeBash("npm run test -- --runInBand")).toBe(true);
+    expect(isSafeBash("npx vitest run .pi/extensions/compatibility/heuristics.test.ts")).toBe(true);
+    expect(isSafeBash("npx --yes vitest run permission.test.ts")).toBe(true);
+    expect(isSafeBash("npm test -- --run .pi/extensions/permission-gate/permission.test.ts && npm run typecheck")).toBe(true);
+  });
   it("blocks non-whitelisted commands", () => {
     expect(isSafeBash("rm -rf /")).toBe(false);
     expect(isSafeBash("npm install foo")).toBe(false);

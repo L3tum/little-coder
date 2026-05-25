@@ -1,0 +1,241 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join, relative } from "node:path";
+import { promisify } from "node:util";
+import { containsSecret } from "../security/index.ts";
+
+const execFileAsync = promisify(execFile);
+const MEMORY_DIR = join(process.cwd(), ".pi", "memory");
+const NOTE_DIRS = ["20-context", "40-actions", "50-decisions", "60-observations", "70-runbooks", "80-sessions"];
+const QUEUE_PATH = join(MEMORY_DIR, "queue.json");
+const MAX_INJECT_CHARS = 5000;
+
+interface MemoryNote {
+  path: string;
+  title: string;
+  type: string;
+  tags: string[];
+  confidence: string;
+  body: string;
+}
+
+interface QueueItem {
+  type: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  source: string;
+  confidence: string;
+  tags: string[];
+  evidence: Record<string, unknown>;
+  body: string;
+}
+
+const turn = {
+  prompt: "",
+  tools: [] as string[],
+  filesRead: new Set<string>(),
+  filesEdited: new Set<string>(),
+  tests: [] as string[],
+};
+
+function ensureMemory(): void {
+  mkdirSync(MEMORY_DIR, { recursive: true });
+  for (const dir of NOTE_DIRS) mkdirSync(join(MEMORY_DIR, dir), { recursive: true });
+  if (!existsSync(QUEUE_PATH)) writeFileSync(QUEUE_PATH, "[]\n");
+}
+
+function words(text: string): string[] {
+  return [...new Set(text.toLowerCase().match(/[a-z0-9_.\/-]{3,}/g) ?? [])].slice(0, 80);
+}
+
+function parseFrontmatter(text: string): { meta: Record<string, string>; body: string } {
+  if (!text.startsWith("---\n")) return { meta: {}, body: text };
+  const end = text.indexOf("\n---\n", 4);
+  if (end < 0) return { meta: {}, body: text };
+  const meta: Record<string, string> = {};
+  for (const line of text.slice(4, end).split("\n")) {
+    const m = line.match(/^([a-z_]+):\s*(.*)$/i);
+    if (m) meta[m[1]] = m[2].replace(/^['\"]|['\"]$/g, "");
+  }
+  return { meta, body: text.slice(end + 5).trim() };
+}
+
+function allNotes(): MemoryNote[] {
+  ensureMemory();
+  const out: MemoryNote[] = [];
+  for (const dir of NOTE_DIRS) {
+    const full = join(MEMORY_DIR, dir);
+    for (const file of readdirSync(full)) {
+      if (!file.endsWith(".md")) continue;
+      const path = join(full, file);
+      const parsed = parseFrontmatter(readFileSync(path, "utf-8"));
+      out.push({
+        path,
+        title: parsed.meta.title || basename(file, ".md"),
+        type: parsed.meta.type || dir,
+        tags: (parsed.meta.tags || "").split(/[, ]+/).filter(Boolean),
+        confidence: parsed.meta.confidence || "unknown",
+        body: parsed.body,
+      });
+    }
+  }
+  return out;
+}
+
+function lexicalSearch(query: string, limit = 5): MemoryNote[] {
+  const terms = words(query);
+  if (terms.length === 0) return [];
+  return allNotes()
+    .map((note) => {
+      const hay = `${note.title}\n${note.tags.join(" ")}\n${note.body}`.toLowerCase();
+      let score = 0;
+      for (const term of terms) if (hay.includes(term)) score += term.includes("/") || term.includes(".") ? 3 : 1;
+      return { note, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.note);
+}
+
+function looksCodebaseIntent(text: string): boolean {
+  return /\b(file|function|class|symbol|architecture|test|error|refactor|implement|bug|repo|codebase|module|extension|package|issue|PR)\b/i.test(text)
+    || /[\w.-]+\.(ts|js|py|md|json|tsx|jsx)\b/.test(text)
+    || text.includes("@");
+}
+
+async function resolveQmd(): Promise<{ mode: string; bin?: string }> {
+  const candidates = [process.env.MEMORY_QMD_BIN, process.env.QMD_PATH, join(process.cwd(), "node_modules", ".bin", process.platform === "win32" ? "qmd.cmd" : "qmd"), "qmd"].filter(Boolean) as string[];
+  for (const c of candidates) {
+    try {
+      await execFileAsync(c, ["--version"], { timeout: 1000 });
+      return { mode: "qmd", bin: c };
+    } catch (e: any) {
+      if (e?.code !== "ENOENT" && c !== "qmd") return { mode: "qmd", bin: c };
+    }
+  }
+  return { mode: "grep fallback" };
+}
+
+function buildMemoryBlock(notes: MemoryNote[], mode: string): string {
+  if (notes.length === 0) return "";
+  let out = `\n\n## Local Memory Context\nRetrieval mode: ${mode}. Treat these as hints; inspect source before editing or relying on stale facts.\n`;
+  for (const n of notes) {
+    const rel = relative(process.cwd(), n.path);
+    const body = n.body.replace(/\s+/g, " ").slice(0, 450);
+    out += `- [${n.type}] ${n.title} (${rel}, confidence: ${n.confidence}): ${body}\n`;
+  }
+  return out.slice(0, MAX_INJECT_CHARS);
+}
+
+function readQueue(): QueueItem[] {
+  ensureMemory();
+  try {
+    const parsed = JSON.parse(readFileSync(QUEUE_PATH, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeQueue(items: QueueItem[]): void {
+  writeFileSync(QUEUE_PATH, `${JSON.stringify(items, null, 2)}\n`);
+}
+
+function queueCandidate(item: QueueItem): void {
+  if (process.env.MEMORY_LEARNING === "off") return;
+  if (containsSecret(item)) return;
+  if (item.body.length > 2000) item.body = item.body.slice(0, 2000);
+  const queue = readQueue();
+  queue.push(item);
+  writeQueue(queue.slice(-200));
+}
+
+function finalText(message: any): string {
+  const content = Array.isArray(message?.content) ? message.content : [];
+  return content.filter((c: any) => c?.type === "text").map((c: any) => c.text ?? "").join("\n").trim();
+}
+
+function commandText(input: any): string {
+  return String(input?.command ?? input?.cmd ?? "");
+}
+
+function isTestCommand(cmd: string): boolean {
+  return /\b(npm test|vitest|pytest|cargo test|go test|pnpm test|yarn test|npm run test|npm run typecheck|tsc\b)/.test(cmd);
+}
+
+export default function (pi: ExtensionAPI) {
+  pi.registerCommand("memory-review", {
+    description: "Show queued local memory candidates",
+    handler: async (_args, ctx) => {
+      const queue = readQueue();
+      const lines = queue.length === 0 ? "No queued memory candidates." : queue.map((item, i) => `${i + 1}. [${item.type}] ${item.title}\n   ${item.body.slice(0, 240)}`).join("\n");
+      if (ctx.hasUI) ctx.ui.notify(lines, "info");
+    },
+  });
+
+  pi.registerTool({
+    name: "memoryReview",
+    label: "Memory Review",
+    description: "List queued local memory candidates from .pi/memory/queue.json.",
+    promptSnippet: "memoryReview(): show queued local memory candidates.",
+    parameters: Type.Object({}),
+    async execute() {
+      const queue = readQueue();
+      return { content: [{ type: "text", text: JSON.stringify(queue.slice(-20), null, 2) }], details: {} };
+    },
+  });
+
+  pi.on("before_agent_start", async (event) => {
+    ensureMemory();
+    turn.prompt = String((event as any).prompt ?? "");
+    turn.tools = [];
+    turn.filesRead.clear();
+    turn.filesEdited.clear();
+    turn.tests = [];
+    const mode = (await resolveQmd()).mode;
+    const notes = lexicalSearch(turn.prompt, 5);
+    const memory = buildMemoryBlock(notes, mode);
+    const codebase = looksCodebaseIntent(turn.prompt) ? "\n## Codebase Prefetch\nCodebase intent detected. Use code_search first for repo understanding; prefetch is bounded and may be empty/stale.\n" : "";
+    if (!memory && !codebase) return;
+    return { systemPrompt: `${(event as any).systemPrompt ?? ""}${memory}${codebase}` };
+  });
+
+  pi.on("tool_call", async (event) => {
+    const name = String((event as any).toolName ?? (event as any).name ?? "");
+    const input = (event as any).input ?? (event as any).arguments ?? {};
+    if (name) turn.tools.push(name);
+    const p = input.path || input.file_path;
+    if (typeof p === "string") {
+      if (/read|findRead|glob|grep/.test(name)) turn.filesRead.add(p);
+      if (/write|edit/.test(name)) turn.filesEdited.add(p);
+    }
+    if (name === "bash" || name === "ShellSession") {
+      const cmd = commandText(input);
+      if (isTestCommand(cmd)) turn.tests.push(cmd.slice(0, 200));
+    }
+  });
+
+  pi.on("turn_end", async (event) => {
+    const text = finalText((event as any).message);
+    if (!text || turn.tools.length === 0) return;
+    const edited = [...turn.filesEdited];
+    const tests = turn.tests;
+    if (edited.length === 0 && tests.length === 0) return;
+    const now = new Date().toISOString();
+    queueCandidate({
+      type: "session",
+      title: edited.length > 0 ? `Edited ${edited.map((p) => basename(p)).slice(0, 3).join(", ")}` : "Ran validation commands",
+      created_at: now,
+      updated_at: now,
+      source: "memory-context deterministic turn_end",
+      confidence: tests.length > 0 ? "medium" : "low",
+      tags: ["session", ...edited.map((p) => basename(p)).slice(0, 5)],
+      evidence: { prompt: turn.prompt.slice(0, 500), tools: [...new Set(turn.tools)], files_edited: edited, files_read: [...turn.filesRead], tests_run: tests },
+      body: `Prompt: ${turn.prompt.slice(0, 300)}\n\nResult: ${text.slice(0, 700)}`,
+    });
+  });
+}

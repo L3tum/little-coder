@@ -3,6 +3,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as path from "node:path";
 
+export const SECRET_PATTERN = /(api[_-]?key|token|password|passwd|secret|private[_-]?key|customer[_-]?data|-----BEGIN [A-Z ]*PRIVATE KEY-----)/i;
+
+export function containsSecret(value: unknown): boolean {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return SECRET_PATTERN.test(text ?? "");
+}
+
 /**
  * Comprehensive security hook:
  * - Blocks dangerous bash commands (rm -rf, sudo, chmod 777, etc.)
