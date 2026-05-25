@@ -1,0 +1,32 @@
+[
+  {
+    "type": "session",
+    "title": "Edited segments.ts",
+    "created_at": "2026-05-25T17:29:18.398Z",
+    "updated_at": "2026-05-25T17:29:18.398Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "medium",
+    "tags": [
+      "session",
+      "segments.ts"
+    ],
+    "evidence": {
+      "prompt": "The usage reset timer icon isn't rendered properly so the time after it is kind of overlayed over it.\nThe cost estimator should have a dollar symbol next to it",
+      "tools": [
+        "read",
+        "edit",
+        "bash"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/powerline-footer-unified/segments.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/powerline-footer-unified/segments.ts"
+      ],
+      "tests_run": [
+        "npm run typecheck"
+      ]
+    },
+    "body": "Prompt: The usage reset timer icon isn't rendered properly so the time after it is kind of overlayed over it.\nThe cost estimator should have a dollar symbol next to it\n\nResult: Fixed both:\n\n- Replaced the problematic reset glyph (`↺`) with plain text:\n  - `5h reset 1h23m`\n  - `7d reset 2d4h`\n- Added the configured cost/dollar icon next to the session cost:\n  - Nerd font: dollar icon + amount\n  - ASCII fallback: `$ 0.123`\n\n`npm run typecheck` passes. Restart `little-coder` to see it."
+  }
+]

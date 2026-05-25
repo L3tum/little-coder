@@ -17,7 +17,6 @@
     "packages": [
       "@plannotator/pi-extension",
       "@juicesharp/rpiv-todo",
-      "pi-powerline-footer",
       "pi-better-openai"
     ]
   },

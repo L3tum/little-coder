@@ -277,6 +277,26 @@ try {
   if (mutated) {
     writeFileSync(globalSettingsPath, JSON.stringify(globalSettings, null, 2));
   }
+
+  const extensionsDir = join(agentDir, "extensions");
+  mkdirSync(extensionsDir, { recursive: true });
+  const betterOpenAIConfigPath = join(extensionsDir, "pi-better-openai.json");
+  let betterOpenAIConfig = {};
+  if (existsSync(betterOpenAIConfigPath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(betterOpenAIConfigPath, "utf-8"));
+      if (parsed && typeof parsed === "object") betterOpenAIConfig = parsed;
+    } catch {
+      betterOpenAIConfig = {};
+    }
+  }
+  const footerConfig = betterOpenAIConfig.footer && typeof betterOpenAIConfig.footer === "object"
+    ? betterOpenAIConfig.footer
+    : {};
+  if (footerConfig.mode !== "off") {
+    betterOpenAIConfig.footer = { ...footerConfig, mode: "off" };
+    writeFileSync(betterOpenAIConfigPath, JSON.stringify(betterOpenAIConfig, null, 2));
+  }
 } catch {
   // Best-effort. If we can't write the settings (read-only HOME, etc.) pi
   // falls back to its built-in defaults — the [Extensions] block will show
