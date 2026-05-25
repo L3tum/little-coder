@@ -145,10 +145,76 @@ function writeQueue(items: QueueItem[]): void {
   writeFileSync(QUEUE_PATH, `${JSON.stringify(items, null, 2)}\n`);
 }
 
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "memory";
+}
+
+function noteDirForType(type: string): string {
+  const normalized = type.toLowerCase();
+  if (NOTE_DIRS.includes(normalized)) return normalized;
+  if (normalized === "action") return "40-actions";
+  if (normalized === "decision") return "50-decisions";
+  if (normalized === "observation") return "60-observations";
+  if (normalized === "runbook") return "70-runbooks";
+  if (normalized === "session") return "80-sessions";
+  return "20-context";
+}
+
+function yamlString(value: string): string {
+  return JSON.stringify(value ?? "");
+}
+
+function writeAcceptedMemory(item: QueueItem): string {
+  ensureMemory();
+  const dir = join(MEMORY_DIR, noteDirForType(item.type));
+  const date = (item.updated_at || item.created_at || new Date().toISOString()).slice(0, 10);
+  const base = `${date}-${slugify(item.title)}`;
+  let path = join(dir, `${base}.md`);
+  for (let i = 2; existsSync(path); i += 1) path = join(dir, `${base}-${i}.md`);
+  const frontmatter = [
+    "---",
+    `title: ${yamlString(item.title)}`,
+    `type: ${yamlString(item.type)}`,
+    `tags: ${yamlString((item.tags ?? []).join(", "))}`,
+    `confidence: ${yamlString(item.confidence || "unknown")}`,
+    `source: ${yamlString(item.source || "memory-review")}`,
+    `created_at: ${yamlString(item.created_at || new Date().toISOString())}`,
+    `updated_at: ${yamlString(new Date().toISOString())}`,
+    "---",
+    "",
+  ].join("\n");
+  writeFileSync(path, `${frontmatter}${item.body.trim()}\n`);
+  return path;
+}
+
+function parseSelection(args: string, total: number): number[] {
+  const trimmed = args.trim();
+  if (!trimmed || trimmed === "all") return Array.from({ length: total }, (_, i) => i);
+  const selected = new Set<number>();
+  for (const part of trimmed.split(/[\s,]+/).filter(Boolean)) {
+    const range = part.match(/^(\d+)-(\d+)$/);
+    if (range) {
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      for (let n = Math.min(start, end); n <= Math.max(start, end); n += 1) if (n >= 1 && n <= total) selected.add(n - 1);
+      continue;
+    }
+    const n = Number(part);
+    if (Number.isInteger(n) && n >= 1 && n <= total) selected.add(n - 1);
+  }
+  return [...selected].sort((a, b) => a - b);
+}
+
 function queueCandidate(item: QueueItem): void {
   if (process.env.MEMORY_LEARNING === "off") return;
   if (containsSecret(item)) return;
   if (item.body.length > 2000) item.body = item.body.slice(0, 2000);
+  const confidence = item.confidence.toLowerCase();
+  if (confidence === "high") {
+    writeAcceptedMemory(item);
+    return;
+  }
+  if (confidence !== "medium") return;
   const queue = readQueue();
   queue.push(item);
   writeQueue(queue.slice(-200));
@@ -169,10 +235,57 @@ function isTestCommand(cmd: string): boolean {
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("memory-review", {
-    description: "Show queued local memory candidates",
-    handler: async (_args, ctx) => {
+    description: "Show queued local memory candidates; use /memory-review accept|deny [all|1,3|2-4]",
+    handler: async (args, ctx) => {
+      const argText = args?.trim() ?? "";
       const queue = readQueue();
-      const lines = queue.length === 0 ? "No queued memory candidates." : queue.map((item, i) => `${i + 1}. [${item.type}] ${item.title}\n   ${item.body.slice(0, 240)}`).join("\n");
+      if (argText.startsWith("accept")) {
+        const selected = parseSelection(argText.slice("accept".length), queue.length);
+        if (selected.length === 0) {
+          if (ctx.hasUI) ctx.ui.notify("No queued memory candidates matched that selection.", "warning");
+          return;
+        }
+        const selectedSet = new Set(selected);
+        const written = selected.map((index) => writeAcceptedMemory(queue[index]));
+        writeQueue(queue.filter((_item, index) => !selectedSet.has(index)));
+        if (ctx.hasUI) ctx.ui.notify(`Accepted ${written.length} memory candidate(s):\n${written.map((path) => relative(process.cwd(), path)).join("\n")}`, "info");
+        return;
+      }
+      if (argText.startsWith("deny")) {
+        const selected = parseSelection(argText.slice("deny".length), queue.length);
+        if (selected.length === 0) {
+          if (ctx.hasUI) ctx.ui.notify("No queued memory candidates matched that selection.", "warning");
+          return;
+        }
+        const selectedSet = new Set(selected);
+        writeQueue(queue.filter((_item, index) => !selectedSet.has(index)));
+        if (ctx.hasUI) ctx.ui.notify(`Denied ${selected.length} memory candidate(s).`, "info");
+        return;
+      }
+      const lines = queue.length === 0 ? "No queued memory candidates." : queue.map((item, i) => `${i + 1}. [${item.type}] ${item.title} (${item.confidence})\n   ${item.body.slice(0, 240)}`).join("\n");
+      if (ctx.hasUI) ctx.ui.notify(lines, "info");
+    },
+  });
+
+  pi.registerCommand("memory-list", {
+    description: "List accepted local memories",
+    handler: async (_args, ctx) => {
+      const notes = allNotes();
+      const lines = notes.length === 0 ? "No accepted memories." : notes.map((note, i) => `${i + 1}. ${relative(process.cwd(), note.path)}\n   [${note.type}] ${note.title} (${note.confidence})`).join("\n");
+      if (ctx.hasUI) ctx.ui.notify(lines, "info");
+    },
+  });
+
+  pi.registerCommand("memory-search", {
+    description: "Search accepted local memories",
+    handler: async (args, ctx) => {
+      const query = args?.trim() ?? "";
+      if (!query) {
+        if (ctx.hasUI) ctx.ui.notify("Usage: /memory-search <query>", "warning");
+        return;
+      }
+      const notes = lexicalSearch(query, 10);
+      const lines = notes.length === 0 ? "No matching memories." : notes.map((note) => `${relative(process.cwd(), note.path)}\n[${note.type}] ${note.title} (${note.confidence})\n${note.body.replace(/\s+/g, " ").slice(0, 300)}`).join("\n\n");
       if (ctx.hasUI) ctx.ui.notify(lines, "info");
     },
   });
@@ -226,16 +339,17 @@ export default function (pi: ExtensionAPI) {
     const tests = turn.tests;
     if (edited.length === 0 && tests.length === 0) return;
     const now = new Date().toISOString();
+    const confidence = edited.length > 0 && tests.length > 0 ? "high" : tests.length > 0 ? "medium" : "low";
     queueCandidate({
       type: "session",
       title: edited.length > 0 ? `Edited ${edited.map((p) => basename(p)).slice(0, 3).join(", ")}` : "Ran validation commands",
       created_at: now,
       updated_at: now,
       source: "memory-context deterministic turn_end",
-      confidence: tests.length > 0 ? "medium" : "low",
+      confidence,
       tags: ["session", ...edited.map((p) => basename(p)).slice(0, 5)],
       evidence: { prompt: turn.prompt.slice(0, 500), tools: [...new Set(turn.tools)], files_edited: edited, files_read: [...turn.filesRead], tests_run: tests },
-      body: `Prompt: ${turn.prompt.slice(0, 300)}\n\nResult: ${text.slice(0, 700)}`,
+      body: `Prompt: ${turn.prompt.slice(0, 300)}\n\nOutcome: ${text.slice(0, 700)}\n\nValidation: ${tests.length > 0 ? tests.join("; ") : "not run"}`,
     });
   });
 }

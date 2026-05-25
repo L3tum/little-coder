@@ -2,40 +2,75 @@
 // Adapted for little-coder: issue-backed Ralph harness (Forgejo/GitHub), not file-backed tasks.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const STATES = ["PLANNING", "WAITING_FOR_FEEDBACK", "EXECUTING", "WAITING_FOR_REVIEW"] as const;
 type AiState = typeof STATES[number];
 
 type Issue = { number: number; title: string; body?: string; labels: string[]; url: string; apiUrl: string };
 type Models = { planning?: string; execution?: string; fallback: string[] };
-type Config = { repos: string[]; models: Models; workdir: string; token?: string; intervalMs: number; dryRun: boolean };
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ThinkingLevels = { planning?: ThinkingLevel; execution?: ThinkingLevel };
+type Config = { repos: string[]; models: Models; thinkingLevels: ThinkingLevels; workdir: string; token?: string; intervalMs: number; dryRun: boolean };
 
 let running = false;
 let stopRequested = false;
 let activeAgentRun = false;
 let currentLock: string | undefined;
 let activeWork: { repo: string; issue: Issue; cfg: Config; dir: string; fallbackIndex: number; doneText?: string } | undefined;
+let activeSubAgent: { kill: () => void } | undefined;
+let statusText = "idle";
+let lastStatusAt = 0;
+let statusLog: ((text: string) => void) | undefined;
 const recentlyQueued = new Map<string, number>();
 const usageLimitedUntil = new Map<string, number>();
 const dependencyCheckedAt = new Map<string, number>();
 const dependencyBlocked = new Map<string, boolean>();
 const QUEUED_COOLDOWN_MS = 10 * 60 * 1000;
 const DEPENDENCY_CHECK_COOLDOWN_MS = 10 * 60 * 1000;
-const DEPENDENCY_BLOCK_LABEL = "blocked-by-dependency";
+const DEPENDENCY_BLOCK_LABEL = "ai:blocked/dependency";
+const STATE_LABEL_PREFIX = "ai:state/";
+
+function stateLabel(state: AiState): string {
+  return `${STATE_LABEL_PREFIX}${state}`;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function setStatus(text: string): void {
+  if (statusText === text) return;
+  statusText = text;
+  lastStatusAt = Date.now();
+  statusLog?.(text);
+}
+
+function formatStatus(): string {
+  const age = lastStatusAt ? ` (${Math.floor((Date.now() - lastStatusAt) / 1000)}s ago)` : "";
+  const work = activeWork ? ` | #${activeWork.issue.number} ${activeWork.issue.title} | ${activeWork.dir}` : "";
+  return `${running ? "running" : "stopped"}: ${statusText}${age}${work}`;
+}
+
 function parseArgs(input = ""): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const part of input.match(/(?:[^\s"]+|"[^"]*")+/g) ?? []) {
-    const [k, ...rest] = part.replace(/^--/, "").split("=");
-    out[k] = rest.length ? rest.join("=").replace(/^"|"$/g, "") : "true";
+  const parts = input.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((p) => p.replace(/^"|"$/g, "")) ?? [];
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part.startsWith("--")) continue;
+    const raw = part.slice(2);
+    const eq = raw.indexOf("=");
+    if (eq >= 0) {
+      out[raw.slice(0, eq)] = raw.slice(eq + 1);
+    } else if (parts[i + 1] && !parts[i + 1].startsWith("--")) {
+      out[raw] = parts[++i];
+    } else {
+      out[raw] = "true";
+    }
   }
   return out;
 }
@@ -45,9 +80,12 @@ function isTruthy(value: string | undefined): boolean {
 }
 
 function labelValue(labels: string[], key: string): string | undefined {
-  const prefix = `ai:${key}:`;
-  const colon = labels.find((l) => l.startsWith(prefix));
-  if (colon) return colon.slice(prefix.length);
+  const slashPrefix = `ai:${key}/`;
+  const slash = labels.find((l) => l.startsWith(slashPrefix));
+  if (slash) return slash.slice(slashPrefix.length);
+  const colonPrefix = `ai:${key}:`;
+  const colon = labels.find((l) => l.startsWith(colonPrefix));
+  if (colon) return colon.slice(colonPrefix.length);
   const bracket = labels.find((l) => l.startsWith(`ai[${key}:`) && l.endsWith("]"));
   return bracket?.slice(key.length + 4, -1);
 }
@@ -64,13 +102,22 @@ function priorityOf(labels: string[]): number {
 
 function modelsOf(labels: string[], overrides: Models): Models {
   const fallback = labels
-    .map((l) => l.match(/^ai(?::|\[)fallback-[^:\]]*-model:?([^\]]+)?\]?$/)?.[1])
+    .map((l) => l.match(/^ai:fallback-[^:/\]]*-model[:/]([^\]]+)$/)?.[1] ?? l.match(/^ai\[fallback-[^:\]]*-model:([^\]]+)\]$/)?.[1])
     .filter((x): x is string => Boolean(x));
   return {
     planning: overrides.planning ?? labelValue(labels, "planning-model"),
     execution: overrides.execution ?? labelValue(labels, "execution-model"),
     fallback: overrides.fallback.length ? overrides.fallback : fallback,
   };
+}
+
+function asThinkingLevel(value?: string): ThinkingLevel | undefined {
+  const raw = value?.toLowerCase();
+  return ["off", "minimal", "low", "medium", "high", "xhigh"].includes(raw ?? "") ? raw as ThinkingLevel : undefined;
+}
+
+function thinkingLevelOf(labels: string[], override?: ThinkingLevel): ThinkingLevel | undefined {
+  return asThinkingLevel(override ?? labelValue(labels, "thinking-level"));
 }
 
 function repoSlug(url: string): string {
@@ -107,11 +154,58 @@ function labelEndpoint(repo: string, issue: Issue): { url: string; kind: "github
   return { kind: r.kind, url: r.kind === "github" ? `${issue.apiUrl}/labels` : `${r.base}/repos/${r.owner}/${r.name}/issues/${issue.number}/labels` };
 }
 
+async function listRepoLabels(repo: string, token?: string): Promise<any[]> {
+  const r = apiBase(repo);
+  if (r.kind !== "forgejo") return [];
+  const out: any[] = [];
+  for (let page = 1; page <= 100; page++) {
+    const rows: any[] = await request(`${r.base}/repos/${r.owner}/${r.name}/labels?limit=100&page=${page}`, token).catch(() => []);
+    out.push(...rows);
+    if (rows.length < 100) break;
+  }
+  return out;
+}
+
+async function ensureRepoLabel(repo: string, label: string, token?: string): Promise<void> {
+  const r = apiBase(repo);
+  if (r.kind !== "forgejo") return;
+  if ((await listRepoLabels(repo, token)).some((x) => String(x?.name ?? "") === label)) return;
+  await request(`${r.base}/repos/${r.owner}/${r.name}/labels`, token, {
+    method: "POST",
+    body: JSON.stringify({ name: label, color: label.startsWith("ai:state/") ? "#1d76db" : "#5319e7", description: "Managed by little-coder issue-agent" }),
+  }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    if ((/^409\b/.test(msg) || /^422\b/.test(msg)) && (await listRepoLabels(repo, token)).some((x) => String(x?.name ?? "") === label)) return;
+    throw err;
+  });
+}
+
 async function addLabels(repo: string, issue: Issue, labels: string[], token?: string): Promise<void> {
   if (!labels.length) return;
+  for (const label of labels) await ensureRepoLabel(repo, label, token);
   const ep = labelEndpoint(repo, issue);
   const body = ep.kind === "github" ? { labels } : { labels };
   await request(ep.url, token, { method: "POST", body: JSON.stringify(body) });
+}
+
+async function ensureStandardLabels(cfg: Config): Promise<void> {
+  if (cfg.dryRun) return;
+  const labels = [
+    ...STATES.map(stateLabel),
+    ...["off", "minimal", "low", "medium", "high", "xhigh"].map((level) => `ai:thinking-level/${level}`),
+    ...[0, 1, 2, 3, 4, 5].map((n) => `ai:priority/${n}`),
+    ...(cfg.models.planning ? [`ai:planning-model/${cfg.models.planning}`] : []),
+    ...(cfg.models.execution ? [`ai:execution-model/${cfg.models.execution}`] : []),
+    ...cfg.models.fallback.map((model, index) => `ai:fallback-${index + 1}-model/${model}`),
+    DEPENDENCY_BLOCK_LABEL,
+    "ai:blocked/usage-limit",
+    "ai:blocked/harness-error",
+  ];
+  for (const repo of cfg.repos) {
+    const r = apiBase(repo);
+    if (r.kind !== "forgejo") continue;
+    for (const label of labels) await ensureRepoLabel(repo, label, cfg.token);
+  }
 }
 
 async function removeLabel(repo: string, issue: Issue, label: string, token?: string): Promise<void> {
@@ -137,8 +231,8 @@ async function createPullRequest(repo: string, issue: Issue, branch: string, tok
 }
 
 async function setAiState(repo: string, issue: Issue, state: AiState, token?: string): Promise<void> {
-  for (const label of issue.labels.filter((l) => /^ai(?::|\[)state/i.test(l))) await removeLabel(repo, issue, label, token);
-  await addLabels(repo, issue, [`ai:state:${state}`], token);
+  for (const label of issue.labels.filter((l) => /^ai:state[:/]/i.test(l) || /^ai\[state:/i.test(l))) await removeLabel(repo, issue, label, token);
+  await addLabels(repo, issue, [stateLabel(state)], token);
 }
 
 async function issueState(repo: string, issueNumber: number, token?: string): Promise<string> {
@@ -211,13 +305,117 @@ function setWorkspacePermissionsDeny(): void {
   writeFileSync(join(dir, "little-coder-workspace-boundary.json"), JSON.stringify({ externalFilePolicy: "deny" }, null, 2) + "\n");
 }
 
+function extractPlan(text: string): string {
+  const fenced = text.match(/```(?:plan|md|markdown)?\s*\n([\s\S]*?\bPLAN\b[\s\S]*?)```/i)?.[1];
+  const source = fenced ?? text;
+  const marker = source.match(/(?:^|\n)\s*(#{1,3}\s*)?PLAN\b[:\s-]*(?:\n|$)/i);
+  if (!marker) return source.trim();
+  return source.slice(marker.index! + marker[0].length).replace(/(?:^|\n)\s*(?:---\s*)?(?:SUMMARY|EXECUTION|NOTES)\b[\s\S]*$/i, "").trim();
+}
+
+function issuePrompt(state: AiState, repo: string, issue: Issue, dir: string, models: Models, thinkingLevel: ThinkingLevel | undefined, autoresearch: string): string {
+  const header = `Repo: ${repo}\nIssue: #${issue.number} ${issue.title}\nBranch: ${branchName(issue)}\nCheckout: ${dir}\nPlanning model: ${models.planning ?? "default"}\nExecution model: ${models.execution ?? "default"}\nFallback models: ${models.fallback.join(", ") || "none"}\nThinking level: ${thinkingLevel ?? "current setting"}\n\nIssue body:\n${issue.body ?? ""}${autoresearch}`;
+  if (state === "PLANNING") return `ISSUE AGENT PLANNING TASK\n${header}\n\nInspect the checkout and produce only an approved-work plan. Start the response with a top-level heading named PLAN. Do not edit files, commit, push, open a PR, or call issueAgentDone.`;
+  return `ISSUE AGENT EXECUTION TASK\n${header}\n\nExecute the approved plan for this issue in the checkout. Make the necessary code changes and run appropriate checks. When complete, call issueAgentDone with a concise PR-ready summary of changes, checks run, and risks/follow-ups. If no changes are needed, still call issueAgentDone and explain why.`;
+}
+
+function subAgentCommand(): { command: string; prefix: string[] } {
+  if (process.env.ISSUE_AGENT_LITTLE_CODER_BIN) return { command: process.env.ISSUE_AGENT_LITTLE_CODER_BIN, prefix: ["--issue-agent-subagent"] };
+  const launcher = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "bin", "little-coder.mjs");
+  if (existsSync(launcher)) return { command: process.execPath, prefix: [launcher, "--issue-agent-subagent"] };
+  return { command: process.execPath, prefix: process.argv.slice(1).filter((arg) => arg !== "--print" && arg !== "--no-session") };
+}
+
+function stopActiveSubAgent(): void {
+  activeSubAgent?.kill();
+}
+
+function handleSubAgentJsonLine(line: string, emit: (line: string, type?: "info" | "warning" | "error") => void, seenAssistantText?: Set<string>): string | undefined {
+  let event: any;
+  try { event = JSON.parse(line); } catch { return undefined; }
+  if (event.type === "tool_execution_start") {
+    emit(`sub-agent tool started: ${event.toolName}`, "info");
+    return undefined;
+  }
+  if (event.type === "tool_execution_end") {
+    emit(`sub-agent tool ${event.isError ? "failed" : "finished"}: ${event.toolName}`, event.isError ? "warning" : "info");
+    return undefined;
+  }
+  const message = event.message && typeof event.message === "object" ? event.message : undefined;
+  if (message?.stopReason === "error" || message?.stopReason === "aborted") {
+    const err = String(message.errorMessage ?? `sub-agent ${message.stopReason}`);
+    emit(`sub-agent error: ${err}`, "error");
+    return err;
+  }
+  if (event.error || event.errorMessage) {
+    const err = String(event.error ?? event.errorMessage);
+    emit(`sub-agent error: ${err}`, "error");
+    return err;
+  }
+  if (message?.role !== "assistant") return undefined;
+  const text = messageText(message).trim();
+  if (text && !seenAssistantText?.has(text)) {
+    seenAssistantText?.add(text);
+    emit(`sub-agent assistant:\n${text}`, "info");
+  }
+  return text || undefined;
+}
+
+async function runSubAgent(prompt: string, dir: string, workdir: string, model: string | undefined, thinkingLevel: ThinkingLevel | undefined, emit: (line: string, type?: "info" | "warning" | "error") => void): Promise<string> {
+  const markerDir = join(workdir, ".issue-agent-markers");
+  mkdirSync(markerDir, { recursive: true });
+  const marker = join(markerDir, `${process.pid}-${Date.now()}.json`);
+  rmSync(marker, { force: true });
+  const subAgent = subAgentCommand();
+  const args = [...subAgent.prefix, "--mode", "json", "--no-session", ...(model ? ["--model", model] : []), ...(thinkingLevel ? ["--thinking", thinkingLevel] : []), "-p", prompt];
+  const child = spawn(subAgent.command, args, { cwd: dir, env: { ...process.env, ISSUE_AGENT_DONE_FILE: marker, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", LITTLE_CODER_NO_UPDATE_CHECK: "1", LITTLE_CODER_SUBAGENT: "1", CI: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+  activeSubAgent = {
+    kill: () => {
+      try { child.kill("SIGTERM"); } catch {}
+      setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5000).unref();
+    },
+  };
+  let output = "";
+  let stderr = "";
+  let stdoutBuffer = "";
+  const seenAssistantText = new Set<string>();
+  const flushStdout = (text: string) => {
+    stdoutBuffer += text;
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines.filter(Boolean)) output = handleSubAgentJsonLine(line, emit, seenAssistantText) ?? output;
+  };
+  child.stdout.on("data", (chunk) => flushStdout(String(chunk)));
+  child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+  const code = await new Promise<number | null>((resolve) => {
+    child.on("error", (err) => { stderr += err.message; resolve(-1); });
+    child.on("close", (closeCode) => resolve(closeCode));
+  });
+  activeSubAgent = undefined;
+  if (stdoutBuffer.trim()) output = handleSubAgentJsonLine(stdoutBuffer.trim(), emit, seenAssistantText) ?? output;
+  if (existsSync(marker) && activeWork) {
+    try { activeWork.doneText = JSON.parse(readFileSync(marker, "utf-8"))?.text ?? ""; } catch { activeWork.doneText = readFileSync(marker, "utf-8"); }
+    rmSync(marker, { force: true });
+  }
+  if (stopRequested) throw new Error("sub-agent stopped by request");
+  if (code !== 0) {
+    for (const line of stderr.split(/\r?\n/).filter(Boolean)) emit(`sub-agent stderr: ${line}`, "warning");
+    throw new Error(`sub-agent exited with code ${code}\n${stderr.trim() || output.trim()}`);
+  }
+  return output.trim();
+}
+
 function config(args: Record<string, string>): Config {
   return {
     repos: (args.repos ?? args.repo ?? process.env.ISSUE_AGENT_REPOS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
     models: {
-      planning: args["planning-model"],
-      execution: args["execution-model"],
+      planning: args["planning-model"] ?? args.model,
+      execution: args["execution-model"] ?? args.model,
       fallback: (args["fallback-models"] ?? "").split(",").filter(Boolean),
+    },
+    thinkingLevels: {
+      planning: asThinkingLevel(args["planning-thinking-level"] ?? args["thinking-level"]),
+      execution: asThinkingLevel(args["execution-thinking-level"] ?? args["thinking-level"]),
     },
     workdir: args.workdir ?? process.env.ISSUE_AGENT_WORKDIR ?? join(tmpdir(), "little-coder-issue-agent"),
     token: args.token ?? process.env.GITHUB_TOKEN ?? process.env.FORGEJO_TOKEN,
@@ -260,22 +458,38 @@ function releaseLock(): void {
   currentLock = undefined;
 }
 
-async function queueIssue(pi: ExtensionAPI, repo: string, issue: Issue, cfg: Config, notify?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<string> {
-  const dir = cfg.dryRun ? join(cfg.workdir, repoSlug(repo).replace("/", "__")) : checkout(repo, issue, cfg.workdir);
-  activeWork = { repo, issue, cfg, dir, fallbackIndex: -1 };
+async function queueIssue(pi: ExtensionAPI, ctx: any, repo: string, issue: Issue, cfg: Config, emit?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<string> {
   const models = modelsOf(issue.labels, cfg.models);
+  const state = stateOf(issue.labels);
+  const selectedModel = state === "PLANNING" ? models.planning : state === "EXECUTING" ? models.execution : undefined;
+  const plannedDir = join(cfg.workdir, repoSlug(repo).replace("/", "__"));
+  if (!cfg.dryRun && selectedModel && !findModelByName(ctx, selectedModel)) {
+    emit?.(`Configured ${state === "PLANNING" ? "planning" : "execution"} model not found: ${selectedModel}; skipping #${issue.number} instead of spawning a sub-agent.`, "warning");
+    return plannedDir;
+  }
+  const dir = cfg.dryRun ? plannedDir : checkout(repo, issue, cfg.workdir);
+  activeWork = { repo, issue, cfg, dir, fallbackIndex: -1 };
   const ar = autoresearchConfig(issue);
   const autoresearch = isAutoresearch(issue)
     ? `\n\nAUTORESEARCH MODE\nThis issue has an autoresearch label. Create or resume autoresearch.md, autoresearch.sh, autoresearch.checks.sh when useful, and autoresearch.jsonl in the checkout. Run bounded experiments only: max iterations ${ar.maxIterations ?? "from issue/config, otherwise choose a small explicit cap"}; metric ${ar.metric ?? "must be stated before experiments"}; direction ${ar.direction ?? "must be stated before experiments"}. The benchmark script must emit METRIC name=value. Keep/discard changes based on benchmark plus checks. Do not run destructive commands without the existing permission gate. When done, call issueAgentDone with a structured PR body: issue link, objective/metric, baseline, best result, confidence/noise note, kept/discarded experiments, files changed, checks run, risks/follow-ups.`
     : "";
-  const prompt = `ISSUE AGENT WORKFLOW\nRepo: ${repo}\nIssue: #${issue.number} ${issue.title}\nBranch: ${branchName(issue)}\nCheckout: ${dir}\nState: ${stateOf(issue.labels)}\nPlanning model: ${models.planning ?? "default"}\nExecution model: ${models.execution ?? "default"}\nFallback models: ${models.fallback.join(", ") || "none"}\n\nIssue body:\n${issue.body ?? ""}${autoresearch}\n\nIf state is PLANNING, inspect the checkout and produce a PLAN only. Post the PLAN to the issue, then wait for ai:state:EXECUTING or requested changes. If state is EXECUTING, execute the approved plan. When done, call the issueAgentDone tool with optional PR text; the harness should commit, push ${branchName(issue)}, and open a PR for review. If a provider limit/error occurs, report BLOCKED_WITH_PROVIDER_ERROR so the harness can switch fallback models or pick another issue.`;
+  const thinkingLevelOverride = state === "PLANNING" ? cfg.thinkingLevels.planning : state === "EXECUTING" ? cfg.thinkingLevels.execution : undefined;
+  const thinkingLevel = thinkingLevelOf(issue.labels, thinkingLevelOverride);
+  const prompt = issuePrompt(state, repo, issue, dir, models, thinkingLevel, autoresearch);
   activeAgentRun = true;
   if (cfg.dryRun) {
-    notify?.(`DRY RUN: Checkout ${repo} at ${branchName(issue)} into ${dir}`, "info");
-    notify?.(`DRY RUN: Send issue workflow prompt to model and assume ${stateOf(issue.labels) === "PLANNING" ? "a plan document" : "an issueAgentDone tool call"}`, "info");
+    emit?.(`DRY RUN: Checkout ${repo} at ${branchName(issue)} into ${dir}`, "info");
+    if (selectedModel) emit?.(`DRY RUN: Set ${state === "PLANNING" ? "planning" : "execution"} model to ${selectedModel}`, "info");
+    if (thinkingLevel) emit?.(`DRY RUN: Set thinking level to ${thinkingLevel}`, "info");
+    emit?.(`DRY RUN: Send issue workflow prompt to model and assume ${state === "PLANNING" ? "a plan document" : "an issueAgentDone tool call"}`, "info");
     return dir;
   }
-  await pi.sendUserMessage(prompt, { deliverAs: "followUp" } as any);
+  emit?.(`Starting isolated sub-agent in ${dir}; its project AGENTS.md/system prompt will be loaded from that checkout.`, "info");
+  const finalText = await runSubAgent(prompt, dir, cfg.workdir, selectedModel, thinkingLevel, emit ?? (() => undefined));
+  const work = activeWork;
+  activeAgentRun = false;
+  activeWork = undefined;
+  if (work) await finishWork(work, finalText, emit);
   return dir;
 }
 
@@ -305,17 +519,18 @@ async function commitPushPr(work: { repo: string; issue: Issue; cfg: Config; dir
 
 async function finishWork(work: { repo: string; issue: Issue; cfg: Config; dir: string; doneText?: string }, finalText: string, notify?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<void> {
   if (stateOf(work.issue.labels) === "PLANNING") {
-    const body = `## AI Plan\n\n${finalText}\n\n---\nApprove by changing labels to \`ai:state:EXECUTING\`; request changes by keeping/setting \`ai:state:WAITING_FOR_FEEDBACK\` and commenting.`;
+    const plan = extractPlan(finalText);
+    const body = `## AI Plan\n\n${plan}\n\n---\nApprove by changing labels to \`${stateLabel("EXECUTING")}\`; request changes by keeping/setting \`${stateLabel("WAITING_FOR_FEEDBACK")}\` and commenting.`;
     if (work.cfg.dryRun) notify?.(`DRY RUN: Post plan document to issue #${work.issue.number}: ${body}`, "info");
     else await postIssueComment(work.repo, work.issue, body, work.cfg.token);
-    if (work.cfg.dryRun) notify?.(`DRY RUN: Change issue label to ai:state:WAITING_FOR_FEEDBACK`, "info");
+    if (work.cfg.dryRun) notify?.(`DRY RUN: Change issue label to ${stateLabel("WAITING_FOR_FEEDBACK")}`, "info");
     else await setAiState(work.repo, work.issue, "WAITING_FOR_FEEDBACK", work.cfg.token);
   } else if (work.doneText !== undefined) {
     const result = await commitPushPr(work, notify);
     const body = `## AI Execution Complete\n\n${result}\n\n${work.doneText || finalText}`;
     if (work.cfg.dryRun) notify?.(`DRY RUN: Post execution-complete document to issue #${work.issue.number}: ${body}`, "info");
     else await postIssueComment(work.repo, work.issue, body, work.cfg.token);
-    if (work.cfg.dryRun) notify?.(`DRY RUN: Change issue label to ai:state:WAITING_FOR_REVIEW`, "info");
+    if (work.cfg.dryRun) notify?.(`DRY RUN: Change issue label to ${stateLabel("WAITING_FOR_REVIEW")}`, "info");
     else await setAiState(work.repo, work.issue, "WAITING_FOR_REVIEW", work.cfg.token);
   } else {
     const body = `AI execution stopped without issueAgentDone; leaving issue for follow-up.\n\n${finalText}`;
@@ -324,14 +539,30 @@ async function finishWork(work: { repo: string; issue: Issue; cfg: Config; dir: 
   }
 }
 
-async function switchModelByName(pi: ExtensionAPI, ctx: any, modelName: string): Promise<boolean> {
+function normalizedModelName(modelName: string): string {
+  return modelName.includes(":") && !modelName.includes("://") ? modelName.replace(/:(?:off|minimal|low|medium|high|xhigh)$/i, "") : modelName;
+}
+
+function findModelByName(ctx: any, modelName: string): any {
   const registry = ctx?.modelRegistry;
-  let model: any;
-  if (registry?.find && modelName.includes("/")) {
-    const [provider, id] = modelName.split("/", 2);
-    model = registry.find(provider, id);
+  const name = normalizedModelName(modelName);
+  if (!registry || !name || name === "true") return undefined;
+  const all = typeof registry.getAll === "function" ? registry.getAll() : [];
+  const slash = name.indexOf("/");
+  if (slash > 0) {
+    const provider = name.slice(0, slash);
+    const id = name.slice(slash + 1);
+    return registry.find?.(provider, id) ?? all.find((m: any) => m.provider === provider && m.id === id);
   }
-  model ??= registry?.findById?.(modelName) ?? registry?.get?.(modelName);
+  return all.find((m: any) => m.id === name || m.name === name);
+}
+
+function configuredModelNames(cfg: Config): string[] {
+  return [cfg.models.planning, cfg.models.execution, ...cfg.models.fallback].filter((m): m is string => Boolean(m));
+}
+
+async function switchModelByName(pi: ExtensionAPI, ctx: any, modelName: string): Promise<boolean> {
+  const model = findModelByName(ctx, modelName);
   return model ? await pi.setModel(model) : false;
 }
 
@@ -344,22 +575,24 @@ async function maintainIssueDependencies(repo: string, issue: Issue, cfg: Config
 
   if (!dep) {
     dependencyBlocked.set(key, false);
-    if (!issue.labels.includes(DEPENDENCY_BLOCK_LABEL)) return;
-    if (cfg.dryRun) notify?.(`DRY RUN: Remove issue label ${DEPENDENCY_BLOCK_LABEL} from #${issue.number}`, "info");
-    else await removeLabel(repo, issue, DEPENDENCY_BLOCK_LABEL, cfg.token);
+    const existing = issue.labels.find((l) => l === DEPENDENCY_BLOCK_LABEL || l === "blocked-by-dependency");
+    if (!existing) return;
+    if (cfg.dryRun) notify?.(`DRY RUN: Remove issue label ${existing} from #${issue.number}`, "info");
+    else await removeLabel(repo, issue, existing, cfg.token);
     return;
   }
 
   const closed = (await issueState(repo, dep, cfg.token).catch(() => "")) === "closed";
   dependencyBlocked.set(key, !closed);
   if (closed) {
-    if (!issue.labels.includes(DEPENDENCY_BLOCK_LABEL)) return;
-    if (cfg.dryRun) notify?.(`DRY RUN: Remove issue label ${DEPENDENCY_BLOCK_LABEL} from #${issue.number}; dependency #${dep} is closed`, "info");
-    else await removeLabel(repo, issue, DEPENDENCY_BLOCK_LABEL, cfg.token);
+    const existing = issue.labels.find((l) => l === DEPENDENCY_BLOCK_LABEL || l === "blocked-by-dependency");
+    if (!existing) return;
+    if (cfg.dryRun) notify?.(`DRY RUN: Remove issue label ${existing} from #${issue.number}; dependency #${dep} is closed`, "info");
+    else await removeLabel(repo, issue, existing, cfg.token);
     return;
   }
 
-  if (issue.labels.includes(DEPENDENCY_BLOCK_LABEL)) return;
+  if (issue.labels.includes(DEPENDENCY_BLOCK_LABEL) || issue.labels.includes("blocked-by-dependency")) return;
   if (cfg.dryRun) notify?.(`DRY RUN: Change issue label to ${DEPENDENCY_BLOCK_LABEL}; dependency #${dep} is not closed`, "info");
   else await addLabels(repo, issue, [DEPENDENCY_BLOCK_LABEL], cfg.token);
 }
@@ -368,17 +601,18 @@ async function maintainIssueLabels(cfg: Config, notify?: (msg: string, type?: "i
   for (const repo of cfg.repos) {
     for (const issue of await listIssues(repo, cfg.token)) {
       await maintainIssueDependencies(repo, issue, cfg, notify).catch((err) => notify?.(`issue-agent dependency check failed for #${issue.number}: ${err instanceof Error ? err.message : String(err)}`, "warning"));
-      const retryLabel = issue.labels.find((l) => l.startsWith("ai:retry-after:"));
-      if (issue.labels.includes("ai:blocked:usage-limit") && retryLabel) {
-        const when = Date.parse(retryLabel.slice("ai:retry-after:".length));
+      const retryLabel = issue.labels.find((l) => l.startsWith("ai:retry-after/") || l.startsWith("ai:retry-after:"));
+      const usageLimitLabel = issue.labels.find((l) => l === "ai:blocked/usage-limit" || l === "ai:blocked:usage-limit");
+      if (usageLimitLabel && retryLabel) {
+        const when = Date.parse(retryLabel.replace(/^ai:retry-after[:/]/, ""));
         if (Number.isFinite(when) && when <= Date.now()) {
           if (cfg.dryRun) {
-            notify?.(`DRY RUN: Remove issue labels ai:blocked:usage-limit, ${retryLabel}, and provider-status labels from #${issue.number}`, "info");
+            notify?.(`DRY RUN: Remove issue labels ${usageLimitLabel}, ${retryLabel}, and provider-status labels from #${issue.number}`, "info");
             notify?.(`DRY RUN: Post unblock comment to issue #${issue.number}`, "info");
           } else {
-            await removeLabel(repo, issue, "ai:blocked:usage-limit", cfg.token);
+            await removeLabel(repo, issue, usageLimitLabel, cfg.token);
             await removeLabel(repo, issue, retryLabel, cfg.token);
-            for (const label of issue.labels.filter((l) => l.startsWith("ai:provider-status:"))) await removeLabel(repo, issue, label, cfg.token);
+            for (const label of issue.labels.filter((l) => l.startsWith("ai:provider-status/") || l.startsWith("ai:provider-status:"))) await removeLabel(repo, issue, label, cfg.token);
             await postIssueComment(repo, issue, "Recorded usage-limit reset time has passed; unblocking this issue for retry.", cfg.token).catch(() => undefined);
           }
         }
@@ -387,18 +621,19 @@ async function maintainIssueLabels(cfg: Config, notify?: (msg: string, type?: "i
       const comments = await listComments(repo, issue, cfg.token).catch(() => []);
       if (comments.some((c) => /^\s*\/approve\b/im.test(String(c.body ?? "")))) {
         if (cfg.dryRun) {
-          notify?.(`DRY RUN: Change issue label to ai:state:EXECUTING`, "info");
+          notify?.(`DRY RUN: Change issue label to ${stateLabel("EXECUTING")}`, "info");
           notify?.(`DRY RUN: Post approval-detected comment to issue #${issue.number}`, "info");
         } else {
           await setAiState(repo, issue, "EXECUTING", cfg.token);
-          await postIssueComment(repo, issue, "Approval detected (`/approve`); switching to `ai:state:EXECUTING`.", cfg.token).catch(() => undefined);
+          await postIssueComment(repo, issue, `Approval detected (\`/approve\`); switching to \`${stateLabel("EXECUTING")}\`.`, cfg.token).catch(() => undefined);
         }
       }
     }
   }
 }
 
-async function runLoop(pi: ExtensionAPI, cfg: Config, notify: (msg: string, type?: "info" | "warning" | "error") => void): Promise<void> {
+async function runLoop(pi: ExtensionAPI, ctx: any, cfg: Config, notify: (msg: string, type?: "info" | "warning" | "error") => void): Promise<void> {
+  setStatus("starting");
   if (cfg.dryRun) {
     notify("DRY RUN: Acquire issue-agent lock", "info");
     notify("DRY RUN: Set workspace-permissions=deny", "info");
@@ -411,14 +646,18 @@ async function runLoop(pi: ExtensionAPI, cfg: Config, notify: (msg: string, type
   }
   running = true;
   stopRequested = false;
-  notify(cfg.dryRun ? `issue-agent dry run; printing operations without changing issues, git, or model state` : `issue-agent running with workspace-permissions=deny (/tmp allowed); use /issue-agent-stop or Ctrl-C to stop after the current agent turn`, "info");
+  await ensureStandardLabels(cfg).catch((err) => notify(`issue-agent label setup failed: ${err instanceof Error ? err.message : String(err)}`, "warning"));
+  const argsSummary = `args: --repos=${cfg.repos.join(",")} --model=<sets both> --planning-model=${cfg.models.planning ?? "<label/default>"} --execution-model=${cfg.models.execution ?? "<label/default>"} --fallback-models=${cfg.models.fallback.join(",") || "<labels/none>"} --thinking-level=<sets both> --planning-thinking-level=${cfg.thinkingLevels.planning ?? "<label/current>"} --execution-thinking-level=${cfg.thinkingLevels.execution ?? "<label/current>"} --interval=${cfg.intervalMs} --workdir=${cfg.workdir} --dry-run=${cfg.dryRun}`;
+  notify(cfg.dryRun ? `issue-agent dry run; printing operations without changing issues, git, or model state; ${argsSummary}` : `issue-agent running with workspace-permissions=deny (/tmp allowed); use /issue-agent-stop or Ctrl-C to stop after the current agent turn; ${argsSummary}`, "info");
   try {
     while (!stopRequested) {
       if (!activeAgentRun) {
+        setStatus("checking labels/dependencies");
         await maintainIssueLabels(cfg, notify).catch((err) => notify(`issue-agent label maintenance failed: ${err instanceof Error ? err.message : String(err)}`, "warning"));
         const candidates: Array<{ repo: string; issue: Issue }> = [];
         for (const repo of cfg.repos) {
           try {
+            setStatus(`listing issues in ${basename(repo)}`);
             for (const issue of await listIssues(repo, cfg.token)) candidates.push({ repo, issue });
           } catch (err) {
             notify(`issue-agent failed to list ${repo}: ${err instanceof Error ? err.message : String(err)}`, "warning");
@@ -436,9 +675,32 @@ async function runLoop(pi: ExtensionAPI, cfg: Config, notify: (msg: string, type
           return ["PLANNING", "EXECUTING"].includes(state) && now - queuedAt > QUEUED_COOLDOWN_MS && !x.issue.labels.some((l) => /blocked/i.test(l)) && !dependencyBlocked.get(`${x.repo}#${x.issue.number}`) && anyModelAvailable;
         });
         if (next) {
-          const dir = await queueIssue(pi, next.repo, next.issue, cfg, notify);
+          setStatus(`queueing #${next.issue.number} ${next.issue.title}`);
+          let dir = "";
+          try {
+            dir = await queueIssue(pi, ctx, next.repo, next.issue, cfg, notify);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (stopRequested) {
+              notify(`issue-agent sub-agent stopped for #${next.issue.number}: ${message}`, "info");
+              activeAgentRun = false;
+              activeWork = undefined;
+              break;
+            }
+            const providerLimited = /\b(429|rate.?limit|usage.?limit)\b/i.test(message);
+            notify(`issue-agent sub-agent failed for #${next.issue.number}: ${message}`, "error");
+            if (!cfg.dryRun) {
+              await postIssueComment(next.repo, next.issue, `Harness sub-agent failed while working this issue:\n\n${message}`, cfg.token).catch(() => undefined);
+              await addLabels(next.repo, next.issue, [providerLimited ? "ai:blocked/usage-limit" : "ai:blocked/harness-error"], cfg.token).catch(() => undefined);
+            }
+            activeAgentRun = false;
+            activeWork = undefined;
+            setStatus(`blocked #${next.issue.number} after sub-agent failure`);
+            continue;
+          }
           recentlyQueued.set(`${next.repo}#${next.issue.number}:${stateOf(next.issue.labels)}`, now);
-          notify(`Queued issue #${next.issue.number} from ${basename(next.repo)} in ${dir}`, "info");
+          setStatus(activeAgentRun ? `agent turn running for #${next.issue.number}` : `finished #${next.issue.number}`);
+          notify(`${activeAgentRun ? "Queued" : "Processed"} issue #${next.issue.number} from ${basename(next.repo)} in ${dir}`, "info");
           if (cfg.dryRun && activeWork) {
             const work = activeWork;
             activeAgentRun = false;
@@ -446,6 +708,8 @@ async function runLoop(pi: ExtensionAPI, cfg: Config, notify: (msg: string, type
             if (stateOf(work.issue.labels) !== "PLANNING") work.doneText = "DRY RUN: assumed issueAgentDone PR text.";
             await finishWork(work, stateOf(work.issue.labels) === "PLANNING" ? "DRY RUN PLAN: assumed model plan output." : "DRY RUN: assumed issueAgentDone tool call.", notify);
           }
+        } else {
+          setStatus(`idle; no runnable issue found, next poll in ${Math.round(cfg.intervalMs / 1000)}s`);
         }
       }
       await sleep(cfg.intervalMs);
@@ -455,11 +719,23 @@ async function runLoop(pi: ExtensionAPI, cfg: Config, notify: (msg: string, type
     stopRequested = false;
     if (cfg.dryRun) notify("DRY RUN: Release issue-agent lock", "info");
     else releaseLock();
+    setStatus("stopped");
     notify("issue-agent stopped", "info");
   }
 }
 
+export const __issueAgentTest = { runSubAgent, handleSubAgentJsonLine };
+
 export default function (pi: ExtensionAPI) {
+  const chatStatus = (message: string, type: "info" | "warning" | "error" = "info") => {
+    pi.sendMessage({
+      customType: "issue-agent-status",
+      content: `issue-agent: ${message}`,
+      display: true,
+      details: { type, timestamp: Date.now() },
+    }, { deliverAs: "followUp" });
+  };
+
   pi.on("after_provider_response", async (event, ctx) => {
     if (!activeWork || event.status < 429) return;
     const retrySeconds = Number(event.headers["retry-after"] ?? 0);
@@ -475,12 +751,12 @@ export default function (pi: ExtensionAPI) {
       await postIssueComment(activeWork.repo, activeWork.issue, `Provider/model error HTTP ${event.status}.${retry}\n\nSwitching to fallback model \`${next}\` and retrying this issue.`, activeWork.cfg.token).catch(() => undefined);
       const work = activeWork;
       activeAgentRun = false;
-      await queueIssue(pi, work.repo, work.issue, work.cfg);
+      await queueIssue(pi, ctx, work.repo, work.issue, work.cfg);
       if (activeWork) activeWork.fallbackIndex = work.fallbackIndex;
       return;
     }
     await postIssueComment(activeWork.repo, activeWork.issue, `Provider/model error while working this issue: HTTP ${event.status}.${retry}\n\nAll configured fallback models are exhausted or currently rate-limited. The harness will reschedule this issue after the limit resets and continue with other issues.`, activeWork.cfg.token).catch(() => undefined);
-    await addLabels(activeWork.repo, activeWork.issue, [`ai:blocked:usage-limit`, `ai:provider-status:${event.status}`, `ai:retry-after:${new Date(retryAt).toISOString()}`], activeWork.cfg.token).catch(() => undefined);
+    await addLabels(activeWork.repo, activeWork.issue, [`ai:blocked/usage-limit`, `ai:provider-status/${event.status}`, `ai:retry-after/${new Date(retryAt).toISOString()}`], activeWork.cfg.token).catch(() => undefined);
     activeAgentRun = false;
     activeWork = undefined;
   });
@@ -490,41 +766,80 @@ export default function (pi: ExtensionAPI) {
     activeAgentRun = false;
     activeWork = undefined;
     if (!work) return;
+    setStatus(`post-processing #${work.issue.number}`);
     const finalText = event.messages.map(messageText).join("\n").trim();
     try {
       await finishWork(work, finalText);
+      setStatus(`finished #${work.issue.number}`);
     } catch (err) {
       await postIssueComment(work.repo, work.issue, `Harness post-processing failed: ${err instanceof Error ? err.message : String(err)}`, work.cfg.token).catch(() => undefined);
-      await addLabels(work.repo, work.issue, ["ai:blocked:harness-error"], work.cfg.token).catch(() => undefined);
+      await addLabels(work.repo, work.issue, ["ai:blocked/harness-error"], work.cfg.token).catch(() => undefined);
     }
   });
 
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     process.once(sig, () => {
       stopRequested = true;
+      stopActiveSubAgent();
       releaseLock();
     });
   }
 
   pi.registerCommand("issue-agent", {
-    description: "Run continuously over ai:* labeled GitHub/Forgejo issues until interrupted. Args: --repos=url[,url] --planning-model=x --execution-model=y --fallback-models=a,b --interval=30000 --dry-run",
+    description: "Run continuously over ai:* labeled GitHub/Forgejo issues until interrupted. Args: --repos=url[,url] --model=x --planning-model=x --execution-model=y --fallback-models=a,b --thinking-level=low|medium|high --planning-thinking-level=low|medium|high --execution-thinking-level=low|medium|high --interval=30000 --workdir=/tmp/dir --dry-run",
     handler: async (argLine: string, ctx) => {
       const cfg = config(parseArgs(argLine));
       if (!cfg.repos.length) {
-        ctx.ui.notify("Usage: /issue-agent --repos=https://github.com/owner/repo[,https://forgejo/owner/repo] [--dry-run]", "warning");
+        ctx.ui.notify("Usage: /issue-agent --repos=https://github.com/owner/repo[,https://forgejo/owner/repo] [--model=provider/id] [--planning-model=provider/id] [--execution-model=provider/id] [--thinking-level=low|medium|high] [--planning-thinking-level=low|medium|high] [--execution-thinking-level=low|medium|high] [--fallback-models=a,b] [--workdir=/tmp/dir] [--interval=30000] [--dry-run]", "warning");
         return;
       }
       if (running) {
         ctx.ui.notify("issue-agent is already running; use /issue-agent-stop first", "warning");
         return;
       }
+      const missingModels = configuredModelNames(cfg).filter((model) => !findModelByName(ctx, model));
+      if (missingModels.length) {
+        ctx.ui.notify(`Configured issue-agent model(s) not found: ${missingModels.map(normalizedModelName).join(", ")}. Not starting issue-agent.`, "warning");
+        return;
+      }
+      let stopStatusUi: (() => void) | undefined;
+      const previousStatusLog = statusLog;
+      statusLog = (text) => chatStatus(text);
       if (ctx.hasUI) {
         ctx.ui.onTerminalInput((data) => {
-          if (running && data === "\u0003") stopRequested = true;
+          if (running && data === "\u0003") { stopRequested = true; stopActiveSubAgent(); }
           return undefined;
         });
+        const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let frame = 0;
+        const paint = () => {
+          const text = running ? `${frames[frame++ % frames.length]} ${formatStatus()}` : undefined;
+          ctx.ui.setStatus("issue-agent", text);
+          ctx.ui.setWidget("issue-agent", text ? [`issue-agent ${text}`] : undefined, { placement: "belowEditor" });
+        };
+        const timer = setInterval(paint, 120);
+        paint();
+        stopStatusUi = () => { clearInterval(timer); ctx.ui.setStatus("issue-agent", undefined); ctx.ui.setWidget("issue-agent", undefined); };
       }
-      void runLoop(pi, cfg, (msg, type = "info") => ctx.ui.notify(msg, type));
+      try {
+        await runLoop(pi, ctx, cfg, (msg, type = "info") => {
+          chatStatus(msg, type);
+          ctx.ui.notify(msg, type);
+        });
+      } finally {
+        stopStatusUi?.();
+        statusLog = previousStatusLog;
+      }
+    },
+  });
+
+  pi.registerCommand("issue-agent-status", {
+    description: "Show what /issue-agent is currently doing and where to view the spawned task chat.",
+    handler: async (_argLine: string, ctx) => {
+      ctx.ui.notify(formatStatus(), running ? "info" : "warning");
+      if (activeWork) {
+        ctx.ui.notify("The issue is being handled by an isolated sub-agent process in the checkout; its stdout/stderr is piped back into this chat as follow-up issue-agent messages.", "info");
+      }
     },
   });
 
@@ -533,7 +848,8 @@ export default function (pi: ExtensionAPI) {
     handler: async (_argLine: string, ctx) => {
       if (!running) { ctx.ui.notify("issue-agent is not running", "info"); return; }
       stopRequested = true;
-      ctx.ui.notify("issue-agent stop requested", "info");
+      stopActiveSubAgent();
+      ctx.ui.notify("issue-agent stop requested; active sub-agent is being terminated", "info");
     },
   });
 
@@ -543,10 +859,15 @@ export default function (pi: ExtensionAPI) {
     description: "Mark the active issue-agent execution task as done. Optional text is used in the issue completion comment and pull request body.",
     parameters: Type.Object({ text: Type.Optional(Type.String()) }),
     async execute(_id, input: any) {
+      const text = typeof input.text === "string" ? input.text : "";
+      if (process.env.ISSUE_AGENT_DONE_FILE) {
+        writeFileSync(process.env.ISSUE_AGENT_DONE_FILE, JSON.stringify({ text }, null, 2));
+        return { content: [{ type: "text", text: "Marked sub-agent issue task as done." }], details: { ok: true } };
+      }
       if (!activeWork || stateOf(activeWork.issue.labels) !== "EXECUTING") {
         return { content: [{ type: "text", text: "No active issue-agent execution task." }], details: { ok: false } };
       }
-      activeWork.doneText = typeof input.text === "string" ? input.text : "";
+      activeWork.doneText = text;
       return { content: [{ type: "text", text: "Marked active issue-agent task as done. The harness will commit, push, and open a PR after this turn." }], details: { ok: true } };
     },
   });

@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkForUpdate } from "./update-check.mjs";
+import { applySubAgentEnv, discoverBundledExtensionArgs } from "./launcher-helpers.mjs";
 
 // ---- 1. Node version preflight (>= 22.19.0, matching pi.dev) ----
 const MIN_NODE = [22, 19, 0];
@@ -145,20 +146,10 @@ function bundledPackageArgs(pkgJson) {
 // ---- 4. Auto-discover bundled extensions ----
 const rootPkgJson = readJson(join(pkgRoot, "package.json")) ?? {};
 const extDir = join(pkgRoot, ".pi", "extensions");
-const extArgs = [];
-if (existsSync(extDir)) {
-  for (const name of readdirSync(extDir).sort()) {
-    const subdir = join(extDir, name);
-    const idx = join(subdir, "index.ts");
-    try {
-      if (statSync(subdir).isDirectory() && existsSync(idx)) {
-        extArgs.push("--extension", idx);
-      }
-    } catch {
-      // skip unreadable entries
-    }
-  }
-}
+const rawUserArgs = process.argv.slice(2);
+const issueAgentSubagent = rawUserArgs.includes("--issue-agent-subagent");
+if (issueAgentSubagent) applySubAgentEnv(process.env);
+const extArgs = discoverBundledExtensionArgs(extDir, { issueAgentSubagent, resolveExtensionEntry });
 const packageArgs = bundledPackageArgs(rootPkgJson);
 
 // ---- 5. Update check (best-effort, blocks on TTY prompt only) ----
@@ -176,7 +167,7 @@ if (exitAfterCheck) {
 // --append-system-prompt : amend the prompt with cwd AGENTS.md when present
 //
 // Strip our own flags before forwarding to pi so it doesn't reject them.
-const userArgs = process.argv.slice(2).filter((a) => a !== "--no-update-check");
+const userArgs = rawUserArgs.filter((a) => a !== "--no-update-check" && a !== "--issue-agent-subagent");
 const agentsMd = join(pkgRoot, "AGENTS.md");
 const cwdAgentsMd = join(process.cwd(), "AGENTS.md");
 
@@ -309,10 +300,15 @@ try {
 // Passing piEntry as an argv element (not a shell string) avoids any
 // shell-injection / space-in-path classes on every platform.
 const child = spawn(process.execPath, [piEntry, ...piArgs], {
-  stdio: "inherit",
+  stdio: issueAgentSubagent ? ["ignore", "pipe", "pipe"] : "inherit",
   cwd: process.cwd(),
   env: process.env,
 });
+
+if (issueAgentSubagent) {
+  child.stdout?.on("data", (chunk) => process.stdout.write(chunk));
+  child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
+}
 
 const forward = (sig) => () => {
   try {
@@ -330,7 +326,7 @@ child.on("error", (err) => {
   process.exit(1);
 });
 
-child.on("exit", (code, signal) => {
+child.on("close", (code, signal) => {
   if (signal) {
     process.kill(process.pid, signal);
   } else {

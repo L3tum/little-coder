@@ -92,19 +92,28 @@ function buildHeader(theme: Theme): string[] {
   const extensionLine5 = [
     theme.fg("muted", "Use "),
     theme.fg("text", "/codebase"),
-    theme.fg("muted", " to inspect the codebase-memory integration"),
+    theme.fg("muted", " to inspect codebase-memory"),
+    sep,
+    theme.fg("text", "/memory-review accept|deny"),
+    theme.fg("muted", " to triage learned memories"),
+    sep,
+    theme.fg("text", "/memory-list"),
+    theme.fg("muted", " / "),
+    theme.fg("text", "/memory-search"),
+    theme.fg("muted", " to browse them"),
   ].join("");
   const issueAgentSection = [
     theme.bold("Issue agent:"),
     [
       theme.fg("muted", "Run "),
       theme.fg("text", "/issue-agent --repos=url[,url]"),
-      theme.fg("muted", " to continuously work GitHub/Forgejo issues labeled "),
+      theme.fg("muted", " to work GitHub/Forgejo issues labeled "),
       theme.fg("text", "ai:*"),
+      theme.fg("muted", " and create Forgejo labels"),
     ].join(""),
     [
       theme.fg("muted", "States: "),
-      theme.fg("text", "ai:state:PLANNING"),
+      theme.fg("text", "ai:state/PLANNING"),
       sep,
       theme.fg("text", "WAITING_FOR_FEEDBACK"),
       sep,
@@ -116,34 +125,36 @@ function buildHeader(theme: Theme): string[] {
       theme.fg("muted", "Flow: PLAN comment → wait for "),
       theme.fg("text", "/approve"),
       theme.fg("muted", " or "),
-      theme.fg("text", "ai:state:EXECUTING"),
+      theme.fg("text", "ai:state/EXECUTING"),
       theme.fg("muted", " → commit, push branch, open PR"),
     ].join(""),
     [
       theme.fg("muted", "Labels: "),
-      theme.fg("text", "ai:priority:N"),
+      theme.fg("text", "ai:priority/N"),
       sep,
-      theme.fg("text", "ai:planning-model:x"),
+      theme.fg("text", "ai:planning-model/x"),
       sep,
-      theme.fg("text", "ai:execution-model:y"),
+      theme.fg("text", "ai:execution-model/y"),
       sep,
-      theme.fg("text", "ai:blocked:*"),
+      theme.fg("text", "ai:thinking-level/high"),
     ].join(""),
     [
       theme.fg("muted", "Provider limits add "),
-      theme.fg("text", "ai:blocked:usage-limit"),
+      theme.fg("text", "ai:blocked/usage-limit"),
       theme.fg("muted", ", "),
-      theme.fg("text", "ai:provider-status:*"),
+      theme.fg("text", "ai:provider-status/*"),
       theme.fg("muted", ", and "),
-      theme.fg("text", "ai:retry-after:*"),
+      theme.fg("text", "ai:retry-after/*"),
     ].join(""),
     [
       theme.fg("muted", "Options: "),
       theme.fg("text", "--dry-run"),
       sep,
       theme.fg("text", "--fallback-models=a,b"),
+      sep,
+      theme.fg("text", "--thinking-level=low"),
       theme.fg("muted", " or labels "),
-      theme.fg("text", "ai:fallback-*-model:x"),
+      theme.fg("text", "ai:fallback-*-model/x"),
     ].join(""),
     [
       theme.fg("muted", "Setup: provide an API key via "),
@@ -187,6 +198,7 @@ function setTitleForCwd(setTitle: (t: string) => void, cwd: string): void {
 }
 
 export default function (pi: ExtensionAPI) {
+  if (process.env.LITTLE_CODER_SUBAGENT === "1") return;
   // session_start fires on initial load AND on every session switch.
   // Pi's updateTerminalTitle() runs in init() *after* session_start, so our
   // setTitle here gets clobbered back to "π - <cwd>". We reassert the title
