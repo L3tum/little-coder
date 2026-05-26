@@ -16,7 +16,7 @@
   "littleCoder": {
     "packages": [
       "@plannotator/pi-extension",
-      "@juicesharp/rpiv-todo",
+      "@observal/pi-insights",
       "pi-better-openai"
     ]
   },
@@ -29,6 +29,7 @@
   "files": [
     "bin/",
     "AGENTS.md",
+    "scripts/",
     "skills/",
     ".pi/extensions/",
     ".pi/settings.json",
@@ -40,6 +41,7 @@
   ],
   "scripts": {
     "pi": "pi",
+    "postinstall": "node scripts/patch-extension-notifications.mjs",
     "test": "vitest run",
     "test:py": "python3 -m pytest benchmarks/test_rpc_client.py -q",
     "typecheck": "tsc --noEmit"
@@ -48,7 +50,7 @@
     "@earendil-works/pi-ai": "^0.74.1",
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@earendil-works/pi-tui": "^0.74.1",
-    "@juicesharp/rpiv-todo": "^1.11.0",
+    "@observal/pi-insights": "^1.2.2",
     "@plannotator/pi-extension": "^0.19.20",
     "@sinclair/typebox": "^0.34.49",
     "chokidar": "^5.0.0",

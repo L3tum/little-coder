@@ -71,10 +71,8 @@ function buildHeader(theme: Theme): string[] {
   ].join("");
   const extensionLine2 = [
     theme.fg("muted", "Use "),
-    theme.fg("text", "todo"),
-    theme.fg("muted", " / "),
-    theme.fg("text", "/todos"),
-    theme.fg("muted", " to track steps"),
+    theme.fg("text", "/pi-insights"),
+    theme.fg("muted", " for usage insights"),
     sep,
     theme.fg("text", "Alt+S"),
     theme.fg("muted", " to stash editor text"),
