@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, chmodSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,86 @@ function script(dir: string, body: string): string {
 function assistantLine(text: string): string {
   return JSON.stringify({ message: { role: "assistant", content: text } });
 }
+
+describe("issue-agent lifecycle helpers", () => {
+  it("parses REQUESTING_REVIEW state labels", () => {
+    expect(__issueAgentTest.stateOf(["ai:state/REQUESTING_REVIEW"])).toBe("REQUESTING_REVIEW");
+    expect(__issueAgentTest.stateOf(["ai[state:REQUESTING_REVIEW]"])).toBe("REQUESTING_REVIEW");
+  });
+
+  it("normalizes pull request rows with branch/base metadata", () => {
+    const pr = __issueAgentTest.normalizePullRequest({ number: 7, title: "T", labels: [{ name: "ai:state/REQUESTING_REVIEW" }], html_url: "h", issue_url: "i", url: "p", head: { label: "owner:feature", repo: { html_url: "not-a-clone-url" } }, base: { ref: "main" } });
+    expect(pr.kind).toBe("pr");
+    expect(pr.head).toBe("feature");
+    expect(pr.base).toBe("main");
+    expect(pr.apiUrl).toBe("i");
+    expect(pr.headRepo).toBeUndefined();
+  });
+
+  it("detects slash review comments and review cycles", () => {
+    expect(__issueAgentTest.hasReviewCommand([{ body: "please\n/review" }])).toBe(true);
+    expect(__issueAgentTest.hasUnansweredReviewCommand([{ body: "/review", created_at: "2026-01-01T00:00:00Z" }, { body: "## AI Review Summary", created_at: "2026-01-01T00:01:00Z" }])).toBe(false);
+    expect(__issueAgentTest.hasUnansweredReviewCommand([{ body: "/review", created_at: "2026-01-01T00:00:00Z" }, { body: "## AI Review Summary", created_at: "2026-01-01T00:00:00Z" }])).toBe(false);
+    expect(__issueAgentTest.hasUnansweredReviewCommand([{ body: "## AI Review Summary", created_at: "2026-01-01T00:00:00Z" }, { body: "/review", created_at: "2026-01-01T00:00:00Z" }])).toBe(true);
+    expect(__issueAgentTest.hasUnansweredReviewCommand([{ body: "## AI Review Summary", created_at: "2026-01-01T00:00:00Z" }, { body: "/review", created_at: "2026-01-01T00:01:00Z" }])).toBe(true);
+    expect(__issueAgentTest.hasUnansweredReviewCommand([{ body: "## AI Review Summary" }, { body: "/review" }])).toBe(true);
+    expect(__issueAgentTest.hasUnansweredReviewCommand([{ body: "## AI Review Summary", created_at: "2026-01-01T00:00:00Z" }, { body: "/review" }])).toBe(true);
+    expect(__issueAgentTest.hasUnansweredReviewCommand([{ body: "/review", id: 1 }, { body: "## AI Review Summary", id: 2 }])).toBe(false);
+    expect(__issueAgentTest.reviewCycle(["ai:review-cycle/2"])).toBe(2);
+    expect(__issueAgentTest.hasAgentSource(["ai:source/AGENT"])).toBe(true);
+  });
+
+  it("validates required tool markers and parses verdicts", () => {
+    expect(__issueAgentTest.validMarker("done", "anything")).toBe(true);
+    expect(__issueAgentTest.validMarker("plan", "# PLAN\nDo it")).toBe(true);
+    expect(__issueAgentTest.validMarker("plan", "Do it")).toBe(false);
+    expect(__issueAgentTest.validMarker("verdict", "verdict: request_changes\n\nFix it")).toBe(true);
+    expect(__issueAgentTest.validMarker("verdict", "Fix it")).toBe(false);
+    expect(__issueAgentTest.parseVerdict("verdict: approve\n\nLGTM")).toBe("approve");
+  });
+
+  it("constructs platform-specific PR review events", () => {
+    expect(__issueAgentTest.reviewEvent("approve")).toBe("APPROVE");
+    expect(__issueAgentTest.reviewEvent("request_changes")).toBe("REQUEST_CHANGES");
+  });
+
+  it("repairs discovered PR issue API URLs even when PR rows already include labels", async () => {
+    const oldFetch = global.fetch;
+    global.fetch = vi.fn(async (url: any) => {
+      expect(String(url)).toBe("https://api.github.com/repos/acme/repo/pulls?state=open&per_page=100");
+      return new Response(JSON.stringify([{ number: 9, title: "PR", html_url: "html", url: "pull-api", labels: [{ name: "ai:state/REQUESTING_REVIEW" }], head: { ref: "feature" }, base: { ref: "main" } }]), { status: 200, headers: { "content-type": "application/json" } });
+    }) as any;
+    try {
+      const prs = await __issueAgentTest.listPullRequests("https://github.com/acme/repo.git", "tok");
+      expect(prs).toHaveLength(1);
+      expect(prs[0].apiUrl).toBe("https://api.github.com/repos/acme/repo/issues/9");
+    } finally {
+      global.fetch = oldFetch;
+    }
+  });
+
+  it("uses PR labels as authoritative after PR creation and marks the issue PR_PENDING", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const oldFetch = global.fetch;
+    global.fetch = vi.fn(async (url: any, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("/pulls")) return new Response(JSON.stringify({ number: 9, title: "PR", html_url: "html", url: "pull-api", head: { ref: "ai/1-test" }, base: { ref: "main" } }), { status: 201, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as any;
+    try {
+      const issue = { number: 1, title: "Test", body: "", labels: ["ai:state/EXECUTING"], url: "issue-html", apiUrl: "https://github.com/api-issue" };
+      const pr = await __issueAgentTest.createPullRequest("https://github.com/acme/repo.git", issue, "ai/1-test", "tok", "done");
+      await __issueAgentTest.addLabels("https://github.com/acme/repo.git", pr, ["ai:source/AGENT", __issueAgentTest.stateLabel("REQUESTING_REVIEW")], "tok");
+      await __issueAgentTest.setAiState("https://github.com/acme/repo.git", issue, "PR_PENDING", "tok");
+    } finally {
+      global.fetch = oldFetch;
+    }
+    expect(calls.some((c) => c.url === "https://api.github.com/repos/acme/repo/pulls")).toBe(true);
+    expect(calls.some((c) => c.url === "https://api.github.com/repos/acme/repo/issues/9/labels" && String(c.init?.body).includes("REQUESTING_REVIEW"))).toBe(true);
+    expect(calls.some((c) => c.url === "https://github.com/api-issue/labels/ai%3Astate%2FEXECUTING" && c.init?.method === "DELETE")).toBe(true);
+    expect(calls.some((c) => c.url === "https://github.com/api-issue/labels" && String(c.init?.body).includes("PR_PENDING"))).toBe(true);
+  });
+});
 
 describe("issue-agent runSubAgent", () => {
   let tmp: string;

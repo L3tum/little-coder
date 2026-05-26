@@ -8,10 +8,16 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const STATES = ["PLANNING", "WAITING_FOR_FEEDBACK", "EXECUTING", "WAITING_FOR_REVIEW"] as const;
+const STATES = ["PLANNING", "WAITING_FOR_FEEDBACK", "EXECUTING", "REQUESTING_REVIEW", "WAITING_FOR_REVIEW", "PR_PENDING"] as const;
 type AiState = typeof STATES[number];
 
 type Issue = { number: number; title: string; body?: string; labels: string[]; url: string; apiUrl: string };
+type PullRequestItem = Issue & { kind: "pr"; head: string; base: string; headRepo?: string; diffUrl?: string };
+type WorkItem = Issue | PullRequestItem;
+type WorkKind = "issue" | "review" | "rework";
+type RequiredMarker = "plan" | "done" | "verdict";
+type ReviewVerdict = "approve" | "comment" | "request_changes";
+type PrResult = { createdPr: boolean; message: string };
 type Models = { planning?: string; execution?: string; fallback: string[] };
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 type ThinkingLevels = { planning?: ThinkingLevel; execution?: ThinkingLevel };
@@ -21,7 +27,7 @@ let running = false;
 let stopRequested = false;
 let activeAgentRun = false;
 let currentLock: string | undefined;
-let activeWork: { repo: string; issue: Issue; cfg: Config; dir: string; fallbackIndex: number; doneText?: string } | undefined;
+let activeWork: { repo: string; issue: WorkItem; cfg: Config; dir: string; fallbackIndex: number; doneText?: string; kind?: WorkKind; requiredMarker?: RequiredMarker } | undefined;
 let activeSubAgent: { kill: () => void } | undefined;
 let statusText = "idle";
 let lastStatusAt = 0;
@@ -33,6 +39,10 @@ const dependencyBlocked = new Map<string, boolean>();
 const QUEUED_COOLDOWN_MS = 10 * 60 * 1000;
 const DEPENDENCY_CHECK_COOLDOWN_MS = 10 * 60 * 1000;
 const DEPENDENCY_BLOCK_LABEL = "ai:blocked/dependency";
+const NO_TOOLCALL_LABEL = "ai:error/NO_TOOLCALL";
+const AGENT_SOURCE_LABEL = "ai:source/AGENT";
+const REVIEW_CYCLE_PREFIX = "ai:review-cycle/";
+const MAX_REQUIRED_TOOL_RETRIES = 3;
 const STATE_LABEL_PREFIX = "ai:state/";
 
 function stateLabel(state: AiState): string {
@@ -149,6 +159,21 @@ async function postIssueComment(repo: string, issue: Issue, body: string, token?
   await request(url, token, { method: "POST", body: JSON.stringify({ body }) });
 }
 
+function reviewEvent(verdict: ReviewVerdict): string {
+  return verdict === "approve" ? "APPROVE" : verdict === "request_changes" ? "REQUEST_CHANGES" : "COMMENT";
+}
+
+async function submitPullRequestReview(repo: string, pr: PullRequestItem, verdict: ReviewVerdict, body: string, token?: string): Promise<void> {
+  const r = apiBase(repo);
+  const url = `${r.base}/repos/${r.owner}/${r.name}/pulls/${pr.number}/reviews`;
+  const event = reviewEvent(verdict);
+  await request(url, token, { method: "POST", body: JSON.stringify({ body, event }) }).catch(async (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (r.kind !== "forgejo" || verdict !== "approve" || !/^(400|422)\b/.test(msg)) throw err;
+    await request(url, token, { method: "POST", body: JSON.stringify({ body, event: "APPROVED" }) });
+  });
+}
+
 function labelEndpoint(repo: string, issue: Issue): { url: string; kind: "github" | "forgejo" } {
   const r = apiBase(repo);
   return { kind: r.kind, url: r.kind === "github" ? `${issue.apiUrl}/labels` : `${r.base}/repos/${r.owner}/${r.name}/issues/${issue.number}/labels` };
@@ -200,6 +225,9 @@ async function ensureStandardLabels(cfg: Config): Promise<void> {
     DEPENDENCY_BLOCK_LABEL,
     "ai:blocked/usage-limit",
     "ai:blocked/harness-error",
+    NO_TOOLCALL_LABEL,
+    AGENT_SOURCE_LABEL,
+    ...[1, 2, 3].map((n) => `${REVIEW_CYCLE_PREFIX}${n}`),
   ];
   for (const repo of cfg.repos) {
     const r = apiBase(repo);
@@ -219,7 +247,24 @@ async function listComments(repo: string, issue: Issue, token?: string): Promise
   return await request(url, token);
 }
 
-async function createPullRequest(repo: string, issue: Issue, branch: string, token?: string, prText?: string): Promise<string> {
+function normalizePullRequest(row: any): PullRequestItem {
+  const rawHead = String(row.head?.ref ?? row.head?.label ?? "");
+  return {
+    kind: "pr",
+    number: Number(row.number ?? row.id),
+    title: String(row.title ?? ""),
+    body: row.body ?? "",
+    labels: (row.labels ?? []).map((l: any) => typeof l === "string" ? l : l.name),
+    url: row.html_url ?? row.url,
+    apiUrl: row.issue_url ?? row.url,
+    head: rawHead.replace(/^.+:/, ""),
+    base: String(row.base?.ref ?? "main"),
+    headRepo: row.head?.repo?.clone_url ?? row.head?.repo?.ssh_url,
+    diffUrl: row.diff_url,
+  };
+}
+
+async function createPullRequest(repo: string, issue: Issue, branch: string, token?: string, prText?: string): Promise<PullRequestItem> {
   const r = apiBase(repo);
   const url = `${r.base}/repos/${r.owner}/${r.name}/pulls`;
   const prBody = prText?.trim() ? `${prText.trim()}\n\nCloses #${issue.number}` : `Closes #${issue.number}`;
@@ -227,7 +272,10 @@ async function createPullRequest(repo: string, issue: Issue, branch: string, tok
     ? { title: `AI: ${issue.title}`, head: branch, base: "main", body: prBody }
     : { title: `AI: ${issue.title}`, head: branch, base: "main", body: prBody };
   const pr: any = await request(url, token, { method: "POST", body: JSON.stringify(body) });
-  return pr.html_url ?? pr.url ?? `PR opened for ${branch}`;
+  const item = normalizePullRequest(pr);
+  if (!pr.issue_url) item.apiUrl = `${r.base}/repos/${r.owner}/${r.name}/issues/${item.number}`;
+  item.labels = [];
+  return item;
 }
 
 async function setAiState(repo: string, issue: Issue, state: AiState, token?: string): Promise<void> {
@@ -258,6 +306,63 @@ async function listIssues(repo: string, token?: string): Promise<Issue[]> {
     url: x.html_url ?? x.url,
     apiUrl: x.url,
   })).filter((i: Issue) => i.labels.some((l: string) => l.startsWith("ai")));
+}
+
+async function listPullRequests(repo: string, token?: string): Promise<PullRequestItem[]> {
+  const r = apiBase(repo);
+  const url = r.kind === "github"
+    ? `${r.base}/repos/${r.owner}/${r.name}/pulls?state=open&per_page=100`
+    : `${r.base}/repos/${r.owner}/${r.name}/pulls?state=open&limit=100`;
+  const rows: any[] = await request(url, token);
+  const prs = rows.map((row) => {
+    const pr = normalizePullRequest(row);
+    if (!row.issue_url) pr.apiUrl = `${r.base}/repos/${r.owner}/${r.name}/issues/${pr.number}`;
+    return pr;
+  });
+  for (const pr of prs) {
+    if (pr.labels.length) continue;
+    const issue: any = await request(`${r.base}/repos/${r.owner}/${r.name}/issues/${pr.number}`, token).catch(() => undefined);
+    if (issue?.labels) pr.labels = issue.labels.map((l: any) => typeof l === "string" ? l : l.name);
+    if (issue?.url) pr.apiUrl = issue.url;
+  }
+  return prs.filter((pr) => pr.labels.some((l) => l.startsWith("ai")));
+}
+
+function reviewCycle(labels: string[]): number {
+  const raw = labelValue(labels, "review-cycle");
+  const n = Number(raw ?? "0");
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function setReviewCycle(repo: string, issue: Issue, cycle: number, token?: string): Promise<void> {
+  for (const label of [...issue.labels.filter((l) => l.startsWith(REVIEW_CYCLE_PREFIX) || l.startsWith("ai:review-cycle:")), ...[1, 2, 3].map((n) => `${REVIEW_CYCLE_PREFIX}${n}`)]) await removeLabel(repo, issue, label, token);
+  if (cycle > 0) await addLabels(repo, issue, [`${REVIEW_CYCLE_PREFIX}${cycle}`], token);
+}
+
+function hasAgentSource(labels: string[]): boolean {
+  return labels.some((l) => l.toUpperCase() === AGENT_SOURCE_LABEL.toUpperCase() || labelValue([l], "source")?.toUpperCase() === "AGENT");
+}
+
+function hasReviewCommand(comments: any[]): boolean {
+  return comments.some((c) => /^\s*\/review\b/im.test(String(c.body ?? "")));
+}
+
+function hasUnansweredReviewCommand(comments: any[]): boolean {
+  const indexed = comments.map((comment, index) => ({ comment, index }));
+  const relevant = indexed.filter(({ comment }) => /^\s*\/review\b/im.test(String(comment.body ?? "")) || /## AI Review Summary/i.test(String(comment.body ?? "")));
+  const reviewCommands = relevant.filter(({ comment }) => /^\s*\/review\b/im.test(String(comment.body ?? "")));
+  if (!reviewCommands.length) return false;
+  const summaries = relevant.filter(({ comment }) => /## AI Review Summary/i.test(String(comment.body ?? "")));
+  const timestamps = relevant.map(({ comment }) => Date.parse(String(comment.created_at ?? comment.updated_at ?? "")));
+  const ids = relevant.map(({ comment }) => Number(comment.id));
+  const useTimestamps = timestamps.every(Number.isFinite);
+  const useIds = !useTimestamps && ids.every(Number.isFinite);
+  const order = ({ comment, index }: { comment: any; index: number }) => {
+    if (useTimestamps) return Date.parse(String(comment.created_at ?? comment.updated_at ?? "")) * 1000 + index;
+    if (useIds) return Number(comment.id) * 1000 + index;
+    return index + 1;
+  };
+  return Math.max(...reviewCommands.map(order)) > Math.max(0, ...summaries.map(order));
 }
 
 function dependencyOf(issue: Issue): number | undefined {
@@ -299,6 +404,19 @@ function checkout(repo: string, issue: Issue, workdir: string): string {
   return dir;
 }
 
+function checkoutPullRequest(repo: string, pr: PullRequestItem, workdir: string): string {
+  mkdirSync(workdir, { recursive: true });
+  const dir = join(workdir, repoSlug(repo).replace("/", "__"));
+  try { execFileSync("git", ["clone", repo, dir], { stdio: "ignore" }); } catch {}
+  execFileSync("git", ["fetch", "--prune", "origin"], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["fetch", "origin", `+${pr.base}:refs/remotes/origin/${pr.base}`], { cwd: dir, stdio: "ignore" });
+  const remote = pr.headRepo && pr.headRepo.replace(/\.git$/, "") !== repo.replace(/\.git$/, "") ? pr.headRepo : "origin";
+  execFileSync("git", ["fetch", remote, `+${pr.head}:refs/remotes/pr-head/${pr.number}`], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["checkout", "-B", pr.head, `refs/remotes/pr-head/${pr.number}`], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["clean", "-fd"], { cwd: dir, stdio: "ignore" });
+  return dir;
+}
+
 function setWorkspacePermissionsDeny(): void {
   const dir = join(homedir(), ".pi", "agent");
   mkdirSync(dir, { recursive: true });
@@ -315,8 +433,16 @@ function extractPlan(text: string): string {
 
 function issuePrompt(state: AiState, repo: string, issue: Issue, dir: string, models: Models, thinkingLevel: ThinkingLevel | undefined, autoresearch: string): string {
   const header = `Repo: ${repo}\nIssue: #${issue.number} ${issue.title}\nBranch: ${branchName(issue)}\nCheckout: ${dir}\nPlanning model: ${models.planning ?? "default"}\nExecution model: ${models.execution ?? "default"}\nFallback models: ${models.fallback.join(", ") || "none"}\nThinking level: ${thinkingLevel ?? "current setting"}\n\nIssue body:\n${issue.body ?? ""}${autoresearch}`;
-  if (state === "PLANNING") return `ISSUE AGENT PLANNING TASK\n${header}\n\nInspect the checkout and produce only an approved-work plan. Start the response with a top-level heading named PLAN. Do not edit files, commit, push, open a PR, or call issueAgentDone.`;
-  return `ISSUE AGENT EXECUTION TASK\n${header}\n\nExecute the approved plan for this issue in the checkout. Make the necessary code changes and run appropriate checks. When complete, call issueAgentDone with a concise PR-ready summary of changes, checks run, and risks/follow-ups. If no changes are needed, still call issueAgentDone and explain why.`;
+  if (state === "PLANNING") return `ISSUE AGENT PLANNING TASK\n${header}\n\nInspect the checkout and produce an approved-work plan. Do not edit files, commit, push, or open a PR. When the plan is complete, call issueAgentDone with text that starts with a top-level heading named PLAN. The harness requires this tool call.`;
+  return `ISSUE AGENT EXECUTION TASK\n${header}\n\nExecute the approved plan for this issue in the checkout. Make the necessary code changes and run appropriate checks. When complete, call issueAgentDone with a concise PR-ready summary of changes, checks run, and risks/follow-ups. If no changes are needed, still call issueAgentDone and explain why. The harness requires this tool call.`;
+}
+
+function reviewPrompt(repo: string, pr: PullRequestItem, dir: string): string {
+  return `ISSUE AGENT AI-REVIEW TASK\nRepo: ${repo}\nPull request: #${pr.number} ${pr.title}\nBranch: ${pr.head}\nBase: ${pr.base}\nCheckout: ${dir}\n\nPR body:\n${pr.body ?? ""}\n\nReview this PR using the code-review skill/rubric. Gather context from the checkout and inspect the diff with commands such as git diff origin/${pr.base}...HEAD. Post no comments yourself. When done, call issueAgentDone with review text that begins exactly with one of these machine-readable verdict lines followed by a blank line and the human-readable review:\nverdict: approve\nverdict: comment\nverdict: request_changes\n\nUse request_changes only for blocking defects that require rework. The harness requires this tool call; keep working until you call it.`;
+}
+
+function reworkPrompt(repo: string, pr: PullRequestItem, dir: string, reviewText: string): string {
+  return `ISSUE AGENT PR REWORK TASK\nRepo: ${repo}\nPull request: #${pr.number} ${pr.title}\nBranch: ${pr.head}\nCheckout: ${dir}\n\nAddress the following AI review on the existing PR branch. Make normal commits only; do not force-push. Run appropriate checks. When complete, call issueAgentDone with a concise summary of changes and checks.\n\n${reviewText}`;
 }
 
 function subAgentCommand(): { command: string; prefix: string[] } {
@@ -405,6 +531,34 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
   return output.trim();
 }
 
+function validMarker(kind: RequiredMarker, doneText?: string): boolean {
+  if (doneText === undefined) return false;
+  if (kind === "done") return true;
+  if (kind === "plan") return /(?:^|\n)\s*(#{1,3}\s*)?PLAN\b[:\s-]*(?:\n|$)/i.test(doneText.trim());
+  return /^verdict: (approve|comment|request_changes)\b/i.test(doneText.trim());
+}
+
+function parseVerdict(text: string): ReviewVerdict {
+  const raw = text.trim().match(/^verdict: (approve|comment|request_changes)\b/i)?.[1]?.toLowerCase();
+  return raw === "approve" || raw === "request_changes" ? raw : "comment";
+}
+
+async function runRequiredSubAgent(work: NonNullable<typeof activeWork>, prompt: string, model: string | undefined, thinkingLevel: ThinkingLevel | undefined, required: RequiredMarker, emit: (line: string, type?: "info" | "warning" | "error") => void): Promise<string> {
+  let finalText = "";
+  for (let attempt = 1; attempt <= MAX_REQUIRED_TOOL_RETRIES; attempt++) {
+    work.doneText = undefined;
+    activeWork = work;
+    finalText = await runSubAgent(prompt, work.dir, work.cfg.workdir, model, thinkingLevel, emit);
+    if (validMarker(required, work.doneText)) return finalText;
+    emit(`sub-agent finished without required ${required} tool marker (attempt ${attempt}/${MAX_REQUIRED_TOOL_RETRIES})`, "warning");
+  }
+  if (!work.cfg.dryRun) {
+    await addLabels(work.repo, work.issue, [NO_TOOLCALL_LABEL], work.cfg.token).catch(() => undefined);
+    await postIssueComment(work.repo, work.issue, `AI lifecycle stopped: sub-agent did not call the required ${required} tool after ${MAX_REQUIRED_TOOL_RETRIES} attempts.`, work.cfg.token).catch(() => undefined);
+  }
+  throw new Error(`missing required ${required} tool marker after ${MAX_REQUIRED_TOOL_RETRIES} attempts`);
+}
+
 function config(args: Record<string, string>): Config {
   return {
     repos: (args.repos ?? args.repo ?? process.env.ISSUE_AGENT_REPOS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
@@ -468,7 +622,8 @@ async function queueIssue(pi: ExtensionAPI, ctx: any, repo: string, issue: Issue
     return plannedDir;
   }
   const dir = cfg.dryRun ? plannedDir : checkout(repo, issue, cfg.workdir);
-  activeWork = { repo, issue, cfg, dir, fallbackIndex: -1 };
+  const requiredMarker: RequiredMarker = state === "PLANNING" ? "plan" : "done";
+  activeWork = { repo, issue, cfg, dir, fallbackIndex: -1, kind: "issue", requiredMarker };
   const ar = autoresearchConfig(issue);
   const autoresearch = isAutoresearch(issue)
     ? `\n\nAUTORESEARCH MODE\nThis issue has an autoresearch label. Create or resume autoresearch.md, autoresearch.sh, autoresearch.checks.sh when useful, and autoresearch.jsonl in the checkout. Run bounded experiments only: max iterations ${ar.maxIterations ?? "from issue/config, otherwise choose a small explicit cap"}; metric ${ar.metric ?? "must be stated before experiments"}; direction ${ar.direction ?? "must be stated before experiments"}. The benchmark script must emit METRIC name=value. Keep/discard changes based on benchmark plus checks. Do not run destructive commands without the existing permission gate. When done, call issueAgentDone with a structured PR body: issue link, objective/metric, baseline, best result, confidence/noise note, kept/discarded experiments, files changed, checks run, risks/follow-ups.`
@@ -485,7 +640,7 @@ async function queueIssue(pi: ExtensionAPI, ctx: any, repo: string, issue: Issue
     return dir;
   }
   emit?.(`Starting isolated sub-agent in ${dir}; its project AGENTS.md/system prompt will be loaded from that checkout.`, "info");
-  const finalText = await runSubAgent(prompt, dir, cfg.workdir, selectedModel, thinkingLevel, emit ?? (() => undefined));
+  const finalText = await runRequiredSubAgent(activeWork, prompt, selectedModel, thinkingLevel, requiredMarker, emit ?? (() => undefined));
   const work = activeWork;
   activeAgentRun = false;
   activeWork = undefined;
@@ -500,26 +655,34 @@ function messageText(message: any): string {
   return "";
 }
 
-async function commitPushPr(work: { repo: string; issue: Issue; cfg: Config; dir: string; doneText?: string }, notify?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<string> {
+async function commitPushPr(work: { repo: string; issue: Issue; cfg: Config; dir: string; doneText?: string }, notify?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<PrResult> {
   const branch = branchName(work.issue);
   if (work.cfg.dryRun) {
     notify?.(`DRY RUN: Commit issue #${work.issue.number}: ${work.issue.title}`, "info");
     notify?.(`DRY RUN: Push branch ${branch}`, "info");
     notify?.(`DRY RUN: Open pull request for ${branch}${work.doneText ? ` with body: ${work.doneText}` : ""}`, "info");
-    return `DRY RUN: would push ${branch} and open a PR.`;
+    return { createdPr: true, message: `DRY RUN: would push ${branch} and open a PR.` };
   }
   execFileSync("git", ["add", "-A"], { cwd: work.dir, stdio: "ignore" });
   const diff = execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: work.dir }).toString().trim();
-  if (!diff) return "No file changes were present, so no commit/PR was created.";
+  if (!diff) return { createdPr: false, message: "No file changes were present, so no commit/PR was created." };
   execFileSync("git", ["commit", "-m", `AI issue #${work.issue.number}: ${work.issue.title}`], { cwd: work.dir, stdio: "ignore" });
   execFileSync("git", ["push", "-u", "origin", branch], { cwd: work.dir, stdio: "ignore" });
   const pr = await createPullRequest(work.repo, work.issue, branch, work.cfg.token, work.doneText);
-  return `Pushed ${branch} and opened PR: ${pr}`;
+  try {
+    await addLabels(work.repo, pr, [AGENT_SOURCE_LABEL, stateLabel("REQUESTING_REVIEW")], work.cfg.token);
+  } catch (err) {
+    await setAiState(work.repo, work.issue, "PR_PENDING", work.cfg.token).catch(() => undefined);
+    const message = err instanceof Error ? err.message : String(err);
+    await postIssueComment(work.repo, work.issue, `Opened PR ${pr.url ?? `#${pr.number}`}, but failed to apply AI review labels to it. Leaving the issue in ${stateLabel("PR_PENDING")} to avoid duplicate execution.\n\n${message}`, work.cfg.token).catch(() => undefined);
+    throw err;
+  }
+  return { createdPr: true, message: `Pushed ${branch} and opened PR: ${pr.url ?? `#${pr.number}`}` };
 }
 
 async function finishWork(work: { repo: string; issue: Issue; cfg: Config; dir: string; doneText?: string }, finalText: string, notify?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<void> {
   if (stateOf(work.issue.labels) === "PLANNING") {
-    const plan = extractPlan(finalText);
+    const plan = extractPlan(work.doneText ?? finalText);
     const body = `## AI Plan\n\n${plan}\n\n---\nApprove by changing labels to \`${stateLabel("EXECUTING")}\`; request changes by keeping/setting \`${stateLabel("WAITING_FOR_FEEDBACK")}\` and commenting.`;
     if (work.cfg.dryRun) notify?.(`DRY RUN: Post plan document to issue #${work.issue.number}: ${body}`, "info");
     else await postIssueComment(work.repo, work.issue, body, work.cfg.token);
@@ -527,16 +690,85 @@ async function finishWork(work: { repo: string; issue: Issue; cfg: Config; dir: 
     else await setAiState(work.repo, work.issue, "WAITING_FOR_FEEDBACK", work.cfg.token);
   } else if (work.doneText !== undefined) {
     const result = await commitPushPr(work, notify);
-    const body = `## AI Execution Complete\n\n${result}\n\n${work.doneText || finalText}`;
+    const body = `## AI Execution Complete\n\n${result.message}\n\n${work.doneText || finalText}`;
     if (work.cfg.dryRun) notify?.(`DRY RUN: Post execution-complete document to issue #${work.issue.number}: ${body}`, "info");
     else await postIssueComment(work.repo, work.issue, body, work.cfg.token);
-    if (work.cfg.dryRun) notify?.(`DRY RUN: Change issue label to ${stateLabel("WAITING_FOR_REVIEW")}`, "info");
-    else await setAiState(work.repo, work.issue, "WAITING_FOR_REVIEW", work.cfg.token);
+    if (result.createdPr) {
+      if (work.cfg.dryRun) notify?.(`DRY RUN: PR opened with labels ${AGENT_SOURCE_LABEL} and ${stateLabel("REQUESTING_REVIEW")}; change issue label to ${stateLabel("PR_PENDING")}`, "info");
+      else await setAiState(work.repo, work.issue, "PR_PENDING", work.cfg.token);
+    } else {
+      if (work.cfg.dryRun) notify?.(`DRY RUN: No PR opened; change issue label to ${stateLabel("WAITING_FOR_REVIEW")}`, "info");
+      else await setAiState(work.repo, work.issue, "WAITING_FOR_REVIEW", work.cfg.token);
+    }
   } else {
     const body = `AI execution stopped without issueAgentDone; leaving issue for follow-up.\n\n${finalText}`;
     if (work.cfg.dryRun) notify?.(`DRY RUN: Post stopped-without-issueAgentDone document to issue #${work.issue.number}: ${body}`, "info");
     else await postIssueComment(work.repo, work.issue, body, work.cfg.token);
   }
+}
+
+async function commitRework(work: { repo: string; issue: PullRequestItem; cfg: Config; dir: string; doneText?: string }, notify?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<void> {
+  if (work.cfg.dryRun) {
+    notify?.(`DRY RUN: Commit and push rework to ${work.issue.head}`, "info");
+    return;
+  }
+  execFileSync("git", ["add", "-A"], { cwd: work.dir, stdio: "ignore" });
+  const diff = execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: work.dir }).toString().trim();
+  if (!diff) return;
+  execFileSync("git", ["commit", "-m", `AI review rework for PR #${work.issue.number}`], { cwd: work.dir, stdio: "ignore" });
+  const remote = work.issue.headRepo && work.issue.headRepo.replace(/\.git$/, "") !== work.repo.replace(/\.git$/, "") ? work.issue.headRepo : "origin";
+  execFileSync("git", ["push", remote, `HEAD:${work.issue.head}`], { cwd: work.dir, stdio: "ignore" });
+}
+
+async function queueReview(pi: ExtensionAPI, ctx: any, repo: string, pr: PullRequestItem, cfg: Config, emit?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<string> {
+  const dir = cfg.dryRun ? join(cfg.workdir, repoSlug(repo).replace("/", "__")) : checkoutPullRequest(repo, pr, cfg.workdir);
+  activeWork = { repo, issue: pr, cfg, dir, fallbackIndex: -1, kind: "review", requiredMarker: "verdict" };
+  activeAgentRun = true;
+  if (cfg.dryRun) {
+    emit?.(`DRY RUN: AI-review PR #${pr.number} in ${dir}`, "info");
+    activeWork.doneText = "verdict: comment\n\nDRY RUN review.";
+  } else {
+    await runRequiredSubAgent(activeWork, reviewPrompt(repo, pr, dir), undefined, undefined, "verdict", emit ?? (() => undefined));
+  }
+  const work = activeWork;
+  activeAgentRun = false;
+  activeWork = undefined;
+  if (!work) return dir;
+  const reviewText = work.doneText ?? "verdict: comment\n\nNo review text was produced.";
+  const verdict = parseVerdict(reviewText);
+  const cycle = hasAgentSource(pr.labels) ? Math.min(reviewCycle(pr.labels) + 1, 3) : reviewCycle(pr.labels);
+  if (cfg.dryRun) {
+    emit?.(`DRY RUN: Submit PR review ${verdict} and summary comment for PR #${pr.number}`, "info");
+  } else {
+    await submitPullRequestReview(repo, pr, verdict, reviewText, cfg.token);
+    await postIssueComment(repo, pr, `## AI Review Summary\n\n${reviewText}`, cfg.token);
+    if (hasAgentSource(pr.labels)) {
+      await setReviewCycle(repo, pr, cycle, cfg.token);
+      pr.labels = [...pr.labels.filter((l) => !l.startsWith(REVIEW_CYCLE_PREFIX) && !l.startsWith("ai:review-cycle:")), `${REVIEW_CYCLE_PREFIX}${cycle}`];
+    }
+  }
+  if (hasAgentSource(pr.labels) && verdict === "request_changes" && cycle < 3) {
+    await queueRework(pi, ctx, repo, pr, cfg, reviewText, emit);
+  } else if (!cfg.dryRun) {
+    await setAiState(repo, pr, "WAITING_FOR_REVIEW", cfg.token);
+  }
+  return dir;
+}
+
+async function queueRework(pi: ExtensionAPI, ctx: any, repo: string, pr: PullRequestItem, cfg: Config, reviewText: string, emit?: (msg: string, type?: "info" | "warning" | "error") => void): Promise<void> {
+  const dir = cfg.dryRun ? join(cfg.workdir, repoSlug(repo).replace("/", "__")) : checkoutPullRequest(repo, pr, cfg.workdir);
+  activeWork = { repo, issue: pr, cfg, dir, fallbackIndex: -1, kind: "rework", requiredMarker: "done" };
+  activeAgentRun = true;
+  if (cfg.dryRun) {
+    emit?.(`DRY RUN: Rework PR #${pr.number} on ${pr.head}`, "info");
+    activeWork.doneText = "DRY RUN rework complete.";
+  } else {
+    await runRequiredSubAgent(activeWork, reworkPrompt(repo, pr, dir, reviewText), undefined, undefined, "done", emit ?? (() => undefined));
+    await commitRework(activeWork as any, emit);
+    await setAiState(repo, pr, "REQUESTING_REVIEW", cfg.token);
+  }
+  activeAgentRun = false;
+  activeWork = undefined;
 }
 
 function normalizedModelName(modelName: string): string {
@@ -655,15 +887,31 @@ async function runLoop(pi: ExtensionAPI, ctx: any, cfg: Config, notify: (msg: st
         setStatus("checking labels/dependencies");
         await maintainIssueLabels(cfg, notify).catch((err) => notify(`issue-agent label maintenance failed: ${err instanceof Error ? err.message : String(err)}`, "warning"));
         const candidates: Array<{ repo: string; issue: Issue }> = [];
+        const prCandidates: Array<{ repo: string; pr: PullRequestItem; forced: boolean }> = [];
         for (const repo of cfg.repos) {
           try {
             setStatus(`listing issues in ${basename(repo)}`);
             for (const issue of await listIssues(repo, cfg.token)) candidates.push({ repo, issue });
+            for (const pr of await listPullRequests(repo, cfg.token)) {
+              const comments = await listComments(repo, pr, cfg.token).catch(() => []);
+              const forced = hasUnansweredReviewCommand(comments);
+              if (stateOf(pr.labels) === "REQUESTING_REVIEW" || forced) prCandidates.push({ repo, pr, forced });
+            }
           } catch (err) {
             notify(`issue-agent failed to list ${repo}: ${err instanceof Error ? err.message : String(err)}`, "warning");
           }
         }
         const now = Date.now();
+        prCandidates.sort((a, b) => priorityOf(a.pr.labels) - priorityOf(b.pr.labels));
+        const nextPr = prCandidates.find((x) => {
+          const cycle = reviewCycle(x.pr.labels);
+          const key = `${x.repo}#${x.pr.number}:AI-REVIEW:${cycle}:${x.forced ? "forced" : "auto"}`;
+          const queuedAt = recentlyQueued.get(key) ?? 0;
+          if (x.forced) return true;
+          if (now - queuedAt <= QUEUED_COOLDOWN_MS) return false;
+          if (x.pr.labels.includes(NO_TOOLCALL_LABEL)) return false;
+          return !hasAgentSource(x.pr.labels) || cycle < 3;
+        });
         candidates.sort((a, b) => priorityOf(a.issue.labels) - priorityOf(b.issue.labels));
         const next = candidates.find((x) => {
           const state = stateOf(x.issue.labels);
@@ -674,7 +922,20 @@ async function runLoop(pi: ExtensionAPI, ctx: any, cfg: Config, notify: (msg: st
           const anyModelAvailable = allModels.length === 0 || allModels.some((m) => (usageLimitedUntil.get(m) ?? 0) <= now);
           return ["PLANNING", "EXECUTING"].includes(state) && now - queuedAt > QUEUED_COOLDOWN_MS && !x.issue.labels.some((l) => /blocked/i.test(l)) && !dependencyBlocked.get(`${x.repo}#${x.issue.number}`) && anyModelAvailable;
         });
-        if (next) {
+        if (nextPr) {
+          setStatus(`AI-reviewing PR #${nextPr.pr.number} ${nextPr.pr.title}`);
+          try {
+            if (nextPr.forced && nextPr.pr.labels.includes(NO_TOOLCALL_LABEL) && !cfg.dryRun) await removeLabel(nextPr.repo, nextPr.pr, NO_TOOLCALL_LABEL, cfg.token);
+            const dir = await queueReview(pi, ctx, nextPr.repo, nextPr.pr, cfg, notify);
+            recentlyQueued.set(`${nextPr.repo}#${nextPr.pr.number}:AI-REVIEW:${reviewCycle(nextPr.pr.labels)}:${nextPr.forced ? "forced" : "auto"}`, now);
+            notify(`Processed AI review for PR #${nextPr.pr.number} from ${basename(nextPr.repo)} in ${dir}`, "info");
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            notify(`issue-agent AI-review failed for PR #${nextPr.pr.number}: ${message}`, "error");
+            activeAgentRun = false;
+            activeWork = undefined;
+          }
+        } else if (next) {
           setStatus(`queueing #${next.issue.number} ${next.issue.title}`);
           let dir = "";
           try {
@@ -688,8 +949,9 @@ async function runLoop(pi: ExtensionAPI, ctx: any, cfg: Config, notify: (msg: st
               break;
             }
             const providerLimited = /\b(429|rate.?limit|usage.?limit)\b/i.test(message);
+            const missingToolCall = /^missing required \w+ tool marker/i.test(message);
             notify(`issue-agent sub-agent failed for #${next.issue.number}: ${message}`, "error");
-            if (!cfg.dryRun) {
+            if (!cfg.dryRun && !missingToolCall) {
               await postIssueComment(next.repo, next.issue, `Harness sub-agent failed while working this issue:\n\n${message}`, cfg.token).catch(() => undefined);
               await addLabels(next.repo, next.issue, [providerLimited ? "ai:blocked/usage-limit" : "ai:blocked/harness-error"], cfg.token).catch(() => undefined);
             }
@@ -724,7 +986,7 @@ async function runLoop(pi: ExtensionAPI, ctx: any, cfg: Config, notify: (msg: st
   }
 }
 
-export const __issueAgentTest = { runSubAgent, handleSubAgentJsonLine };
+export const __issueAgentTest = { runSubAgent, handleSubAgentJsonLine, stateOf, normalizePullRequest, listPullRequests, hasReviewCommand, hasUnansweredReviewCommand, reviewCycle, parseVerdict, reviewEvent, validMarker, hasAgentSource, createPullRequest, addLabels, setAiState, stateLabel };
 
 export default function (pi: ExtensionAPI) {
   const chatStatus = (message: string, type: "info" | "warning" | "error" = "info") => {
