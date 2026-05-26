@@ -12,11 +12,13 @@ interface SkillEntry {
   body: string;
   tokenCost: number;
   targetTool?: string;
+  description?: string;
   keywords: string[];
   requiresTools: string[];
 }
 
 const toolSkills = new Map<string, SkillEntry>();
+const explicitSkills = new Map<string, SkillEntry>();
 const allSkills: SkillEntry[] = [];
 const selectionCache = new Map<string, string>();
 let loaded = false;
@@ -77,12 +79,15 @@ function loadSkills(): void {
     const type = inferType(sourceDir, fm.type);
     const targetTool = typeof fm.target_tool === "string" && fm.target_tool ? fm.target_tool : undefined;
     const name = (typeof fm.name === "string" && fm.name) || (typeof fm.topic === "string" && fm.topic) || targetTool || basename(path, ".md");
+    const description = typeof fm.description === "string" && fm.description ? fm.description : undefined;
     let tokenCost = typeof fm.token_cost === "number" ? fm.token_cost : 150;
     if (type !== "tool" && tokenCost > PER_ENTRY_CAP) tokenCost = PER_ENTRY_CAP;
     const keywords = Array.isArray(fm.keywords) ? (fm.keywords as string[]).map((k) => k.toLowerCase()) : [];
     const requiresTools = Array.isArray(fm.requires_tools) ? (fm.requires_tools as string[]) : [];
-    const entry = { name, type, sourceDir, body: parsed.body, tokenCost, targetTool, keywords, requiresTools };
+    const entry = { name, type, sourceDir, body: parsed.body, tokenCost, targetTool, description, keywords, requiresTools };
     allSkills.push(entry);
+    explicitSkills.set(name, entry);
+    explicitSkills.set(name.toLowerCase(), entry);
     if (targetTool) toolSkills.set(targetTool, entry);
   }
 }
@@ -163,6 +168,17 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
 }
 
+function explicitSkillPrompt(skill: SkillEntry): string {
+  const title = skill.targetTool ?? skill.name;
+  return [`The user explicitly loaded skill '${skill.name}' via /skill:${skill.name}.`, `Apply this skill guidance for the next response:`, ``, `## ${title}`, skill.body].join("\n");
+}
+
+function findExplicitSkill(name: string): SkillEntry | undefined {
+  loadSkills();
+  const key = name.trim();
+  return explicitSkills.get(key) ?? explicitSkills.get(key.toLowerCase());
+}
+
 function listAllSkills(): string {
   loadSkills();
   if (allSkills.length === 0) return "No skills loaded.";
@@ -186,12 +202,45 @@ function listAllSkills(): string {
 }
 
 export default function (pi: ExtensionAPI) {
+  loadSkills();
+
+  const loadExplicitSkill = (skill: SkillEntry, ctx: any): void => {
+    pi.sendUserMessage(explicitSkillPrompt(skill), { deliverAs: "steer" });
+    if (ctx.hasUI) ctx.ui.notify(`Loaded skill: ${skill.name}`, "info");
+  };
+
   pi.registerCommand("skills", {
     description: "List all available skills",
     handler: async (_args, ctx) => {
       if (ctx.hasUI) ctx.ui.notify(listAllSkills(), "info");
     },
   });
+
+  pi.registerCommand("skill", {
+    description: "Load a skill by name (also available as /skill:<name>)",
+    getArgumentCompletions: (prefix) => {
+      const p = prefix.toLowerCase();
+      const matches = allSkills
+        .filter((s) => s.name.toLowerCase().startsWith(p))
+        .map((s) => ({ value: s.name, label: s.name, description: s.description ?? s.type }));
+      return matches.length > 0 ? matches : null;
+    },
+    handler: async (args, ctx) => {
+      const skill = findExplicitSkill(args);
+      if (!skill) {
+        if (ctx.hasUI) ctx.ui.notify(`Unknown skill: ${args.trim() || "<empty>"}`, "error");
+        return;
+      }
+      loadExplicitSkill(skill, ctx);
+    },
+  });
+
+  for (const skill of allSkills) {
+    pi.registerCommand(`skill:${skill.name}`, {
+      description: skill.description ?? `Load skill: ${skill.name}`,
+      handler: async (_args, ctx) => loadExplicitSkill(skill, ctx),
+    });
+  }
 
   pi.registerTool({
     name: "skills",
