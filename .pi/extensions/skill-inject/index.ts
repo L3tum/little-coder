@@ -34,6 +34,7 @@ const INTENT_MAP: Record<string, string[]> = {
 };
 
 const RESEARCH_TRIGGERS = [/\bbrows(?:e|ing|er)\b/i, /\bonline\b/i, /\bresearch(?:ing)?\b/i, /\blook\s+up\b/i, /\blookup\b/i, /\bsearch\s+(?:the|for)\b/i, /\bweb\s*search\b/i, /\bwikipedia\b/i, /\bwebsite\b/i, /\bweb\s*page\b/i, /\bgoogle\b/i, /\bcite|citation\b/i, /\bfact[-\s]?check/i];
+const REVIEW_TRIGGERS = [/\bcode\s+review\b/i, /\breview(?:ing)?\s+(?:this\s+)?(?:code|diff|pr|pull\s+request|merge\s+request|change|changes)\b/i, /\b(?:pr|pull\s+request|merge\s+request)\s+review\b/i, /\brequest\s+changes\b/i, /\bapprove\s+(?:this\s+)?(?:pr|pull\s+request|merge\s+request|change|changes)\b/i];
 const RESEARCH_DIRECTIVE = ["", "## Research-first directive", "This task involves online research.", "1. If Browser* tools are not active yet, call enableBrowserTools first.", "2. Gather facts with BrowserNavigate / BrowserExtract (or websearch for first hops).", "3. Save each citable fact via EvidenceAdd before relying on it.", "4. Only then answer or make file edits.", ""].join("\n");
 const MIN_SCORE_THRESHOLD = 2.0;
 const PER_ENTRY_CAP = 150;
@@ -103,6 +104,7 @@ function scoreEntry(userText: string, e: SkillEntry): number {
   const words = new Set(textLower.split(/\s+/).filter(Boolean));
   let score = 0;
   for (const kw of e.keywords) score += kw.includes(" ") ? (textLower.includes(kw) ? 2 : 0) : (words.has(kw) ? 1 : 0);
+  if (e.keywords.some((kw) => kw === "code review" || kw === "pr review") && REVIEW_TRIGGERS.some((re) => re.test(userText))) score += 2;
   return score;
 }
 

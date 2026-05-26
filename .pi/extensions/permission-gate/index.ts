@@ -15,7 +15,7 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "git cherry", "git bisect log", "git worktree list",
   "find ", "grep ", "rg ", "ag ", "fd ", "sed ",
   "python ", "python3 ", "node ", "ruby ", "perl ",
-  "pip show", "pip list", "npm list", "cargo metadata",
+  "pip show", "pip list", "npm list", "npx skills", "cargo metadata",
   "df ", "du ", "free ", "top -bn", "ps ",
   "curl -I", "curl --head",
   "cp ", "mv ", "mkdir ", "touch ",
@@ -88,7 +88,7 @@ function isSafeSingleDiagnosticCommand(command: string): boolean {
     /^npm\s+(?:view|info)\s+[\w@./-]+(?:\s+[\w.-]+)?(?:\s+--json)?$/,
     /^npx\s+(?:--yes\s+)?tsc\s+--noEmit(?:\s+--?[\w:-]+(?:[= ][\w:./-]+)?)*$/,
     /^npx\s+(?:--yes\s+)?vitest(?:\s+(?:run|--?[\w:-]+(?:[= ][\w:./@-]+)?|[\w@./:-]+))*$/,
-    /^npx\s+(?:--yes\s+)?skills\s+(?:find|list|show|info|search)(?:\s+[\w@./:,-]+)*$/,
+    /^npx\s+(?:--yes\s+)?skills(?:\s+(?:--help|-h|find|list|show|info|search)(?:\s+[\w@./:,-]+)*)?$/,
   ].some((pattern) => pattern.test(c));
 }
 

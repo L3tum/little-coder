@@ -38,6 +38,8 @@ describe("isSafeBash", () => {
     expect(isSafeBash("npm run test -- --runInBand")).toBe(true);
     expect(isSafeBash("npx vitest run .pi/extensions/compatibility/heuristics.test.ts")).toBe(true);
     expect(isSafeBash("npx --yes vitest run permission.test.ts")).toBe(true);
+    expect(isSafeBash("npx skills --help")).toBe(true);
+    expect(isSafeBash("npx skills find code-review")).toBe(true);
     expect(isSafeBash("npm test -- --run .pi/extensions/permission-gate/permission.test.ts && npm run typecheck")).toBe(true);
   });
   it("blocks non-whitelisted commands", () => {
