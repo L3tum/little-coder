@@ -302,7 +302,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.on("before_agent_start", async (event) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     ensureMemory();
     turn.prompt = String((event as any).prompt ?? "");
     turn.tools = [];
@@ -314,6 +314,14 @@ export default function (pi: ExtensionAPI) {
     const memory = buildMemoryBlock(notes, mode);
     const codebase = looksCodebaseIntent(turn.prompt) ? "\n## Codebase Prefetch\nCodebase intent detected. Use code_search first for repo understanding; prefetch is bounded and may be empty/stale.\n" : "";
     if (!memory && !codebase) return;
+    try {
+      const parts: string[] = [];
+      if (memory) parts.push(`+${notes.length} memories`);
+      if (codebase) parts.push("+codebase-prefetch");
+      ctx.ui.notify(`memory-context: ${parts.join(" ")}`, "info");
+    } catch {
+      // best-effort
+    }
     return { systemPrompt: `${(event as any).systemPrompt ?? ""}${memory}${codebase}` };
   });
 

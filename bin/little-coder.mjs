@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkForUpdate } from "./update-check.mjs";
-import { applySubAgentEnv, discoverBundledExtensionArgs } from "./launcher-helpers.mjs";
+import { applySubAgentEnv, discoverBundledExtensionArgs, shouldAppendSystemPrompt } from "./launcher-helpers.mjs";
 
 // ---- 1. Node version preflight (>= 22.19.0, matching pi.dev) ----
 const MIN_NODE = [22, 19, 0];
@@ -170,12 +170,13 @@ if (exitAfterCheck) {
 const userArgs = rawUserArgs.filter((a) => a !== "--no-update-check" && a !== "--issue-agent-subagent");
 const agentsMd = join(pkgRoot, "AGENTS.md");
 const cwdAgentsMd = join(process.cwd(), "AGENTS.md");
+const appendCwdAgents = shouldAppendSystemPrompt(agentsMd, cwdAgentsMd);
 
 const piArgs = [
   "--no-context-files",
   "--no-extensions",
   ...(existsSync(agentsMd) ? ["--system-prompt", agentsMd] : []),
-  ...(existsSync(cwdAgentsMd) ? ["--append-system-prompt", cwdAgentsMd] : []),
+  ...(appendCwdAgents ? ["--append-system-prompt", cwdAgentsMd] : []),
   ...extArgs,
   ...packageArgs,
   ...userArgs,

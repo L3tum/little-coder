@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applySubAgentEnv, discoverBundledExtensionArgs } from "./launcher-helpers.mjs";
+import { applySubAgentEnv, discoverBundledExtensionArgs, shouldAppendSystemPrompt } from "./launcher-helpers.mjs";
 
 function makeExt(root, name) {
   const dir = join(root, name);
@@ -39,5 +39,43 @@ describe("launcher helpers", () => {
       CI: "1",
       LITTLE_CODER_SUBAGENT: "1",
     });
+  });
+
+  it("does not append the same system prompt path twice", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "lc-prompt-test-"));
+    try {
+      const agents = join(tmp, "AGENTS.md");
+      writeFileSync(agents, "prompt\n");
+      expect(shouldAppendSystemPrompt(agents, agents)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("appends different existing system prompt paths", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "lc-prompt-test-"));
+    try {
+      const base = join(tmp, "base.md");
+      const append = join(tmp, "append.md");
+      writeFileSync(base, "base\n");
+      writeFileSync(append, "append\n");
+      expect(shouldAppendSystemPrompt(base, append)).toBe(true);
+      expect(shouldAppendSystemPrompt(base, join(tmp, "missing.md"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("does not append a symlink to the same system prompt", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "lc-prompt-test-"));
+    try {
+      const agents = join(tmp, "AGENTS.md");
+      const link = join(tmp, "LINK.md");
+      writeFileSync(agents, "prompt\n");
+      symlinkSync(agents, link);
+      expect(shouldAppendSystemPrompt(agents, link)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, realpathSync, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 export function applySubAgentEnv(env) {
   env.LITTLE_CODER_NO_UPDATE_CHECK = "1";
@@ -12,6 +12,16 @@ export function applySubAgentEnv(env) {
 
 export function isBrandingExtensionPath(path) {
   return /(?:^|[/\\])\.pi[/\\]extensions[/\\]branding[/\\]index\.ts$/.test(path);
+}
+
+export function shouldAppendSystemPrompt(systemPromptPath, appendPromptPath) {
+  if (!appendPromptPath || !existsSync(appendPromptPath)) return false;
+  if (!systemPromptPath || !existsSync(systemPromptPath)) return true;
+  try {
+    return realpathSync(systemPromptPath) !== realpathSync(appendPromptPath);
+  } catch {
+    return resolve(systemPromptPath) !== resolve(appendPromptPath);
+  }
 }
 
 export function discoverBundledExtensionArgs(extDir, { issueAgentSubagent = false, resolveExtensionEntry = (p) => p } = {}) {

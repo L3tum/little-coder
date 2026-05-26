@@ -58,12 +58,17 @@ describe("intent prediction (INTENT_MAP)", () => {
 
 describe("skills directory loads from repo", () => {
   const here = dirname(fileURLToPath(import.meta.url));
-  const toolsDir = join(here, "..", "..", "..", "skills", "tools");
+  const skillsRoot = join(here, "..", "..", "..", "skills");
+  const toolsDir = join(skillsRoot, "tools");
+  const knowledgeDir = join(skillsRoot, "knowledge");
+  const protocolsDir = join(skillsRoot, "protocols");
 
-  it("exists and has at least one markdown file", () => {
-    expect(existsSync(toolsDir)).toBe(true);
-    const files = readdirSync(toolsDir).filter((f) => f.endsWith(".md"));
-    expect(files.length).toBeGreaterThan(0);
+  it("exists and has markdown files in each bundled skill subdirectory", () => {
+    for (const dir of [toolsDir, knowledgeDir, protocolsDir]) {
+      expect(existsSync(dir)).toBe(true);
+      const files = readdirSync(dir).filter((f) => f.endsWith(".md"));
+      expect(files.length).toBeGreaterThan(0);
+    }
   });
 
   it("every tool skill has target_tool in frontmatter", () => {
@@ -86,5 +91,13 @@ describe("skills directory loads from repo", () => {
     for (const core of ["read", "write", "edit", "bash", "glob", "grep", "webfetch"]) {
       expect(targets.has(core), `expected target_tool=${core}`).toBe(true);
     }
+  });
+
+  it("knowledge/protocol skills are selectable by keyword metadata", () => {
+    const entries = [knowledgeDir, protocolsDir].flatMap((dir) =>
+      readdirSync(dir).filter((f) => f.endsWith(".md")).map((file) => parseSkillFile(readFileSync(join(dir, file), "utf-8"))),
+    );
+    expect(entries.some((entry) => Array.isArray(entry?.frontmatter.keywords) && entry.frontmatter.keywords.length > 0)).toBe(true);
+    expect(entries.some((entry) => Array.isArray(entry?.frontmatter.requires_tools))).toBe(true);
   });
 });
