@@ -22,8 +22,16 @@ function normalizeEditArguments(args: unknown): unknown {
   const normalizeOne = (edit: unknown) => {
     if (!edit || typeof edit !== "object") return null;
     const e = edit as { old_string?: unknown; new_string?: unknown; oldText?: unknown; newText?: unknown };
-    const oldText = typeof e.oldText === "string" ? e.oldText : typeof e.old_string === "string" ? e.old_string : undefined;
-    const newText = typeof e.newText === "string" ? e.newText : typeof e.new_string === "string" ? e.new_string : undefined;
+    const oldText = typeof e.oldText === "string"
+      ? e.oldText
+      : typeof e.old_string === "string"
+        ? e.old_string
+        : undefined;
+    const newText = typeof e.newText === "string"
+      ? e.newText
+      : typeof e.new_string === "string"
+        ? e.new_string
+        : undefined;
     return typeof oldText === "string" && typeof newText === "string" ? { oldText, newText } : null;
   };
 
@@ -105,6 +113,8 @@ export default function (pi: ExtensionAPI) {
         if (text) component.addChild(new Spacer(1));
         const rawPath = typeof normalizedArgs?.path === "string" ? normalizedArgs.path : undefined;
         component.addChild(new Text(renderDiff(diff, { filePath: rawPath }), 1, 0));
+      } else if (baseComponent) {
+        return baseComponent;
       }
       return component;
     },
