@@ -1174,24 +1174,19 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
-    name: "issueAgentDone",
-    label: "Issue Agent Done",
-    description: "Mark the active issue-agent execution task as done. Optional text is used in the issue completion comment and pull request body.",
-    parameters: Type.Object({ text: Type.Optional(Type.String()) }),
-    async execute(_id, input: any) {
-      const text = typeof input.text === "string" ? input.text : "";
-      if (process.env.ISSUE_AGENT_DONE_FILE) {
-        writeFileSync(process.env.ISSUE_AGENT_DONE_FILE, JSON.stringify({ text }, null, 2));
+  if (process.env.ISSUE_AGENT_DONE_FILE) {
+    pi.registerTool({
+      name: "issueAgentDone",
+      label: "Issue Agent Done",
+      description: "Mark the active issue-agent execution task as done. Optional text is used in the issue completion comment and pull request body.",
+      parameters: Type.Object({ text: Type.Optional(Type.String()) }),
+      async execute(_id, input: any) {
+        const text = typeof input.text === "string" ? input.text : "";
+        writeFileSync(process.env.ISSUE_AGENT_DONE_FILE!, JSON.stringify({ text }, null, 2));
         return { content: [{ type: "text", text: "Marked sub-agent issue task as done." }], details: { ok: true } };
-      }
-      if (!activeWork || stateOf(activeWork.issue.labels) !== "EXECUTING") {
-        return { content: [{ type: "text", text: "No active issue-agent execution task." }], details: { ok: false } };
-      }
-      activeWork.doneText = text;
-      return { content: [{ type: "text", text: "Marked active issue-agent task as done. The harness will commit, push, and open a PR after this turn." }], details: { ok: true } };
-    },
-  });
+      },
+    });
+  }
 
   pi.registerTool({
     name: "issueAgentAsk",

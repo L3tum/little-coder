@@ -1,5 +1,4 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
@@ -363,15 +362,12 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
-    name: "memoryReview",
-    label: "Memory Review",
-    description: "List queued local memory candidates from .pi/memory/queue.json.",
-    promptSnippet: "memoryReview(): show queued local memory candidates.",
-    parameters: Type.Object({}),
-    async execute() {
+  pi.registerCommand("memory-review", {
+    description: "List queued local memory candidates from .pi/memory/queue.json",
+    handler: async (_args, ctx) => {
       const queue = readQueue();
-      return { content: [{ type: "text", text: JSON.stringify(queue.slice(-20), null, 2) }], details: {} };
+      const text = JSON.stringify(queue.slice(-20), null, 2);
+      if (ctx.hasUI) ctx.ui.notify(text, "info");
     },
   });
 

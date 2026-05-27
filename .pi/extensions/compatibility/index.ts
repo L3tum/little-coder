@@ -1,5 +1,4 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 import { findCompatibleToolName, rewriteValueToSchema, type CompatRewriteStats } from "./heuristics.ts";
 
 interface CompatStats {
@@ -67,16 +66,6 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       const text = renderStats(stats);
       if (ctx.hasUI) ctx.ui.notify(text, "info");
-    },
-  });
-
-  pi.registerTool({
-    name: "compatStats",
-    label: "CompatStats",
-    description: "Show compatibility rewrite statistics for this session.",
-    parameters: Type.Object({}),
-    async execute() {
-      return { content: [{ type: "text", text: renderStats(stats) }], details: {} };
     },
   });
 
