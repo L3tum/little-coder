@@ -122,7 +122,7 @@ function addPiResources(args, flag, baseDir, resources) {
   }
 }
 
-function bundledPackageArgs(pkgJson) {
+function bundledPackageArgs(pkgJson, { issueAgentSubagent = false } = {}) {
   const args = [];
   const packageNames = Array.isArray(pkgJson?.littleCoder?.packages)
     ? pkgJson.littleCoder.packages
@@ -130,6 +130,7 @@ function bundledPackageArgs(pkgJson) {
 
   for (const packageName of packageNames) {
     if (typeof packageName !== "string" || packageName.length === 0) continue;
+    if (issueAgentSubagent && packageName === "pi-ask-user") continue;
     const pkgJsonPath = join(pkgRoot, "node_modules", ...packageName.split("/"), "package.json");
     const depPkgJson = readJson(pkgJsonPath);
     const manifest = depPkgJson?.pi;
@@ -150,7 +151,7 @@ const rawUserArgs = process.argv.slice(2);
 const issueAgentSubagent = rawUserArgs.includes("--issue-agent-subagent");
 if (issueAgentSubagent) applySubAgentEnv(process.env);
 const extArgs = discoverBundledExtensionArgs(extDir, { issueAgentSubagent, resolveExtensionEntry });
-const packageArgs = bundledPackageArgs(rootPkgJson);
+const packageArgs = bundledPackageArgs(rootPkgJson, { issueAgentSubagent });
 
 // ---- 5. Update check (best-effort, blocks on TTY prompt only) ----
 const currentVersion = typeof rootPkgJson?.version === "string" ? rootPkgJson.version : "0.0.0";

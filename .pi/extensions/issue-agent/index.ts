@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { planningModePrompt } from "../plan-mode/planning-prompt.js";
 
 const STATES = ["PLANNING", "WAITING_FOR_FEEDBACK", "EXECUTING", "REQUESTING_REVIEW", "WAITING_FOR_REVIEW", "PR_PENDING"] as const;
 type AiState = typeof STATES[number];
@@ -22,12 +23,13 @@ type Models = { planning?: string; execution?: string; fallback: string[] };
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 type ThinkingLevels = { planning?: ThinkingLevel; execution?: ThinkingLevel };
 type Config = { repos: string[]; models: Models; thinkingLevels: ThinkingLevels; workdir: string; token?: string; intervalMs: number; dryRun: boolean };
+type IssueAgentAskRequest = { question?: string; questions?: string[]; choices?: string[]; context: string };
 
 let running = false;
 let stopRequested = false;
 let activeAgentRun = false;
 let currentLock: string | undefined;
-let activeWork: { repo: string; issue: WorkItem; cfg: Config; dir: string; fallbackIndex: number; doneText?: string; kind?: WorkKind; requiredMarker?: RequiredMarker } | undefined;
+let activeWork: { repo: string; issue: WorkItem; cfg: Config; dir: string; fallbackIndex: number; doneText?: string; askRequest?: IssueAgentAskRequest; kind?: WorkKind; requiredMarker?: RequiredMarker } | undefined;
 let activeSubAgent: { kill: () => void } | undefined;
 let statusText = "idle";
 let lastStatusAt = 0;
@@ -343,6 +345,35 @@ function hasAgentSource(labels: string[]): boolean {
   return labels.some((l) => l.toUpperCase() === AGENT_SOURCE_LABEL.toUpperCase() || labelValue([l], "source")?.toUpperCase() === "AGENT");
 }
 
+const ISSUE_AGENT_ASK_MARKER = "<!-- issue-agent-ask";
+const ISSUE_AGENT_ASK_END = "issue-agent-ask -->";
+
+function formatIssueAgentAskComment(ask: IssueAgentAskRequest): string {
+  const payload = Buffer.from(JSON.stringify(ask), "utf8").toString("base64");
+  const questions = ask.questions?.length ? ask.questions : ask.question ? [ask.question] : [];
+  const choices = ask.choices?.length ? `\n\nOptions:\n${ask.choices.map((c) => `- ${c}`).join("\n")}` : "";
+  return `## AI Clarification Needed\n\n${questions.map((q) => `- ${q}`).join("\n")}${choices}\n\nContext needed to resume planning:\n\n${ask.context}\n\nReply with \`/answer ...\` to continue planning.\n\n${ISSUE_AGENT_ASK_MARKER} ${payload} ${ISSUE_AGENT_ASK_END}`;
+}
+
+function parseAskContext(body: string): IssueAgentAskRequest | undefined {
+  const escaped = ISSUE_AGENT_ASK_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = body.match(new RegExp(`${escaped}\\s+([^\\s]+)\\s+${ISSUE_AGENT_ASK_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  if (!match) return undefined;
+  try { return JSON.parse(Buffer.from(match[1], "base64").toString("utf8")); } catch { return undefined; }
+}
+
+function latestIssueAgentAnswer(comments: any[]): { answer: string; ask: IssueAgentAskRequest } | undefined {
+  const indexed = comments.map((comment, index) => ({ comment, index }));
+  for (const { comment, index } of indexed.slice().reverse()) {
+    const answer = String(comment.body ?? "").match(/^\s*\/answer\s+([\s\S]+)/im)?.[1]?.trim();
+    if (!answer) continue;
+    const priorAsk = indexed.slice(0, index).reverse().map(({ comment }) => parseAskContext(String(comment.body ?? ""))).find(Boolean);
+    const answeredLater = indexed.slice(index + 1).some(({ comment }) => /## AI Plan|## AI Clarification Needed|Approval detected/i.test(String(comment.body ?? "")));
+    if (priorAsk && !answeredLater) return { answer, ask: priorAsk };
+  }
+  return undefined;
+}
+
 function hasReviewCommand(comments: any[]): boolean {
   return comments.some((c) => /^\s*\/review\b/im.test(String(c.body ?? "")));
 }
@@ -431,9 +462,12 @@ function extractPlan(text: string): string {
   return source.slice(marker.index! + marker[0].length).replace(/(?:^|\n)\s*(?:---\s*)?(?:SUMMARY|EXECUTION|NOTES)\b[\s\S]*$/i, "").trim();
 }
 
-function issuePrompt(state: AiState, repo: string, issue: Issue, dir: string, models: Models, thinkingLevel: ThinkingLevel | undefined, autoresearch: string): string {
+function issuePrompt(state: AiState, repo: string, issue: Issue, dir: string, models: Models, thinkingLevel: ThinkingLevel | undefined, autoresearch: string, answerContext?: { answer: string; ask: IssueAgentAskRequest }): string {
   const header = `Repo: ${repo}\nIssue: #${issue.number} ${issue.title}\nBranch: ${branchName(issue)}\nCheckout: ${dir}\nPlanning model: ${models.planning ?? "default"}\nExecution model: ${models.execution ?? "default"}\nFallback models: ${models.fallback.join(", ") || "none"}\nThinking level: ${thinkingLevel ?? "current setting"}\n\nIssue body:\n${issue.body ?? ""}${autoresearch}`;
-  if (state === "PLANNING") return `ISSUE AGENT PLANNING TASK\n${header}\n\nInspect the checkout and produce an approved-work plan. Do not edit files, commit, push, or open a PR. When the plan is complete, call issueAgentDone with text that starts with a top-level heading named PLAN. The harness requires this tool call.`;
+  if (state === "PLANNING") {
+    const answerBlock = answerContext ? `\n\nANSWER TO PRIOR CLARIFICATION\nPrior question/context:\n${answerContext.ask.context}\n\nAnswer:\n${answerContext.answer}` : "";
+    return `ISSUE AGENT PLANNING TASK\n${header}${answerBlock}\n\n${planningModePrompt({ mode: "issue-agent" })}\n\nInspect the checkout and produce an approved-work plan. Do not edit files, commit, push, or open a PR.`;
+  }
   return `ISSUE AGENT EXECUTION TASK\n${header}\n\nExecute the approved plan for this issue in the checkout. Make the necessary code changes and run appropriate checks. When complete, call issueAgentDone with a concise PR-ready summary of changes, checks run, and risks/follow-ups. If no changes are needed, still call issueAgentDone and explain why. The harness requires this tool call.`;
 }
 
@@ -520,7 +554,13 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
   activeSubAgent = undefined;
   if (stdoutBuffer.trim()) output = handleSubAgentJsonLine(stdoutBuffer.trim(), emit, seenAssistantText) ?? output;
   if (existsSync(marker) && activeWork) {
-    try { activeWork.doneText = JSON.parse(readFileSync(marker, "utf-8"))?.text ?? ""; } catch { activeWork.doneText = readFileSync(marker, "utf-8"); }
+    try {
+      const data = JSON.parse(readFileSync(marker, "utf-8"));
+      if (data?.ask) activeWork.askRequest = data.ask;
+      else activeWork.doneText = data?.text ?? "";
+    } catch {
+      activeWork.doneText = readFileSync(marker, "utf-8");
+    }
     rmSync(marker, { force: true });
   }
   if (stopRequested) throw new Error("sub-agent stopped by request");
@@ -549,6 +589,7 @@ async function runRequiredSubAgent(work: NonNullable<typeof activeWork>, prompt:
     work.doneText = undefined;
     activeWork = work;
     finalText = await runSubAgent(prompt, work.dir, work.cfg.workdir, model, thinkingLevel, emit);
+    if (work.askRequest) return finalText;
     if (validMarker(required, work.doneText)) return finalText;
     emit(`sub-agent finished without required ${required} tool marker (attempt ${attempt}/${MAX_REQUIRED_TOOL_RETRIES})`, "warning");
   }
@@ -630,7 +671,8 @@ async function queueIssue(pi: ExtensionAPI, ctx: any, repo: string, issue: Issue
     : "";
   const thinkingLevelOverride = state === "PLANNING" ? cfg.thinkingLevels.planning : state === "EXECUTING" ? cfg.thinkingLevels.execution : undefined;
   const thinkingLevel = thinkingLevelOf(issue.labels, thinkingLevelOverride);
-  const prompt = issuePrompt(state, repo, issue, dir, models, thinkingLevel, autoresearch);
+  const answerContext = state === "PLANNING" ? latestIssueAgentAnswer(await listComments(repo, issue, cfg.token).catch(() => [])) : undefined;
+  const prompt = issuePrompt(state, repo, issue, dir, models, thinkingLevel, autoresearch, answerContext);
   activeAgentRun = true;
   if (cfg.dryRun) {
     emit?.(`DRY RUN: Checkout ${repo} at ${branchName(issue)} into ${dir}`, "info");
@@ -644,6 +686,13 @@ async function queueIssue(pi: ExtensionAPI, ctx: any, repo: string, issue: Issue
   const work = activeWork;
   activeAgentRun = false;
   activeWork = undefined;
+  if (work?.askRequest) {
+    const body = formatIssueAgentAskComment(work.askRequest);
+    await postIssueComment(work.repo, work.issue, body, work.cfg.token);
+    await setAiState(work.repo, work.issue, "WAITING_FOR_FEEDBACK", work.cfg.token);
+    emit?.(`Posted clarification question for #${work.issue.number}; waiting for /answer`, "info");
+    return dir;
+  }
   if (work) await finishWork(work, finalText, emit);
   return dir;
 }
@@ -851,6 +900,16 @@ async function maintainIssueLabels(cfg: Config, notify?: (msg: string, type?: "i
       }
       if (stateOf(issue.labels) !== "WAITING_FOR_FEEDBACK") continue;
       const comments = await listComments(repo, issue, cfg.token).catch(() => []);
+      const answeredAsk = latestIssueAgentAnswer(comments);
+      if (answeredAsk) {
+        if (cfg.dryRun) {
+          notify?.(`DRY RUN: Change issue label to ${stateLabel("PLANNING")} after /answer on #${issue.number}`, "info");
+        } else {
+          await setAiState(repo, issue, "PLANNING", cfg.token);
+          await postIssueComment(repo, issue, `Answer detected (\`/answer\`); switching back to \`${stateLabel("PLANNING")}\`.`, cfg.token).catch(() => undefined);
+        }
+        continue;
+      }
       if (comments.some((c) => /^\s*\/approve\b/im.test(String(c.body ?? "")))) {
         if (cfg.dryRun) {
           notify?.(`DRY RUN: Change issue label to ${stateLabel("EXECUTING")}`, "info");
@@ -986,7 +1045,7 @@ async function runLoop(pi: ExtensionAPI, ctx: any, cfg: Config, notify: (msg: st
   }
 }
 
-export const __issueAgentTest = { runSubAgent, handleSubAgentJsonLine, stateOf, normalizePullRequest, listPullRequests, hasReviewCommand, hasUnansweredReviewCommand, reviewCycle, parseVerdict, reviewEvent, validMarker, hasAgentSource, createPullRequest, addLabels, setAiState, stateLabel };
+export const __issueAgentTest = { runSubAgent, handleSubAgentJsonLine, stateOf, normalizePullRequest, listPullRequests, hasReviewCommand, hasUnansweredReviewCommand, reviewCycle, parseVerdict, reviewEvent, validMarker, hasAgentSource, createPullRequest, addLabels, setAiState, stateLabel, formatIssueAgentAskComment, latestIssueAgentAnswer, issuePrompt };
 
 export default function (pi: ExtensionAPI) {
   const chatStatus = (message: string, type: "info" | "warning" | "error" = "info") => {
@@ -1131,6 +1190,35 @@ export default function (pi: ExtensionAPI) {
       }
       activeWork.doneText = text;
       return { content: [{ type: "text", text: "Marked active issue-agent task as done. The harness will commit, push, and open a PR after this turn." }], details: { ok: true } };
+    },
+  });
+
+  pi.registerTool({
+    name: "issueAgentAsk",
+    label: "Issue Agent Ask",
+    description: "Ask the issue reporter for clarification during issue-agent planning without blocking. Provide question(s), optional choices, and context needed to resume after /answer.",
+    parameters: Type.Object({
+      question: Type.Optional(Type.String()),
+      questions: Type.Optional(Type.Array(Type.String())),
+      choices: Type.Optional(Type.Array(Type.String())),
+      context: Type.String(),
+    }),
+    async execute(_id, input: any) {
+      const ask: IssueAgentAskRequest = {
+        question: typeof input.question === "string" ? input.question : undefined,
+        questions: Array.isArray(input.questions) ? input.questions.map(String) : undefined,
+        choices: Array.isArray(input.choices) ? input.choices.map(String) : undefined,
+        context: String(input.context ?? ""),
+      };
+      if (!ask.question && !ask.questions?.length) return { content: [{ type: "text", text: "issueAgentAsk requires question or questions." }], details: { ok: false } };
+      if (!ask.context.trim()) return { content: [{ type: "text", text: "issueAgentAsk requires context for resuming the planning agent." }], details: { ok: false } };
+      if (process.env.ISSUE_AGENT_DONE_FILE) {
+        writeFileSync(process.env.ISSUE_AGENT_DONE_FILE, JSON.stringify({ ask }, null, 2));
+        return { content: [{ type: "text", text: "Recorded issue-agent clarification request." }], details: { ok: true } };
+      }
+      if (!activeWork || stateOf(activeWork.issue.labels) !== "PLANNING") return { content: [{ type: "text", text: "No active issue-agent planning task." }], details: { ok: false } };
+      activeWork.askRequest = ask;
+      return { content: [{ type: "text", text: "Recorded issue-agent clarification request." }], details: { ok: true } };
     },
   });
 

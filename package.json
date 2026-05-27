@@ -17,7 +17,8 @@
     "packages": [
       "@plannotator/pi-extension",
       "@observal/pi-insights",
-      "pi-better-openai"
+      "pi-better-openai",
+      "pi-ask-user"
     ]
   },
   "bin": {
@@ -31,6 +32,7 @@
     "AGENTS.md",
     "scripts/",
     "skills/",
+    "docs/",
     ".pi/extensions/",
     ".pi/settings.json",
     "models.json",
@@ -57,6 +59,7 @@
     "glob": "^13.0.6",
     "open": "^11.0.0",
     "pi-better-openai": "^0.1.18",
+    "pi-ask-user": "^0.11.1",
     "pi-inspect": "^0.5.0",
     "pi-powerline-footer": "^0.5.4",
     "playwright": "^1.59.1",

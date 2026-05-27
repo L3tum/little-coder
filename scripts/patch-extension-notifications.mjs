@@ -4,6 +4,30 @@ import { fileURLToPath } from "node:url";
 
 export const PATCHES = [
   {
+    name: "plannotator /plan canonical command shim",
+    path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
+    oldText: `\tpi.registerCommand("plannotator", {\n\t\tdescription: "Toggle plannotator planning mode",\n\t\thandler: async (_args, ctx) => {\n\t\t\tawait togglePlanMode(ctx);\n\t\t},\n\t});`,
+    newText: `\tconst planCommandHandler = async (_args: string, ctx: ExtensionContext): Promise<void> => {\n\t\tawait togglePlanMode(ctx);\n\t};\n\n\tpi.registerCommand("plan", {\n\t\tdescription: "Toggle planning mode",\n\t\thandler: planCommandHandler,\n\t});\n\n\tpi.registerCommand("plannotator", {\n\t\tdescription: "Compatibility alias for /plan",\n\t\thandler: planCommandHandler,\n\t});`,
+  },
+  {
+    name: "plannotator planning prompt guidance",
+    path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
+    oldText: `Available tools: read, bash, grep, find, ls, write (markdown only), edit (markdown only), \${PLAN_SUBMIT_TOOL}\n\nDo not run destructive bash commands (rm, git push, npm install, etc.) — focus on reading and exploring the codebase. Web fetching (curl, wget) is fine.`,
+    newText: `Available tools include code_search, lsp, findRead, read, bash, grep, find, ls, websearch, webfetch, EvidenceAdd, ask_user, write (markdown only), edit (markdown only), \${PLAN_SUBMIT_TOOL}\n\nDo not run destructive bash commands (rm, git push, npm install, etc.) — focus on reading and exploring the codebase. Use websearch/webfetch for external package, API, library, compatibility, or tool-choice research.`,
+  },
+  {
+    name: "plannotator planning workflow tool order",
+    path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
+    oldText: `1. **Explore** — Use read, grep, find, ls, and bash to understand the codebase. Actively search for existing functions, utilities, and patterns that can be reused — avoid proposing new code when suitable implementations already exist.\n2. **Update the plan file** — After each discovery, immediately capture what you learned in the plan. Don't wait until the end. Use write for the initial draft, then edit for all subsequent updates.\n3. **Ask the user** — When you hit an ambiguity or decision you can't resolve from code alone, ask. Then go back to step 1.`,
+    newText: `1. **Explore** — Prefer code_search for symbols/relationships/semantic search, then lsp for definitions/references/types/diagnostics, then bounded findRead, then targeted read. Avoid broad grep/find/read sweeps unless code-aware tools cannot answer the question. Actively search for existing functions, utilities, and patterns that can be reused — avoid proposing new code when suitable implementations already exist.\n2. **Research and record evidence** — Use EvidenceAdd for any factual claim the final plan will cite. Use websearch/webfetch for external package, API, library, compatibility, or tool-choice research. Do not rely on memory for external facts that affect the plan.\n3. **Update the plan file** — After each discovery, immediately capture what you learned in the plan. Don't wait until the end. Use write for the initial draft, then edit for all subsequent updates.\n4. **Ask the user** — After code/web research, use ask_user for unresolved user decisions when available; otherwise ask plain end-of-turn questions. Then go back to step 1.`,
+  },
+  {
+    name: "plannotator planning ask_user guidance",
+    path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
+    oldText: `### Asking Good Questions\n\n- Never ask what you could find out by reading the code.\n- Batch related questions together.\n- Focus on things only the user can answer: requirements, preferences, tradeoffs, edge-case priorities.\n- Scale depth to the task — a vague feature request needs many rounds; a focused bug fix may need one or none.`,
+    newText: `### Asking Good Questions\n\n- Never ask what you could find out by reading the code or researching relevant external sources.\n- Prefer ask_user for unresolved decisions when it is available; fallback to clear plain-text end-of-turn questions if not.\n- Batch related questions together and include enough context for the user to answer.\n- Focus on things only the user can answer: requirements, preferences, tradeoffs, edge-case priorities.\n- Scale depth to the task — a vague feature request needs many rounds; a focused bug fix may need one or none.`,
+  },
+  {
     name: "plannotator browser URL notification",
     path: ["node_modules", "@plannotator", "pi-extension", "plannotator-browser.ts"],
     oldText: `function openBrowserForServer(serverUrl: string, ctx: ExtensionContext): void {\n\tconst browserResult = openBrowser(serverUrl);\n\tif (isRemoteSession()) {\n\t\tctx.ui.notify(\`[Plannotator] \${serverUrl}\`, "info");\n\t} else if (!browserResult.opened) {\n\t\tctx.ui.notify(\`Open this URL to review: \${serverUrl}\`, "info");\n\t}\n}`,

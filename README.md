@@ -71,6 +71,8 @@ The agent uses the directory you launched it from as its working directory — `
 
 In the TUI you can use `/tools` to list loaded tools and `/skills` to list available skills. The agent can also call `tools`, `skills`, and `enableBrowserTools` directly.
 
+Use `/plan` to enter browser-reviewed planning mode before implementation. The legacy `/plannotator` command is kept as a compatibility shim but `/plan` is canonical. See `docs/planning-mode.md` for the planning workflow, `ask_user` behavior, and issue-agent `/answer ...` clarification flow.
+
 For local providers (llama.cpp, Ollama, LM Studio) pi expects *some* value in the API-key env even though local servers ignore it:
 
 ```bash

@@ -57,6 +57,24 @@ describe("issue-agent lifecycle helpers", () => {
     expect(__issueAgentTest.reviewEvent("request_changes")).toBe("REQUEST_CHANGES");
   });
 
+  it("round-trips issue-agent ask comments and /answer comments", () => {
+    const ask = { question: "Which API?", choices: ["A", "B"], context: "Found callers in src/api.ts" };
+    const askComment = __issueAgentTest.formatIssueAgentAskComment(ask);
+    expect(askComment).toContain("/answer");
+    expect(askComment).toContain("Found callers");
+    const answer = __issueAgentTest.latestIssueAgentAnswer([{ body: askComment }, { body: "/answer Use A" }]);
+    expect(answer?.answer).toBe("Use A");
+    expect(answer?.ask.context).toBe(ask.context);
+    expect(__issueAgentTest.latestIssueAgentAnswer([{ body: askComment }, { body: "/answer Use A" }, { body: "## AI Plan" }])).toBeUndefined();
+  });
+
+  it("issue planning prompt includes shared guidance and issueAgentAsk", () => {
+    const prompt = __issueAgentTest.issuePrompt("PLANNING", "https://github.com/acme/repo", { number: 1, title: "T", body: "B", labels: [], url: "u", apiUrl: "a" }, "/tmp/repo", { fallback: [] }, undefined, "");
+    expect(prompt).toContain("code_search");
+    expect(prompt).toContain("EvidenceAdd");
+    expect(prompt).toContain("issueAgentAsk");
+  });
+
   it("repairs discovered PR issue API URLs even when PR rows already include labels", async () => {
     const oldFetch = global.fetch;
     global.fetch = vi.fn(async (url: any) => {
