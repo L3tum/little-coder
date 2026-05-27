@@ -54,7 +54,9 @@ function chunk(text: string, cursor = 0): { chunk: string; next: number | null; 
   return { chunk: text.slice(cursor, end), next: hasMore ? end : null, total: text.length, hasMore };
 }
 
-describe("live integration — Wikipedia extraction + retention", () => {
+const describeLive = process.env.RUN_LIVE_TESTS === "1" ? describe : describe.skip;
+
+describeLive("live integration — Wikipedia extraction + retention", () => {
   it("extracts Wikipedia Test page and produces reasonable chunks", async () => {
     const url = "https://en.wikipedia.org/wiki/Terminal_Bench";
     const full = await extractPageText(url);

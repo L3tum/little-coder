@@ -2,8 +2,8 @@
 
 Subclasses harbor.agents.base.BaseAgent (the TB 2.0 counterpart of TB 1.0's
 terminal_bench.agents.base_agent.BaseAgent). The heavy lifting — pi RPC
-subprocess, extension stack, ShellSession proxy — is shared with the TB 1.0
-adapter via benchmarks/rpc_client.py::PiRpc.
+subprocess and extension stack — is shared with the TB 1.0 adapter via
+benchmarks/rpc_client.py::PiRpc.
 
 The one moving part that differs from TB 1.0:
 
@@ -60,7 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rpc_client import PiRpc  # noqa: E402
 
 
-DEFAULT_ALLOWED_TOOLS = ["ShellSession", "ShellSessionCwd", "ShellSessionReset"]
+DEFAULT_ALLOWED_TOOLS = ["bash"]
 DEFAULT_MODEL = "llamacpp/qwen3.6-35b-a3b"
 
 # Same line-dedup + ANSI-strip + truncation used by the TB 1.0 adapter so
@@ -107,9 +107,8 @@ def _format_output(stdout: str, stderr: str, code: int, cwd: str, timed_out: boo
 class _HarborShellProxy:
     """Stateful shell proxy over harbor's BaseEnvironment.exec().
 
-    harbor's env.exec() is stateless — each call is a fresh shell. To give
-    little-coder's ShellSession tool the persistent-cwd / persistent-env
-    semantics it expects, we track cwd in the proxy and prepend `cd <cwd>`
+    harbor's env.exec() is stateless — each call is a fresh shell. To preserve
+    benchmark command continuity, we track cwd in the proxy and prepend `cd <cwd>`
     to each command. `pwd` is echoed after the user command so we can
     capture the possibly-updated cwd for the next call.
     """
@@ -195,15 +194,14 @@ class LittleCoderAgent(BaseAgent):
                 return proxy.run(payload.get("command", ""), int(payload.get("timeout", 30)))
             if op == "reset":
                 return proxy.reset()
-            return f"Error: unknown ShellSession op '{op}'"
+            return f"Error: unknown benchmark shell op '{op}'"
 
         prompt = (
             "You are solving a Terminal-Bench 2.0 task inside a Linux container.\n"
-            "The ONLY way to interact with the container is the ShellSession tool; "
-            "its cwd persists between calls (tracked by the adapter).\n"
+            "Use the bash tool to interact with the task environment. "
             "Default working directory is /app.\n"
-            "File tools like Read/Write/Edit are NOT available — use shell commands "
-            "(cat, sed -i, heredoc 'cat > file <<EOF') through ShellSession instead.\n\n"
+            "File tools like Read/Write/Edit may not be available — use shell commands "
+            "(cat, sed -i, heredoc 'cat > file <<EOF') through bash instead.\n\n"
             f"TASK:\n{instruction}\n\n"
             "When the task is complete, stop calling tools and say 'done'."
         )

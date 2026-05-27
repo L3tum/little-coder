@@ -470,7 +470,7 @@ The v0.1.13-restored AGENTS.md (the full v0.0.5 SYSTEM_PROMPT_TEMPLATE revival) 
 
 | pi's base says | v0.1.13 AGENTS.md *also* said |
 |---|---|
-| `Available tools: read / bash / edit / write` + benchmark schemas | A full "Available Tools" section listing Read / Write / Edit / Bash / ShellSession / Glob / Grep / WebFetch / WebSearch + Browser / Evidence |
+| `Available tools: read / bash / edit / write` + benchmark schemas | A full "Available Tools" section listing Read / Write / Edit / Bash / Glob / Grep / WebFetch / WebSearch + Browser / Evidence |
 | `Be concise in your responses` | "Be concise and direct. Lead with the answer." |
 | `Show file paths clearly when working with files` | "Always use absolute paths for file operations." |
 
@@ -480,7 +480,7 @@ This release rewrites `AGENTS.md` as a **delta over pi's base** rather than a re
 
 - Identity line (`You are little-coder, a coding agent specialized for small local language models.`)
 - `# Capabilities & Autonomy` (autonomous-agent framing pi doesn't include)
-- `# Runtime invariants` — Write-vs-Edit refusal invariant + Bash / ShellSession timeout guidance + benchmark-tool note (replaces the duplicative "Available Tools" section; keeps only the operational facts pi can't infer)
+- `# Runtime invariants` — Write-vs-Edit refusal invariant + Bash timeout guidance + benchmark-tool note (replaces the duplicative "Available Tools" section; keeps only the operational facts pi can't infer)
 - `# Approaching complex tasks` and `# Handling ambiguity` (the deliberate-not-deliberation framing)
 - `# Workspace discovery` (the spec-file/docs surface-once rule)
 - `# Per-turn context augmentation` (load-bearing — explains the `## Tool Usage Guidance` and `## Algorithm Reference` injected blocks; pi cannot describe extensions it doesn't know about)
@@ -669,8 +669,8 @@ No runtime behavior change; corrects the metadata that ends up in `result.json` 
 ### Added — Terminal-Bench 2.0 (harbor) adapter
 little-coder can now run on the new **`terminal-bench@2.0`** dataset (89 tasks) via [harbor](https://github.com/laude-institute/harbor), the framework that replaced the `tb` CLI for TB 2.0. The TB 1.0 adapter (under `benchmarks/tb_adapter/`) is unchanged — it continues to target `terminal-bench-core@0.1.1` and remains the canonical path for the current leaderboard submission.
 
-- **`benchmarks/harbor_adapter/little_coder_agent.py`** — subclasses `harbor.agents.base.BaseAgent`. Implements `name()`, `version()`, `setup()`, and async `run(instruction, environment, context)`. Reuses `benchmarks/rpc_client.py::PiRpc` verbatim — the only novelty is the ShellSession proxy:
-  - TB 1.0 proxied `ShellSession` calls to `TmuxSession.send_keys(...)` (sync, pane-parsing).
+- **`benchmarks/harbor_adapter/little_coder_agent.py`** — subclasses `harbor.agents.base.BaseAgent`. Implements `name()`, `version()`, `setup()`, and async `run(instruction, environment, context)`. Reuses `benchmarks/rpc_client.py::PiRpc` verbatim — the only novelty is the benchmark shell proxy:
+  - TB 1.0 proxied shell calls to `TmuxSession.send_keys(...)` (sync, pane-parsing).
   - TB 2.0 proxies to harbor's `BaseEnvironment.exec(...)` (async, stdout/stderr/return_code).
   - A new `_HarborShellProxy` class bridges PiRpc's sync reader-thread callback to the async `env.exec` via `asyncio.run_coroutine_threadsafe()` against the loop stashed in `run()`.
   - Stateful-cwd semantics matched by appending `pwd` to each invocation and tracking the result for the next call's `cd <cwd>` prefix.
@@ -785,7 +785,6 @@ v0.1.0 is a ground-up port of the agent from a hand-rolled Python substrate (Che
 - `tool-gating` — execution-level enforcement of `LITTLE_CODER_ALLOWED_TOOLS` + publishes the list on `systemPromptOptions.littleCoder.allowedTools` so skill-inject filters its budget to the allowed subset.
 - `turn-cap` — hard `max_turns` early-break via `turn_start` counter + `ctx.abort()`.
 - `benchmark-profiles` — reads `.pi/settings.json`'s `little_coder.model_profiles` + `benchmark_overrides.{terminal_bench,gaia}` and publishes resolved values on `systemPromptOptions.littleCoder`; also sets `temperature` on the outgoing provider payload via `before_provider_request` (pi-ai defaults otherwise).
-- `shell-session` — `ShellSession`/`ShellSessionCwd`/`ShellSessionReset` with two backends: **tmux-proxy** via `extension_ui_request` (the TB adapter routes commands back to the TB `TmuxSession`) and **subprocess** (`child_process.execSync`). Preserves ANSI-strip, 200-line head/tail truncation + duplicate-line collapse, `[exit=N cwd=… timed_out=…]` footer, pager neutralization.
 - `browser` — Playwright-powered `BrowserNavigate`/`Click`/`Type`/`Scroll`/`Extract`/`Back`/`History` with per-session lazy `Page`, inlined Readability JS, 2 KB chunked extract with `{cursor, next, has_more}` footer, graceful degradation when Playwright isn't installed.
 - `evidence` — `EvidenceAdd`/`Get`/`List` with per-session in-memory store, 1 KB snippet cap, UUID entry IDs.
 - `evidence-compact` — on `session_compact` emits the `[Preserved evidence from earlier in the conversation follows.]` bridge follow-up with entry count. The Python version's `_PRESERVE_TOOL_NAMES` set is architecturally unnecessary in the TS port (evidence lives in extension state, not message history).

@@ -11,7 +11,7 @@ The research story behind all this — why scaffold–model fit matters, how a 9
 
 ## Highlights
 
-- Carries forward recent little-coder work: pi-based scaffold, benchmark harness, ShellSession / Browser / Evidence tool families, GAIA / Terminal-Bench / Aider support, read guard, bounded glob, and live llama.cpp context-window detection.
+- Carries forward recent little-coder work: pi-based scaffold, benchmark harness, Browser / Evidence tool families, GAIA / Terminal-Bench / Aider support, read guard, bounded glob, and live llama.cpp context-window detection.
 - Fork additions on top of upstream: agent-callable `tools` / `skills`, on-demand Browser tool loading via `enableBrowserTools`, extra compatibility repair for malformed tool calls, `bash` `cwd` support plus no-op `cd` handling, external-file access prompts, and `findRead` single-file character caps.
 - Fork packaging/tooling: L3tum install paths, direct codebase-memory integration, bundled pi-extension loading from `package.json`, pi-inspect support, and fork-owned GitHub Actions/site publishing.
 - Benchmarks for this fork: **TBD**.
@@ -303,7 +303,7 @@ The benchmarks harness (`benchmarks/`) is dev-only and not shipped with the npm 
 little-coder/
 ├── .pi/
 │   ├── settings.json               # per-model profiles + benchmark_overrides (terminal_bench, gaia)
-│   └── extensions/                 # 23 TypeScript extensions, auto-discovered by pi
+│   └── extensions/                 # TypeScript extensions, auto-discovered by pi
 │       ├── branding/               # little-coder startup header + terminal title (replaces pi's built-in)
 │       ├── llama-cpp-provider/     # data-driven provider registration from models.json — ships llamacpp, ollama, lmstudio (+ user override file)
 │       ├── write-guard/            # Write refuses on existing files; rewrites root-bare /foo.md paths to cwd
@@ -319,12 +319,11 @@ little-coder/
 │       ├── tool-gating/            # enforces _allowed_tools at exec + schema levels
 │       ├── turn-cap/               # max_turns abort (Polyglot unbounded, TB 40, GAIA 30)
 │       ├── benchmark-profiles/     # reads settings.json → systemPromptOptions + sets temperature
-│       ├── shell-session/          # ShellSession[Cwd|Reset] — tmux-proxy + subprocess backends
 │       ├── browser/                # Playwright BrowserNavigate/Click/Type/Scroll/Extract/Back/History
 │       ├── evidence/               # EvidenceAdd/Get/List — per-session store, 1 KB snippet cap
 │       └── evidence-compact/       # preserves evidence across pi's auto-compaction
-├── skills/                         # 30 markdown files the extensions inject on demand
-│   ├── tools/*.md                  #   14 tool-usage cards
+├── skills/                         # markdown files the extensions inject on demand
+│   ├── tools/*.md                  #   tool-usage cards
 │   ├── knowledge/*.md              #   13 algorithm cheat sheets
 │   └── protocols/*.md              #    3 research/cite/decomposition workflows
 ├── benchmarks/
@@ -387,7 +386,7 @@ little-coder v0.0.x was a derivative work of [CheetahClaws / ClawSpring](https:/
 
 little-coder v0.1.0+ replaces that substrate with **[pi](https://pi.dev)** by Mario Zechner — Apache 2.0 / MIT. The npm package was renamed from `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent` in upstream's 0.74 release; little-coder v1.4.2+ ships with the new package. pi provides the agent loop, provider abstraction, TUI, and extension model. little-coder rebuilds its small-model adaptations on top of pi as extensions.
 
-All little-coder-specific mechanisms — Write-vs-Edit invariant, skill / knowledge injection, thinking-budget cap, output-parser, quality-monitor, per-model profiles, per-benchmark overrides, ShellSession / Browser / Evidence tool families, evidence-aware compaction — are preserved across versions.
+All little-coder-specific mechanisms — Write-vs-Edit invariant, skill / knowledge injection, thinking-budget cap, output-parser, quality-monitor, per-model profiles, per-benchmark overrides, Browser / Evidence tool families, evidence-aware compaction — are preserved across versions.
 
 ---
 

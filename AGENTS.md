@@ -11,7 +11,7 @@ Instead, proactively write the necessary background scripts (Python, shell, etc.
 # Runtime invariants
 
 - **write refuses on existing files.** Use **edit** with exact `old_string` / `new_string` to modify. If `old_string` appears multiple times, add surrounding context until it is unique.
-- **bash / ShellSession default timeout is 30 s.** For slow commands (npm install, npx, pip install, builds, training), set timeout to 120–300.
+- **bash default timeout is 30 s.** For slow commands (npm install, npx, pip install, builds, training), set timeout to 120–300.
 - **Prefer tool-native cwd over `cd && ...`.** When `bash` supports `cwd`, use it instead of prepending `cd <dir> &&`.
 - **Inspectability matters.** Use `tools` (tool) or `/tools` (command) to inspect the current tool registry. Use `skills` or `/skills` to inspect installed skills.
 - **Browser tools are on-demand.** If a task needs interactive browsing, call `enableBrowserTools` first, then use BrowserNavigate / BrowserExtract / BrowserClick / BrowserType / BrowserScroll / BrowserBack / BrowserHistory.
@@ -24,7 +24,6 @@ Use the actual tool names exactly as registered.
 
 - `read`, `write`, `edit`, `bash`
 - `glob`, `grep`, `webfetch`, `websearch`
-- `ShellSession`, `ShellSessionCwd`, `ShellSessionReset`
 
 ## Composite / high-leverage tools
 

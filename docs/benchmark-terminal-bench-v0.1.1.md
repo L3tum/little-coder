@@ -124,7 +124,7 @@ Fires captured via `ctx.ui.notify` → PiRpc → per-task adapter log:
 | `quality-monitor` | 57 | 28 / 80 | 28 tasks produced at least one empty / looped / hallucinated response. `gpt2-codegolf` alone accounted for 24 corrections. |
 | `turn-cap` | — | 9 / 80 | Notify-reported cap aborts; off by one vs call-count cap hits (8) due to notify-emission timing. |
 | `output-parser` (text-tool rescue) | 0 | 0 / 80 | Qwen3.6-35B-A3B uses native tool calling cleanly — no fenced-block fallback needed. |
-| `evidence-compact` | 0 | 0 / 80 | TB's ShellSession-only toolset means no Evidence use; extension correctly dormant. |
+| `evidence-compact` | 0 | 0 / 80 | TB's shell-only toolset means no Evidence use; extension correctly dormant. |
 
 ### 🚩 The thinking-budget signal
 

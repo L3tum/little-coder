@@ -22,7 +22,7 @@ import {
   OneOffBashAutocompleteProvider,
 } from "./bash-mode/completion.ts";
 import { BashModeEditor } from "./bash-mode/editor.ts";
-import { ManagedShellSession } from "./bash-mode/shell-session.ts";
+import { ManagedBashSession } from "./bash-mode/bash-session.ts";
 import { matchHistoryEntries, readGlobalShellHistory, readProjectHistory, appendProjectHistory } from "./bash-mode/history.ts";
 import type { BashModeSettings } from "./bash-mode/types.ts";
 import { getPreset, PRESETS } from "./presets.ts";
@@ -997,7 +997,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
   let bashModeActive = false;
   let bashTranscript = new BashTranscriptStore(bashModeSettings);
   let bashCompletionEngine = new BashCompletionEngine();
-  let shellSession: ManagedShellSession | null = null;
+  let bashSession: ManagedBashSession | null = null;
   
   // Cache for the top and secondary powerline widgets.
   let lastLayoutWidth = 0;
@@ -1008,7 +1008,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
   let lastEditorInputAt = 0;
 
   const getShellPath = () => process.env.SHELL || "/bin/sh";
-  const getShellCwd = () => shellSession?.state.cwd ?? currentCtx?.cwd ?? process.cwd();
+  const getShellCwd = () => bashSession?.state.cwd ?? currentCtx?.cwd ?? process.cwd();
   const welcomeDismissScheduler = createWelcomeDismissScheduler({
     dismiss: (ctx: unknown) => dismissWelcome(ctx),
     getGeneration: () => sessionGeneration,
@@ -1124,9 +1124,9 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     return [...new Set([...project, ...global])];
   };
 
-  const ensureShellSession = async (): Promise<ManagedShellSession> => {
-    if (!shellSession) {
-      shellSession = new ManagedShellSession(
+  const ensureBashSession = async (): Promise<ManagedBashSession> => {
+    if (!bashSession) {
+      bashSession = new ManagedBashSession(
         getShellPath(),
         currentCtx?.cwd ?? process.cwd(),
         bashTranscript,
@@ -1134,13 +1134,13 @@ export default function powerlineFooter(pi: ExtensionAPI) {
         (command, cwd) => appendProjectHistory(currentCtx?.cwd ?? process.cwd(), command, cwd),
       );
     }
-    await shellSession.ensureReady();
-    return shellSession;
+    await bashSession.ensureReady();
+    return bashSession;
   };
 
   const runShellCommand = async (command: string, ctx: any): Promise<void> => {
     try {
-      const session = await ensureShellSession();
+      const session = await ensureBashSession();
       await session.runCommand(command);
       requestStatusRender();
     } catch (error) {
@@ -1151,22 +1151,22 @@ export default function powerlineFooter(pi: ExtensionAPI) {
 
   const setBashModeActive = async (value: boolean, ctx: any): Promise<void> => {
     if (value === bashModeActive) return;
-    if (!value && shellSession?.state.running) {
+    if (!value && bashSession?.state.running) {
       ctx.ui.notify("Wait for the current shell command to finish before leaving bash mode", "warning");
       return;
     }
 
     if (value) {
       try {
-        const session = await ensureShellSession();
+        const session = await ensureBashSession();
         bashModeActive = true;
         currentEditor?.dismissBashModeUi?.();
         currentEditor?.refreshGhostSuggestion?.();
         requestStatusRender();
         ctx.ui.notify(`Bash mode enabled (${session.state.shellName})`, "info");
       } catch (error) {
-        shellSession?.dispose();
-        shellSession = null;
+        bashSession?.dispose();
+        bashSession = null;
         bashModeActive = false;
         requestStatusRender();
         const message = error instanceof Error ? error.message : String(error);
@@ -1247,8 +1247,8 @@ export default function powerlineFooter(pi: ExtensionAPI) {
 
   // Track session start
   pi.on("session_start", async (event, ctx) => {
-    shellSession?.dispose();
-    shellSession = null;
+    bashSession?.dispose();
+    bashSession = null;
     sessionGeneration++;
     sessionStartTime = Date.now();
     currentCtx = ctx;
@@ -1310,8 +1310,8 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     teardownFixedEditorCompositor({ resetExtendedKeyboardModes: true });
     stashShortcutInputUnsubscribe?.();
     stashShortcutInputUnsubscribe = null;
-    shellSession?.dispose();
-    shellSession = null;
+    bashSession?.dispose();
+    bashSession = null;
     bashModeActive = false;
     currentCtx = null;
     footerDataRef = null;
@@ -1776,8 +1776,8 @@ export default function powerlineFooter(pi: ExtensionAPI) {
           setupCustomEditor(ctx);
           ctx.ui.notify("Powerline enabled", "info");
         } else {
-          shellSession?.dispose();
-          shellSession = null;
+          bashSession?.dispose();
+          bashSession = null;
           bashTranscript.clear();
           bashModeActive = false;
           dismissWelcomeOverlay?.();
@@ -1903,12 +1903,12 @@ export default function powerlineFooter(pi: ExtensionAPI) {
   pi.registerCommand("bash-reset", {
     description: "Reset the managed bash session",
     handler: async (_args, ctx) => {
-      shellSession?.dispose();
-      shellSession = null;
+      bashSession?.dispose();
+      bashSession = null;
       bashTranscript.clear();
       if (bashModeActive) {
         try {
-          await ensureShellSession();
+          await ensureBashSession();
         } catch (error) {
           bashModeActive = false;
           const message = error instanceof Error ? error.message : String(error);
@@ -2174,9 +2174,9 @@ export default function powerlineFooter(pi: ExtensionAPI) {
       openaiUsageSnapshot,
       sessionStartTime,
       shellModeActive: bashModeActive,
-      shellRunning: shellSession?.state.running ?? false,
-      shellName: shellSession?.state.shellName ?? null,
-      shellCwd: shellSession?.state.cwd ?? null,
+      shellRunning: bashSession?.state.running ?? false,
+      shellName: bashSession?.state.shellName ?? null,
+      shellCwd: bashSession?.state.cwd ?? null,
       git: gitStatus,
       extensionStatuses,
       hiddenExtensionStatusKeys,
@@ -2265,7 +2265,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
 
     const recentCommands = snapshot.commands.slice(-4);
     for (const command of recentCommands) {
-      const promptGlyph = (shellSession?.state.shellName ?? "shell") === "fish" ? ">" : "$";
+      const promptGlyph = (bashSession?.state.shellName ?? "shell") === "fish" ? ">" : "$";
       const status = command.exitCode === null
         ? theme.fg("accent", "running")
         : command.exitCode === 0
@@ -2577,7 +2577,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
       const editor = new BashModeEditor(tui, editorTheme, keybindings, {
         keybindings,
         isBashModeActive: () => bashModeActive,
-        isShellRunning: () => shellSession?.state.running ?? false,
+        isShellRunning: () => bashSession?.state.running ?? false,
         onExitBashMode: () => {
           void setBashModeActive(false, ctx);
         },
@@ -2588,7 +2588,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
           end: resolvedShortcuts.editorEnd,
         },
         onInterrupt: () => {
-          shellSession?.interrupt();
+          bashSession?.interrupt();
           ctx.ui.notify("Sent interrupt to shell", "info");
         },
         onNotify: (message, level = "info") => ctx.ui.notify(message, level),

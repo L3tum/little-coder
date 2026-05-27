@@ -400,7 +400,7 @@ function checkout(repo: string, issue: Issue, workdir: string): string {
   }
   execFileSync("git", ["checkout", "-B", branch, base], { cwd: dir, stdio: "ignore" });
   execFileSync("git", ["reset", "--hard", base], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["clean", "-fd"], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["clean", "-fdx"], { cwd: dir, stdio: "ignore" });
   return dir;
 }
 
@@ -413,7 +413,7 @@ function checkoutPullRequest(repo: string, pr: PullRequestItem, workdir: string)
   const remote = pr.headRepo && pr.headRepo.replace(/\.git$/, "") !== repo.replace(/\.git$/, "") ? pr.headRepo : "origin";
   execFileSync("git", ["fetch", remote, `+${pr.head}:refs/remotes/pr-head/${pr.number}`], { cwd: dir, stdio: "ignore" });
   execFileSync("git", ["checkout", "-B", pr.head, `refs/remotes/pr-head/${pr.number}`], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["clean", "-fd"], { cwd: dir, stdio: "ignore" });
+  execFileSync("git", ["clean", "-fdx"], { cwd: dir, stdio: "ignore" });
   return dir;
 }
 

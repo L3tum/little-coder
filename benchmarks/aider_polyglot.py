@@ -37,7 +37,7 @@ LOG_ROOT = Path(__file__).parent / "full_polyglot_logs"
 DEFAULT_MODEL = "llamacpp/qwen3.6-35b-a3b"
 
 # Allowed tools for Polyglot — the core filesystem + bash toolbox. Ports
-# the whitepaper's Polyglot configuration (no TB-style ShellSession, no
+# the whitepaper's Polyglot configuration (no Terminal-Bench shell proxy, no
 # GAIA-style Browser/Evidence).
 ALLOWED_TOOLS = [
     "read", "Read",

@@ -407,7 +407,7 @@ export default function (pi: ExtensionAPI) {
       if (/read|findRead|glob|grep/.test(name)) turn.filesRead.add(p);
       if (/write|edit/.test(name)) turn.filesEdited.add(p);
     }
-    if (name === "bash" || name === "ShellSession") {
+    if (name === "bash") {
       const cmd = commandText(input);
       if (isTestCommand(cmd)) turn.tests.push(cmd.slice(0, 200));
     }

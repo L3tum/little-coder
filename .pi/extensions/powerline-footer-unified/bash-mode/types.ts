@@ -50,7 +50,7 @@ export interface ExtendedCompletionItem {
   score: number;
 }
 
-export interface ShellSessionState {
+export interface BashSessionState {
   ready: boolean;
   running: boolean;
   shellPath: string;

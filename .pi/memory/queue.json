@@ -1,1 +1,45 @@
-[]
+[
+  {
+    "type": "runbook",
+    "title": "Captured runbook",
+    "created_at": "2026-05-27T00:25:54.405Z",
+    "updated_at": "2026-05-27T00:25:54.405Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "medium",
+    "tags": [
+      "runbook"
+    ],
+    "evidence": {
+      "prompt": "Do a full code review of the entire codebase",
+      "tools": [
+        "code_status",
+        "glob",
+        "read",
+        "bash",
+        "code_search"
+      ],
+      "files_edited": [],
+      "files_read": [
+        "/home/tom/workspace/little-coder",
+        "/home/tom/workspace/little-coder/package.json",
+        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
+        "/home/tom/workspace/little-coder/bin/launcher-helpers.mjs",
+        "/home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs",
+        "/home/tom/workspace/little-coder/.pi/extensions",
+        "/home/tom/workspace/little-coder/.pi/extensions/permission-gate/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/browser/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/write-guard/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/lsp/lsp-core.ts",
+        "/home/tom/workspace/little-coder/install.sh",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/browser-extract-retention/live-integration.test.ts"
+      ],
+      "tests_run": [
+        "npm test",
+        "npm run typecheck"
+      ]
+    },
+    "body": "Prompt: Do a full code review of the entire codebase\n\nOutcome: ## Code Review Summary\n\nReviewed the core launcher, extension discovery, permission/write guards, browser/tools, issue-agent flow, postinstall patching, and test suite. Also ran:\n\n- `npm test` → 26 files / 284 tests passed\n- `npm run typecheck` → passed\n\n## Strengths\n\n- Good test coverage for many extensions and guards.\n- Launcher avoids shell invocation when spawning Pi, which is safer cross-platform.\n- `write-guard` correctly blocks destructive whole-file rewrites.\n- Issue-agent has thoughtful state labels, dry-run behavior, and required-marker enforcement.\n- Postinstall patches are centralized and tested.\n\n## Findings\n\n### 🔴 Blocker: removed obsolete shell tool bypass permis\n\nValidation: npm test; npm run typecheck"
+  }
+]

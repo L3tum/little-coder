@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { BashTranscriptStore } from "./transcript.ts";
-import type { ShellSessionState } from "./types.ts";
+import type { BashSessionState } from "./types.ts";
 
 const READY_SENTINEL = "__PI_READY__";
 const COMMAND_START_SENTINEL = "__PI_CMD_START__";
@@ -86,7 +86,7 @@ print -r -- "${READY_SENTINEL}:$PWD"
 `;
 }
 
-export class ManagedShellSession {
+export class ManagedBashSession {
   private readonly shellPath: string;
   private readonly transcript: BashTranscriptStore;
   private readonly onStateChange: () => void;
@@ -100,7 +100,7 @@ export class ManagedShellSession {
   private readyResolve: (() => void) | null = null;
   private readyReject: ((error: Error) => void) | null = null;
   private disposed = false;
-  readonly state: ShellSessionState;
+  readonly state: BashSessionState;
 
   constructor(
     shellPath: string,

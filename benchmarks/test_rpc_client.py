@@ -35,7 +35,7 @@ def test_extension_enumeration_finds_scaffold():
     paths = _extension_paths()
     assert len(paths) > 0
     names = {Path(p).parent.name for p in paths}
-    for required in ["write-guard", "skill-inject", "knowledge-inject", "evidence", "shell-session"]:
+    for required in ["write-guard", "skill-inject", "knowledge-inject", "evidence"]:
         assert required in names, f"missing required extension: {required}"
 
 

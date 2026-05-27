@@ -2,8 +2,7 @@
 
 Ported from benchmarks/tb_adapter/little_coder_agent.py in the Python
 little-coder. Still a Python class (TB imports it via --agent-import-path),
-but internally spawns `pi --mode rpc` and proxies ShellSession calls back
-to the TmuxSession over the extension_ui_request channel.
+but internally spawns `pi --mode rpc` for benchmark runs.
 """
 from __future__ import annotations
 
@@ -24,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from rpc_client import PiRpc  # noqa: E402
 
 
-DEFAULT_ALLOWED_TOOLS = ["ShellSession", "ShellSessionCwd", "ShellSessionReset"]
+DEFAULT_ALLOWED_TOOLS = ["bash"]
 DEFAULT_MODEL = "llamacpp/qwen3.6-35b-a3b"
 
 
@@ -73,9 +72,9 @@ def _format_output(raw: str, code: int, cwd: str, timed_out: bool, backend_note:
 
 
 class _TmuxShellProxy:
-    """Routes ShellSession calls from pi back to a TB TmuxSession.
+    """Routes benchmark shell calls from pi back to a TB TmuxSession.
 
-    Matches the Python shell_session.py _exec_tmux strategy: stage the
+    Matches the Python tmux execution strategy: stage the
     command (plus sentinel wrapper) to the container via exec_run, then
     `source` the staged file through tmux. Sentinel parsing recovers
     exit code + cwd even when tmux misbehaves.
@@ -227,7 +226,7 @@ class LittleCoderAgent(BaseAgent):
                 return proxy.run(payload.get("command", ""), int(payload.get("timeout", 30)))
             if op == "reset":
                 return proxy.reset()
-            return f"Error: unknown ShellSession op '{op}'"
+            return f"Error: unknown benchmark shell op '{op}'"
 
         failure = FailureMode.NONE
         text_out = ""
@@ -241,11 +240,10 @@ class LittleCoderAgent(BaseAgent):
 
         prompt = (
             "You are solving a Terminal-Bench task inside a Linux container.\n"
-            "The ONLY way to interact with the container is the ShellSession tool; "
-            "its cwd, env vars, and shell state persist between calls.\n"
-            "You are running as root in the container; /app is writable.\n"
-            "File tools like Read/Write/Edit are NOT available — use shell commands "
-            "(cat, sed -i, heredoc 'cat > file <<EOF') through ShellSession instead.\n\n"
+            "Use the bash tool to interact with the task environment. "
+            "You are running as root; /app is writable.\n"
+            "File tools like Read/Write/Edit may not be available — use shell commands "
+            "(cat, sed -i, heredoc 'cat > file <<EOF') through bash instead.\n\n"
             f"TASK:\n{instruction}\n\n"
             "When the task is complete, stop calling tools and say 'done'."
         )

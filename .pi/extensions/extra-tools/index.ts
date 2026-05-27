@@ -140,9 +140,17 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_id, { url }) {
       try {
+        const u = String(url ?? "").trim();
+        if (!u.startsWith("http://") && !u.startsWith("https://")) {
+          return {
+            content: [{ type: "text", text: "Error: url must start with http:// or https://" }],
+            details: {},
+            isError: true,
+          };
+        }
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 30_000);
-        const res = await fetch(url, {
+        const res = await fetch(u, {
           headers: { "User-Agent": "little-coder/0.1" },
           redirect: "follow",
           signal: controller.signal,
