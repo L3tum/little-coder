@@ -41,5 +41,89 @@
       ]
     },
     "body": "Prompt: Do a full code review of the entire codebase\n\nOutcome: ## Code Review Summary\n\nReviewed the core launcher, extension discovery, permission/write guards, browser/tools, issue-agent flow, postinstall patching, and test suite. Also ran:\n\n- `npm test` → 26 files / 284 tests passed\n- `npm run typecheck` → passed\n\n## Strengths\n\n- Good test coverage for many extensions and guards.\n- Launcher avoids shell invocation when spawning Pi, which is safer cross-platform.\n- `write-guard` correctly blocks destructive whole-file rewrites.\n- Issue-agent has thoughtful state labels, dry-run behavior, and required-marker enforcement.\n- Postinstall patches are centralized and tested.\n\n## Findings\n\n### 🔴 Blocker: removed obsolete shell tool bypass permis\n\nValidation: npm test; npm run typecheck"
+  },
+  {
+    "type": "decision",
+    "title": "Captured decision",
+    "created_at": "2026-05-27T20:57:20.855Z",
+    "updated_at": "2026-05-27T20:57:20.855Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "medium",
+    "tags": [
+      "decision"
+    ],
+    "evidence": {
+      "prompt": "There are a couple tools related to the codebase under @.pi/extensions/codebase-memory-direct/.\nCurrently if a project wasn't indexed, the calls to other code_* tools fail. I'd like instead that code_index is automatically called instead so that, to the tool-caller, the code_* calls succeed.\nCode_Index should also be hooked into edit/write tools",
+      "tools": [
+        "skills",
+        "glob",
+        "read",
+        "findRead",
+        "bash"
+      ],
+      "files_edited": [],
+      "files_read": [
+        "/home/tom/workspace/little-coder",
+        "/home/tom/workspace/little-coder/.pi/extensions/codebase-memory-direct/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/codebase-memory-direct/index.test.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions",
+        "/home/tom/workspace/little-coder/.pi/extensions/write-guard/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/skill-inject/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/edit-custom/index.ts"
+      ],
+      "tests_run": [
+        "cat package.json | head -80 && npx vitest run .pi/extensions/codebase-memory-direct/index.test.ts",
+        "npx tsc --noEmit --pretty false",
+        "python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/edit-custom/index.ts')\ns=p.read_text()\ns=s.replace('''    parameters: Type.Object({\\n      path: Type.",
+        "python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/edit-custom/index.ts')\ns=p.read_text().replace('function normalizeEditArguments(args: unknown): unknow"
+      ]
+    },
+    "body": "Prompt: There are a couple tools related to the codebase under @.pi/extensions/codebase-memory-direct/.\nCurrently if a project wasn't indexed, the calls to other code_* tools fail. I'd like instead that code_index is automatically called instead so that, to the tool-caller, the code_* calls succeed.\nCode_In\n\nOutcome: Implemented both fixes.\n\nChanges made:\n- `code_*` tools now auto-index the workspace when no matching project exists, then retry project resolution.\n- `code_status`, `code_search`, and `code_adr` use this auto-index path.\n- `edit`/`write` successful tool results now trigger a best-effort codebase re-index refresh.\n- Restored edit compatibility in `.pi/extensions/edit-custom/`:\n  - Supports `old_string` / `new_string`\n  - Supports `oldString` / `newString`\n  - Supports `old_text` / `new_text`\n  - Supports `oldText` / `newText`\n  - Supports `file_path` as a `path` alias\n  - Supports top-level old/new pairs and `edits[]`\n\nValidation:\n- Added tests for edit argument normalization.\n- Ran:\n  - `np\n\nValidation: cat package.json | head -80 && npx vitest run .pi/extensions/codebase-memory-direct/index.test.ts; npx tsc --noEmit --pretty false; python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/edit-custom/index.ts')\ns=p.read_text()\ns=s.replace('''    parameters: Type.Object({\\n      path: Type.; python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/edit-custom/index.ts')\ns=p.read_text().replace('function normalizeEditArguments(args: unknown): unknow"
+  },
+  {
+    "type": "action",
+    "title": "Ran validation commands",
+    "created_at": "2026-05-27T20:59:45.498Z",
+    "updated_at": "2026-05-27T20:59:45.498Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "medium",
+    "tags": [
+      "action"
+    ],
+    "evidence": {
+      "prompt": "Fix the issues please",
+      "tools": [
+        "bash"
+      ],
+      "files_edited": [],
+      "files_read": [],
+      "tests_run": [
+        "python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/codebase-memory-direct/index.ts')\ns=p.read_text()\ns=s.replace('import { isAbsolute, join, relative, re"
+      ]
+    },
+    "body": "Prompt: Fix the issues please\n\nOutcome: Fixed both review findings.\n\nChanges:\n- `edit-custom` schema now accepts:\n  - Optional `edits`\n  - Top-level `old_string`, `oldString`, `old_text`, `oldText`\n  - Top-level `new_string`, `newString`, `new_text`, `newText`\n  - Single `edit` object with the same aliases\n  - `file_path` alias\n- `codebase-memory-direct` edit/write refresh now derives the index target from the tool input path:\n  - If the changed file is within `ctx.cwd`, it indexes `ctx.cwd`.\n  - If it’s outside `ctx.cwd`, it indexes the changed file’s containing directory.\n  - Falls back to `ctx.cwd` when no path is available.\n\nValidation passed:\n- `npx vitest run .pi/extensions/edit-custom/index.test.ts .pi/extensions/codebase-m\n\nValidation: python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/codebase-memory-direct/index.ts')\ns=p.read_text()\ns=s.replace('import { isAbsolute, join, relative, re"
+  },
+  {
+    "type": "action",
+    "title": "Ran validation commands",
+    "created_at": "2026-05-27T21:01:19.325Z",
+    "updated_at": "2026-05-27T21:01:19.325Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "medium",
+    "tags": [
+      "action"
+    ],
+    "evidence": {
+      "prompt": "If the path is outside the current working directory, it should ignore it!",
+      "tools": [
+        "bash"
+      ],
+      "files_edited": [],
+      "files_read": [],
+      "tests_run": [
+        "python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/codebase-memory-direct/index.ts')\ns=p.read_text()\ns=s.replace('import { dirname, isAbsolute, join, rel"
+      ]
+    },
+    "body": "Prompt: If the path is outside the current working directory, it should ignore it!\n\nOutcome: Fixed.\n\nNow edit/write re-indexing:\n- Indexes `ctx.cwd` when the changed path is inside the current working directory.\n- Ignores the edit/write entirely when the changed path resolves outside `ctx.cwd`.\n- Still falls back to `ctx.cwd` if no path is present.\n\nValidation passed:\n- `npx vitest run .pi/extensions/codebase-memory-direct/index.test.ts .pi/extensions/edit-custom/index.test.ts`\n- `npx tsc --noEmit --pretty false`\n\nValidation: python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/codebase-memory-direct/index.ts')\ns=p.read_text()\ns=s.replace('import { dirname, isAbsolute, join, rel"
   }
 ]

@@ -179,16 +179,47 @@ async function listProjects(cwd?: string): Promise<IndexedProject[]> {
   return Array.isArray(projects) ? projects as IndexedProject[] : [];
 }
 
+function isPathLikeProject(inputProject: string): boolean {
+  return isAbsolute(inputProject) || inputProject.includes("/") || inputProject.includes("\\");
+}
+
+async function indexRepository(repoPath: string, cwd: string): Promise<unknown> {
+  return runCli("index_repository", { repo_path: repoPath }, { cwd, timeoutMs: INDEX_TIMEOUT_MS });
+}
+
 async function resolveProjectName(inputProject: unknown, cwd: string): Promise<string> {
   const projects = await listProjects(cwd);
   if (typeof inputProject === "string" && inputProject.trim().length > 0) {
-    return selectProjectForInput(projects, inputProject) ?? inputProject.trim();
+    const trimmed = inputProject.trim();
+    const pathProject = selectProjectForInput(projects, trimmed);
+    if (pathProject) return pathProject;
+    if (projects.some((project) => project.name === trimmed)) return trimmed;
+    throw new Error(`No indexed codebase project matched ${trimmed}.`);
   }
   const matched = selectProjectForCwd(projects, cwd);
   if (matched) return matched;
-  throw new Error(
-    `No indexed codebase project matched ${cwd}. Run code_index first, or inspect known projects with code_projects.`,
-  );
+  throw new Error(`No indexed codebase project matched ${cwd}.`);
+}
+
+async function ensureProjectName(inputProject: unknown, cwd: string): Promise<string> {
+  try {
+    return await resolveProjectName(inputProject, cwd);
+  } catch {
+    const repoPath = typeof inputProject === "string" && inputProject.trim().length > 0 && isPathLikeProject(inputProject.trim())
+      ? resolve(cwd, inputProject.trim())
+      : cwd;
+    await indexRepository(repoPath, cwd);
+  }
+
+  try {
+    return await resolveProjectName(inputProject, cwd);
+  } catch (error) {
+    if (typeof inputProject === "string" && inputProject.trim().length > 0) {
+      const matched = selectProjectForCwd(await listProjects(cwd), cwd);
+      if (matched) return matched;
+    }
+    throw error;
+  }
 }
 
 function textResult(value: unknown, details: Record<string, unknown> = {}, isError = false) {
@@ -197,6 +228,23 @@ function textResult(value: unknown, details: Record<string, unknown> = {}, isErr
     details,
     ...(isError ? { isError: true } : {}),
   };
+}
+
+function toolSucceeded(event: any): boolean {
+  if (event?.isError === true) return false;
+  if (event?.result?.isError === true) return false;
+  return true;
+}
+
+function repoPathForMutationTool(input: Record<string, unknown>, cwd: string): string | undefined {
+  const rawPath = typeof input.path === "string"
+    ? input.path
+    : typeof input.file_path === "string"
+      ? input.file_path
+      : undefined;
+  if (!rawPath) return cwd;
+  const absolutePath = isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath);
+  return isWithinDirectory(cwd, absolutePath) ? cwd : undefined;
 }
 
 async function executeJsonTool(
@@ -316,7 +364,7 @@ export default function codebaseMemoryDirect(pi: ExtensionAPI) {
     async execute(_toolCallId: string, input: { project?: string }, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx?: ExtensionContext) {
       const cwd = ctx?.cwd ?? process.cwd();
       try {
-        const project = await resolveProjectName(input.project, cwd);
+        const project = await ensureProjectName(input.project, cwd);
         return executeJsonTool("index_status", { project }, { cwd });
       } catch (error) {
         return textResult(`Error: ${error instanceof Error ? error.message : String(error)}`, { tool: "index_status", input }, true);
@@ -332,12 +380,25 @@ export default function codebaseMemoryDirect(pi: ExtensionAPI) {
     async execute(_toolCallId: string, input: Record<string, unknown>, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx?: ExtensionContext) {
       const cwd = ctx?.cwd ?? process.cwd();
       try {
-        const project = await resolveProjectName(input.project, cwd);
+        const project = await ensureProjectName(input.project, cwd);
         return executeJsonTool("search_graph", { ...input, project }, { cwd });
       } catch (error) {
         return textResult(`Error: ${error instanceof Error ? error.message : String(error)}`, { tool: "search_graph", input }, true);
       }
     },
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    const name = String((event as any).toolName || (event as any).name || "").toLowerCase();
+    if (name !== "edit" && name !== "write") return;
+    if (!toolSucceeded(event)) return;
+    const repoPath = repoPathForMutationTool(((event as any).input ?? {}) as Record<string, unknown>, ctx.cwd);
+    if (!repoPath) return;
+    try {
+      await indexRepository(repoPath, ctx.cwd);
+    } catch {
+      // Editing should not fail just because the codebase-memory refresh failed.
+    }
   });
 
   pi.registerTool({
@@ -348,7 +409,7 @@ export default function codebaseMemoryDirect(pi: ExtensionAPI) {
     async execute(_toolCallId: string, input: Record<string, unknown>, _signal: AbortSignal | undefined, _onUpdate: unknown, ctx?: ExtensionContext) {
       const cwd = ctx?.cwd ?? process.cwd();
       try {
-        const project = await resolveProjectName(input.project, cwd);
+        const project = await ensureProjectName(input.project, cwd);
         return executeJsonTool("manage_adr", { ...input, project }, { cwd });
       } catch (error) {
         return textResult(`Error: ${error instanceof Error ? error.message : String(error)}`, { tool: "manage_adr", input }, true);

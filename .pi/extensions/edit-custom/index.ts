@@ -6,7 +6,7 @@ import {
 import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-function normalizeEditArguments(args: unknown): unknown {
+export function normalizeEditArguments(args: unknown): unknown {
   if (!args || typeof args !== "object") return args;
   const input = args as {
     path?: unknown;
@@ -15,23 +15,26 @@ function normalizeEditArguments(args: unknown): unknown {
     edit?: unknown;
     old_string?: unknown;
     new_string?: unknown;
+    oldString?: unknown;
+    newString?: unknown;
+    old_text?: unknown;
+    new_text?: unknown;
     oldText?: unknown;
     newText?: unknown;
   };
 
+  const pickString = (value: Record<string, unknown>, keys: string[]): string | undefined => {
+    for (const key of keys) {
+      if (typeof value[key] === "string") return value[key];
+    }
+    return undefined;
+  };
+
   const normalizeOne = (edit: unknown) => {
     if (!edit || typeof edit !== "object") return null;
-    const e = edit as { old_string?: unknown; new_string?: unknown; oldText?: unknown; newText?: unknown };
-    const oldText = typeof e.oldText === "string"
-      ? e.oldText
-      : typeof e.old_string === "string"
-        ? e.old_string
-        : undefined;
-    const newText = typeof e.newText === "string"
-      ? e.newText
-      : typeof e.new_string === "string"
-        ? e.new_string
-        : undefined;
+    const e = edit as Record<string, unknown>;
+    const oldText = pickString(e, ["oldText", "old_string", "oldString", "old_text"]);
+    const newText = pickString(e, ["newText", "new_string", "newString", "new_text"]);
     return typeof oldText === "string" && typeof newText === "string" ? { oldText, newText } : null;
   };
 
@@ -77,14 +80,39 @@ export default function (pi: ExtensionAPI) {
       "Edit a single file using exact text replacement. Every edits[].old_string must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
     promptSnippet: "edit(path, edits): patch an existing file using exact old_string → new_string replacements.",
     parameters: Type.Object({
-      path: Type.String({ description: "Path of the file to edit" }),
-      edits: Type.Array(
+      path: Type.Optional(Type.String({ description: "Path of the file to edit" })),
+      file_path: Type.Optional(Type.String({ description: "Alias for path." })),
+      edits: Type.Optional(Type.Array(
         Type.Object({
-          old_string: Type.String({ description: "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].old_string in the same call." }),
-          new_string: Type.String({ description: "Replacement text for this targeted edit." }),
+          old_string: Type.Optional(Type.String({ description: "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].old_string in the same call." })),
+          new_string: Type.Optional(Type.String({ description: "Replacement text for this targeted edit." })),
+          oldString: Type.Optional(Type.String()),
+          newString: Type.Optional(Type.String()),
+          old_text: Type.Optional(Type.String()),
+          new_text: Type.Optional(Type.String()),
+          oldText: Type.Optional(Type.String()),
+          newText: Type.Optional(Type.String()),
         }),
-        { description: "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead." },
-      ),
+        { description: "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Alias keys oldString/old_text/oldText and newString/new_text/newText are accepted and normalized internally." },
+      )),
+      edit: Type.Optional(Type.Object({
+        old_string: Type.Optional(Type.String()),
+        new_string: Type.Optional(Type.String()),
+        oldString: Type.Optional(Type.String()),
+        newString: Type.Optional(Type.String()),
+        old_text: Type.Optional(Type.String()),
+        new_text: Type.Optional(Type.String()),
+        oldText: Type.Optional(Type.String()),
+        newText: Type.Optional(Type.String()),
+      })),
+      old_string: Type.Optional(Type.String()),
+      new_string: Type.Optional(Type.String()),
+      oldString: Type.Optional(Type.String()),
+      newString: Type.Optional(Type.String()),
+      old_text: Type.Optional(Type.String()),
+      new_text: Type.Optional(Type.String()),
+      oldText: Type.Optional(Type.String()),
+      newText: Type.Optional(Type.String()),
     }),
     prepareArguments(args: unknown) {
       return normalizeEditArguments(args) as any;
