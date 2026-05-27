@@ -1,7 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { promisify } from "node:util";
 import { containsSecret } from "../security/index.ts";
@@ -167,10 +168,8 @@ function yamlString(value: string): string {
 function writeAcceptedMemory(item: QueueItem): string {
   ensureMemory();
   const dir = join(MEMORY_DIR, noteDirForType(item.type));
-  const date = (item.updated_at || item.created_at || new Date().toISOString()).slice(0, 10);
-  const base = `${date}-${slugify(item.title)}`;
-  let path = join(dir, `${base}.md`);
-  for (let i = 2; existsSync(path); i += 1) path = join(dir, `${base}-${i}.md`);
+  let path = join(dir, `${randomUUID()}.md`);
+  while (existsSync(path)) path = join(dir, `${randomUUID()}.md`);
   const frontmatter = [
     "---",
     `title: ${yamlString(item.title)}`,
@@ -233,6 +232,45 @@ function isTestCommand(cmd: string): boolean {
   return /\b(npm test|vitest|pytest|cargo test|go test|pnpm test|yarn test|npm run test|npm run typecheck|tsc\b)/.test(cmd);
 }
 
+function candidateType(prompt: string, outcome: string, edited: string[], tests: string[]): string {
+  const text = `${prompt}\n${outcome}`.toLowerCase();
+  if (/\b(runbook|playbook|procedure|how to|steps?|usage|command)\b/.test(text)) return "runbook";
+  if (/\b(decided|decision|choose|chose|prefer|instead|authoritative|policy|convention|should be)\b/.test(text)) return "decision";
+  if (/\b(observed|observation|found|root cause|because|why|note|gotcha)\b/.test(text)) return "observation";
+  if (edited.length > 0 || tests.length > 0) return "action";
+  return "context";
+}
+
+function candidateTitle(type: string, edited: string[]): string {
+  const files = edited.map((p) => basename(p)).slice(0, 3).join(", ");
+  if (type === "action") return files ? `Changed ${files}` : "Ran validation commands";
+  if (type === "decision") return files ? `Decision from ${files}` : "Captured decision";
+  if (type === "observation") return files ? `Observation from ${files}` : "Captured observation";
+  if (type === "runbook") return files ? `Runbook from ${files}` : "Captured runbook";
+  return files ? `Context from ${files}` : "Captured context";
+}
+
+function dedupeKey(note: MemoryNote): string {
+  const normalizedBody = note.body.toLowerCase().replace(/\s+/g, " ").trim();
+  const normalizedTitle = note.title.toLowerCase().replace(/\s+/g, " ").trim();
+  return `${note.type}\n${normalizedTitle}\n${normalizedBody}`;
+}
+
+function dedupeMemories(dryRun: boolean): string[] {
+  const seen = new Set<string>();
+  const removed: string[] = [];
+  for (const note of allNotes().sort((a, b) => a.path.localeCompare(b.path))) {
+    const key = dedupeKey(note);
+    if (!seen.has(key)) {
+      seen.add(key);
+      continue;
+    }
+    removed.push(note.path);
+    if (!dryRun) unlinkSync(note.path);
+  }
+  return removed;
+}
+
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("memory-review", {
     description: "Show queued local memory candidates; use /memory-review accept|deny [all|1,3|2-4]",
@@ -263,6 +301,41 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       const lines = queue.length === 0 ? "No queued memory candidates." : queue.map((item, i) => `${i + 1}. [${item.type}] ${item.title} (${item.confidence})\n   ${item.body.slice(0, 240)}`).join("\n");
+      if (ctx.hasUI) ctx.ui.notify(lines, "info");
+    },
+  });
+
+  pi.registerCommand("memory-doctor", {
+    description: "Show local memory health, including whether QMD is available",
+    handler: async (_args, ctx) => {
+      ensureMemory();
+      const qmd = await resolveQmd();
+      const notes = allNotes();
+      const queue = readQueue();
+      const dirs = NOTE_DIRS.map((dir) => {
+        const full = join(MEMORY_DIR, dir);
+        return `${dir}: ${readdirSync(full).filter((file) => file.endsWith(".md")).length} accepted`;
+      }).join("\n");
+      const lines = [
+        `memory dir: ${relative(process.cwd(), MEMORY_DIR)}`,
+        `QMD: ${qmd.mode === "qmd" ? `loaded (${qmd.bin ?? "qmd"})` : "not loaded; using grep fallback"}`,
+        `queue: ${queue.length} pending candidate(s)`,
+        `accepted memories: ${notes.length}`,
+        dirs,
+      ].join("\n");
+      if (ctx.hasUI) ctx.ui.notify(lines, qmd.mode === "qmd" ? "info" : "warning");
+    },
+  });
+
+  pi.registerCommand("memory-dedupe", {
+    description: "Remove duplicate accepted local memories; use /memory-dedupe --dry-run to preview",
+    handler: async (args, ctx) => {
+      const dryRun = /(^|\s)--dry-run(\s|$)/.test(args ?? "");
+      const removed = dedupeMemories(dryRun);
+      const verb = dryRun ? "Would remove" : "Removed";
+      const lines = removed.length === 0
+        ? "No duplicate accepted memories found."
+        : `${verb} ${removed.length} duplicate accepted memor${removed.length === 1 ? "y" : "ies"}:\n${removed.map((path) => relative(process.cwd(), path)).join("\n")}`;
       if (ctx.hasUI) ctx.ui.notify(lines, "info");
     },
   });
@@ -348,14 +421,15 @@ export default function (pi: ExtensionAPI) {
     if (edited.length === 0 && tests.length === 0) return;
     const now = new Date().toISOString();
     const confidence = edited.length > 0 && tests.length > 0 ? "high" : tests.length > 0 ? "medium" : "low";
+    const type = candidateType(turn.prompt, text, edited, tests);
     queueCandidate({
-      type: "session",
-      title: edited.length > 0 ? `Edited ${edited.map((p) => basename(p)).slice(0, 3).join(", ")}` : "Ran validation commands",
+      type,
+      title: candidateTitle(type, edited),
       created_at: now,
       updated_at: now,
       source: "memory-context deterministic turn_end",
       confidence,
-      tags: ["session", ...edited.map((p) => basename(p)).slice(0, 5)],
+      tags: [type, ...edited.map((p) => basename(p)).slice(0, 5)],
       evidence: { prompt: turn.prompt.slice(0, 500), tools: [...new Set(turn.tools)], files_edited: edited, files_read: [...turn.filesRead], tests_run: tests },
       body: `Prompt: ${turn.prompt.slice(0, 300)}\n\nOutcome: ${text.slice(0, 700)}\n\nValidation: ${tests.length > 0 ? tests.join("; ") : "not run"}`,
     });
