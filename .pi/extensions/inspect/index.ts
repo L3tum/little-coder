@@ -349,7 +349,13 @@ async function processToggleRequest(req: ToggleRequest, sessionCwd: string): Pro
 	await sm.flush();
 }
 
+type SessionCaptureState = {
+	systemPromptOptions?: any;
+	providerPayload?: any;
+};
+
 let lastCtx: any = null;
+const captureStateBySession = new Map<string, SessionCaptureState>();
 let reqWatcher: FSWatcher | null = null;
 const recentlyHandled = new Set<string>();
 
@@ -407,7 +413,20 @@ function setupRequestWatcher(): void {
 	}
 }
 
-async function captureSnapshot(ctx: any): Promise<{ id: string; entry: IndexEntry } | null> {
+function stateForSession(id: string): SessionCaptureState {
+	let state = captureStateBySession.get(id);
+	if (!state) {
+		state = {};
+		captureStateBySession.set(id, state);
+	}
+	return state;
+}
+
+function clearSessionCaptureState(id: string): void {
+	captureStateBySession.set(id, {});
+}
+
+async function captureSnapshot(ctx: any, extra: { systemPromptOptions?: any; providerPayload?: any } = {}): Promise<{ id: string; entry: IndexEntry } | null> {
 	const sm = ctx.sessionManager;
 	const id = sm?.getSessionId?.();
 	if (!id) return null;
@@ -415,6 +434,11 @@ async function captureSnapshot(ctx: any): Promise<{ id: string; entry: IndexEntr
 	const name = sm?.getSessionName?.() ?? null;
 	const model = ctx.getModel?.()?.id ?? null;
 	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : null;
+	const sessionState = stateForSession(id);
+	if (extra.systemPromptOptions !== undefined) sessionState.systemPromptOptions = extra.systemPromptOptions;
+	if (extra.providerPayload !== undefined) sessionState.providerPayload = extra.providerPayload;
+	const systemPromptOptions = sessionState.systemPromptOptions ?? null;
+	const providerPayload = sessionState.providerPayload ?? null;
 	const pi = piRef as any;
 	const commands = typeof pi?.getCommands === "function" ? pi.getCommands() : [];
 	const tools = typeof pi?.getAllTools === "function" ? pi.getAllTools() : [];
@@ -430,7 +454,7 @@ async function captureSnapshot(ctx: any): Promise<{ id: string; entry: IndexEntr
 	}
 	const { disabled: disabledItems, pending: pendingItems } = await discoverFromPackages(cwd, activePaths);
 	const capturedAt = Date.now();
-	const snap = { sessionId: id, sessionName: name, cwd, model, systemPrompt, commands, tools, activeTools, disabledItems, pendingItems, capturedAt };
+	const snap = { sessionId: id, sessionName: name, cwd, model, systemPrompt, systemPromptOptions, providerPayload, commands, tools, activeTools, disabledItems, pendingItems, capturedAt };
 	try {
 		writeSnapshot(id, snap);
 		upsertIndex({ id, cwd, name, model, capturedAt });
@@ -525,13 +549,29 @@ export default function inspectExtension(pi: ExtensionAPI) {
 	setupRequestWatcher();
 	pi.on("session_start", async (_event, ctx) => {
 		lastCtx = ctx;
+		const id = ctx.sessionManager?.getSessionId?.();
+		if (id) clearSessionCaptureState(id);
 		await captureSnapshot(ctx);
 	});
 	// session_start fires before all extensions register their tools/commands.
 	// before_agent_start fires after the user's first prompt with the fully assembled state — re-capture then.
-	pi.on("before_agent_start", async (_event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		lastCtx = ctx;
+		const id = ctx.sessionManager?.getSessionId?.();
+		if (id) {
+			const state = stateForSession(id);
+			state.systemPromptOptions = (event as any).systemPromptOptions;
+			state.providerPayload = null;
+		}
 		await captureSnapshot(ctx);
+	});
+	pi.on("before_provider_request", (event, ctx) => {
+		lastCtx = ctx;
+		const id = ctx.sessionManager?.getSessionId?.();
+		if (id) stateForSession(id).providerPayload = (event as any).payload;
+		void captureSnapshot(ctx).catch((e: any) => {
+			console.warn(`pi-inspect: provider snapshot failed: ${e?.message ?? e}`);
+		});
 	});
 
 	pi.registerCommand("inspect", {
