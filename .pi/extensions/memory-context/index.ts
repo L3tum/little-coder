@@ -31,7 +31,12 @@ interface QueueItem {
   tags: string[];
   evidence: Record<string, unknown>;
   body: string;
+  match_count?: number;
+  last_matched_at?: string;
 }
+
+const AUTO_PROMOTE_MATCHES = 3;
+const AUTO_PROMOTE_SCORE = 4;
 
 const turn = {
   prompt: "",
@@ -85,16 +90,18 @@ function allNotes(): MemoryNote[] {
   return out;
 }
 
-function lexicalSearch(query: string, limit = 5): MemoryNote[] {
+function lexicalScore(query: string, haystack: string): number {
   const terms = words(query);
-  if (terms.length === 0) return [];
+  if (terms.length === 0) return 0;
+  const hay = haystack.toLowerCase();
+  let score = 0;
+  for (const term of terms) if (hay.includes(term)) score += term.includes("/") || term.includes(".") ? 3 : 1;
+  return score;
+}
+
+function lexicalSearch(query: string, limit = 5): MemoryNote[] {
   return allNotes()
-    .map((note) => {
-      const hay = `${note.title}\n${note.tags.join(" ")}\n${note.body}`.toLowerCase();
-      let score = 0;
-      for (const term of terms) if (hay.includes(term)) score += term.includes("/") || term.includes(".") ? 3 : 1;
-      return { note, score };
-    })
+    .map((note) => ({ note, score: lexicalScore(query, `${note.title}\n${note.tags.join(" ")}\n${note.body}`) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
@@ -143,10 +150,6 @@ function readQueue(): QueueItem[] {
 
 function writeQueue(items: QueueItem[]): void {
   writeFileSync(QUEUE_PATH, `${JSON.stringify(items, null, 2)}\n`);
-}
-
-function slugify(text: string): string {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "memory";
 }
 
 function noteDirForType(type: string): string {
@@ -203,19 +206,86 @@ function parseSelection(args: string, total: number): number[] {
   return [...selected].sort((a, b) => a - b);
 }
 
+function validateCandidate(item: QueueItem): { candidate: QueueItem | null; unsafe: boolean } {
+  const confidence = String(item.confidence ?? "").toLowerCase();
+  const body = String(item.body ?? "").trim();
+  const candidate = { ...item, confidence, body: body.length > 2400 ? body.slice(0, 2400) : body };
+  if (containsSecret(candidate)) return { candidate: null, unsafe: true };
+  if (confidence !== "high" && confidence !== "medium") return { candidate: null, unsafe: false };
+  if (!body) return { candidate: null, unsafe: false };
+  return { candidate, unsafe: false };
+}
+
 function queueCandidate(item: QueueItem): void {
   if (process.env.MEMORY_LEARNING === "off") return;
-  if (containsSecret(item)) return;
-  if (item.body.length > 2000) item.body = item.body.slice(0, 2000);
-  const confidence = item.confidence.toLowerCase();
-  if (confidence === "high") {
-    writeAcceptedMemory(item);
-    return;
-  }
-  if (confidence !== "medium") return;
+  const { candidate } = validateCandidate(item);
+  if (!candidate) return;
   const queue = readQueue();
-  queue.push(item);
+  queue.push({ ...candidate, match_count: candidate.match_count ?? 0 });
   writeQueue(queue.slice(-200));
+}
+
+function durableMatchText(item: QueueItem): string {
+  const evidence = item.evidence ?? {};
+  const fileTerms = [
+    ...((evidence.files_edited as string[] | undefined) ?? []),
+    ...((evidence.files_read as string[] | undefined) ?? []),
+  ].map((p) => basename(p)).join(" ");
+  const body = item.body
+    .split("\n")
+    .filter((line) => !/^#{1,3}\s+(summary|evidence|validation|files|follow-up)\b/i.test(line.trim()))
+    .filter((line) => !/^[-*]\s+(confidence|prompt|review for durability)\b/i.test(line.trim()))
+    .filter((line) => !/^(prompt|outcome|validation):/i.test(line.trim()))
+    .join("\n");
+  return `${item.title}\n${item.tags?.join(" ") ?? ""}\n${fileTerms}\n${body}`;
+}
+
+function hasSpecificMatch(query: string, item: QueueItem): boolean {
+  const queryLower = query.toLowerCase();
+  const hay = durableMatchText(item).toLowerCase();
+  const evidence = item.evidence ?? {};
+  const paths = [
+    ...((evidence.files_edited as string[] | undefined) ?? []),
+    ...((evidence.files_read as string[] | undefined) ?? []),
+  ];
+  const genericTags = new Set(["action", "context", "decision", "observation", "runbook", "session"]);
+  const specificTerms = [...(item.tags ?? []).filter((tag) => !genericTags.has(tag.toLowerCase())), ...paths.flatMap((p) => [p, basename(p)])]
+    .map((term) => term.toLowerCase())
+    .filter((term) => term.length >= 3);
+  if (specificTerms.some((term) => queryLower.includes(term))) return true;
+  return words(query).some((term) => (term.includes("/") || term.includes(".")) && hay.includes(term));
+}
+
+function trackShortTermMatches(query: string): string[] {
+  const queue = readQueue();
+  if (queue.length === 0) return [];
+  const now = new Date().toISOString();
+  const promoted: string[] = [];
+  const remaining: QueueItem[] = [];
+  let changed = false;
+  for (const item of queue) {
+    const score = lexicalScore(query, durableMatchText(item));
+    if (score >= AUTO_PROMOTE_SCORE && hasSpecificMatch(query, item)) {
+      item.match_count = (item.match_count ?? 0) + 1;
+      item.last_matched_at = now;
+      changed = true;
+    }
+    if ((item.match_count ?? 0) >= AUTO_PROMOTE_MATCHES) {
+      const { candidate, unsafe } = validateCandidate(item);
+      if (candidate) {
+        const path = writeAcceptedMemory({ ...candidate, source: `${candidate.source || "memory-context"}; auto-promoted after ${candidate.match_count} matches` });
+        promoted.push(path);
+      } else if (!unsafe) {
+        remaining.push({ ...item, match_count: AUTO_PROMOTE_MATCHES - 1 });
+      }
+      changed = true;
+    } else {
+      remaining.push(item);
+    }
+  }
+  if (promoted.length > 0) dedupeMemories(false);
+  if (changed || promoted.length > 0) writeQueue(remaining);
+  return promoted;
 }
 
 function finalText(message: any): string {
@@ -242,11 +312,26 @@ function candidateType(prompt: string, outcome: string, edited: string[], tests:
 
 function candidateTitle(type: string, edited: string[]): string {
   const files = edited.map((p) => basename(p)).slice(0, 3).join(", ");
-  if (type === "action") return files ? `Changed ${files}` : "Ran validation commands";
-  if (type === "decision") return files ? `Decision from ${files}` : "Captured decision";
-  if (type === "observation") return files ? `Observation from ${files}` : "Captured observation";
-  if (type === "runbook") return files ? `Runbook from ${files}` : "Captured runbook";
-  return files ? `Context from ${files}` : "Captured context";
+  if (type === "action") return files ? `Updated ${files}` : "Validated project behavior";
+  if (type === "decision") return files ? `Decision affecting ${files}` : "Captured durable decision";
+  if (type === "observation") return files ? `Observation about ${files}` : "Captured durable observation";
+  if (type === "runbook") return files ? `Runbook for ${files}` : "Captured reusable runbook";
+  return files ? `Context for ${files}` : "Captured durable context";
+}
+
+function formatCandidateBody(args: { prompt: string; outcome: string; edited: string[]; read: string[]; tests: string[]; confidence: string }): string {
+  const edited = args.edited.length ? args.edited.map((p) => `- ${p}`).join("\n") : "- none";
+  const read = args.read.length ? args.read.slice(0, 10).map((p) => `- ${p}`).join("\n") : "- none recorded";
+  const validation = args.tests.length ? args.tests.map((cmd) => `- ${cmd}`).join("\n") : "- not run";
+  const summary = args.outcome.replace(/\s+/g, " ").slice(0, 700);
+  const prompt = args.prompt.replace(/\s+/g, " ").slice(0, 350);
+  return [
+    `## Summary\n${summary}`,
+    `## Evidence\n- Prompt: ${prompt}\n- Confidence: ${args.confidence}`,
+    `## Validation\n${validation}`,
+    `## Files\nEdited:\n${edited}\n\nRead:\n${read}`,
+    "## Follow-up\n- Review for durability before accepting as long-term memory.",
+  ].join("\n\n");
 }
 
 function dedupeKey(note: MemoryNote): string {
@@ -275,6 +360,7 @@ export default function (pi: ExtensionAPI) {
     description: "Show queued local memory candidates; use /memory-review accept|deny [all|1,3|2-4]",
     handler: async (args, ctx) => {
       const argText = args?.trim() ?? "";
+      const dedupedBefore = dedupeMemories(false);
       const queue = readQueue();
       if (argText.startsWith("accept")) {
         const selected = parseSelection(argText.slice("accept".length), queue.length);
@@ -282,10 +368,27 @@ export default function (pi: ExtensionAPI) {
           if (ctx.hasUI) ctx.ui.notify("No queued memory candidates matched that selection.", "warning");
           return;
         }
-        const selectedSet = new Set(selected);
-        const written = selected.map((index) => writeAcceptedMemory(queue[index]));
-        writeQueue(queue.filter((_item, index) => !selectedSet.has(index)));
-        if (ctx.hasUI) ctx.ui.notify(`Accepted ${written.length} memory candidate(s):\n${written.map((path) => relative(process.cwd(), path)).join("\n")}`, "info");
+        const removeSet = new Set<number>();
+        const written: string[] = [];
+        let rejected = 0;
+        let unsafeRejected = 0;
+        for (const index of selected) {
+          const { candidate, unsafe } = validateCandidate(queue[index]);
+          if (!candidate) {
+            rejected += 1;
+            if (unsafe) {
+              unsafeRejected += 1;
+              removeSet.add(index);
+            }
+            continue;
+          }
+          written.push(writeAcceptedMemory(candidate));
+          removeSet.add(index);
+        }
+        writeQueue(queue.filter((_item, index) => !removeSet.has(index)));
+        const dedupedAfter = dedupeMemories(false);
+        const rejectedText = rejected ? `; rejected ${rejected} unsafe/invalid candidate(s)${unsafeRejected ? ` and removed ${unsafeRejected} unsafe` : "; invalid candidates remain queued for review/deny"}` : "";
+        if (ctx.hasUI) ctx.ui.notify(`Accepted ${written.length} memory candidate(s)${rejectedText}:\n${written.map((path) => relative(process.cwd(), path)).join("\n")}${dedupedAfter.length ? `\nDeduplicated ${dedupedAfter.length} long-term memor${dedupedAfter.length === 1 ? "y" : "ies"}.` : ""}`, "info");
         return;
       }
       if (argText.startsWith("deny")) {
@@ -299,8 +402,12 @@ export default function (pi: ExtensionAPI) {
         if (ctx.hasUI) ctx.ui.notify(`Denied ${selected.length} memory candidate(s).`, "info");
         return;
       }
-      const lines = queue.length === 0 ? "No queued memory candidates." : queue.map((item, i) => `${i + 1}. [${item.type}] ${item.title} (${item.confidence})\n   ${item.body.slice(0, 240)}`).join("\n");
-      if (ctx.hasUI) ctx.ui.notify(lines, "info");
+      const lines = queue.length === 0 ? "No queued memory candidates." : queue.map((item, i) => {
+        const matches = item.match_count ? `, matches: ${item.match_count}/${AUTO_PROMOTE_MATCHES}` : "";
+        return `${i + 1}. [${item.type}] ${item.title} (${item.confidence}${matches})\n${item.body.trim().split("\n").map((line) => `   ${line}`).join("\n")}`;
+      }).join("\n\n");
+      const prefix = dedupedBefore.length ? `Deduplicated ${dedupedBefore.length} long-term memor${dedupedBefore.length === 1 ? "y" : "ies"}.\n\n` : "";
+      if (ctx.hasUI) ctx.ui.notify(`${prefix}${lines}`, "info");
     },
   });
 
@@ -362,15 +469,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("memory-review", {
-    description: "List queued local memory candidates from .pi/memory/queue.json",
-    handler: async (_args, ctx) => {
-      const queue = readQueue();
-      const text = JSON.stringify(queue.slice(-20), null, 2);
-      if (ctx.hasUI) ctx.ui.notify(text, "info");
-    },
-  });
-
   pi.on("before_agent_start", async (event, ctx) => {
     ensureMemory();
     turn.prompt = String((event as any).prompt ?? "");
@@ -379,6 +477,7 @@ export default function (pi: ExtensionAPI) {
     turn.filesEdited.clear();
     turn.tests = [];
     const mode = (await resolveQmd()).mode;
+    const promoted = trackShortTermMatches(turn.prompt);
     const notes = lexicalSearch(turn.prompt, 5);
     const memory = buildMemoryBlock(notes, mode);
     const codebase = looksCodebaseIntent(turn.prompt) ? "\n## Codebase Prefetch\nCodebase intent detected. Use code_search first for repo understanding; prefetch is bounded and may be empty/stale.\n" : "";
@@ -386,6 +485,7 @@ export default function (pi: ExtensionAPI) {
     try {
       const parts: string[] = [];
       if (memory) parts.push(`+${notes.length} memories`);
+      if (promoted.length) parts.push(`auto-promoted ${promoted.length}`);
       if (codebase) parts.push("+codebase-prefetch");
       ctx.ui.notify(`memory-context: ${parts.join(" ")}`, "info");
     } catch {
@@ -427,7 +527,7 @@ export default function (pi: ExtensionAPI) {
       confidence,
       tags: [type, ...edited.map((p) => basename(p)).slice(0, 5)],
       evidence: { prompt: turn.prompt.slice(0, 500), tools: [...new Set(turn.tools)], files_edited: edited, files_read: [...turn.filesRead], tests_run: tests },
-      body: `Prompt: ${turn.prompt.slice(0, 300)}\n\nOutcome: ${text.slice(0, 700)}\n\nValidation: ${tests.length > 0 ? tests.join("; ") : "not run"}`,
+      body: formatCandidateBody({ prompt: turn.prompt, outcome: text, edited, read: [...turn.filesRead], tests, confidence }),
     });
   });
 }

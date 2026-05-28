@@ -1,7 +1,7 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { WelcomeHeader, discoverLoadedCounts, getRecentSessions } from "pi-powerline-footer/welcome.ts";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -47,6 +47,31 @@ function readVersion(): string {
 }
 
 const VERSION = readVersion();
+const MEMORY_DIR = join(process.cwd(), ".pi", "memory");
+const MEMORY_NOTE_DIRS = ["20-context", "40-actions", "50-decisions", "60-observations", "70-runbooks", "80-sessions"];
+
+function readMemoryCounts(): { pending: number; longTerm: number } {
+  let pending = 0;
+  let longTerm = 0;
+  try {
+    const queuePath = join(MEMORY_DIR, "queue.json");
+    if (existsSync(queuePath)) {
+      const parsed = JSON.parse(readFileSync(queuePath, "utf-8"));
+      pending = Array.isArray(parsed) ? parsed.length : 0;
+    }
+  } catch {
+    pending = 0;
+  }
+  try {
+    for (const dir of MEMORY_NOTE_DIRS) {
+      const full = join(MEMORY_DIR, dir);
+      if (existsSync(full)) longTerm += readdirSync(full).filter((file) => file.endsWith(".md")).length;
+    }
+  } catch {
+    longTerm = 0;
+  }
+  return { pending, longTerm };
+}
 
 function buildHeader(theme: Theme): string[] {
   // Brand-book "prompt lockup" (the variant the brand reserves for terminals
@@ -87,18 +112,27 @@ function buildHeader(theme: Theme): string[] {
     theme.fg("text", "/lsp-doctor"),
     theme.fg("muted", " to show recognized and usable LSP servers"),
   ].join("");
+  const memoryCounts = readMemoryCounts();
+  const memoryCta = memoryCounts.pending > 0
+    ? [sep, theme.fg("text", "/memory-review"), theme.fg("muted", " to triage pending memories")]
+    : [];
   const extensionLine5 = [
     theme.fg("muted", "Use "),
     theme.fg("text", "/codebase"),
     theme.fg("muted", " to inspect codebase-memory"),
     sep,
-    theme.fg("text", "/memory-review accept|deny"),
-    theme.fg("muted", " to triage learned memories"),
+    theme.fg("muted", "Memory: "),
+    theme.fg("text", `${memoryCounts.pending}`),
+    theme.fg("muted", " pending short-term"),
+    sep,
+    theme.fg("text", `${memoryCounts.longTerm}`),
+    theme.fg("muted", " long-term"),
+    ...memoryCta,
     sep,
     theme.fg("text", "/memory-list"),
     theme.fg("muted", " / "),
     theme.fg("text", "/memory-search"),
-    theme.fg("muted", " to browse them"),
+    theme.fg("muted", " to browse long-term memories"),
   ].join("");
   const issueAgentSection = [
     theme.bold("Issue agent:"),

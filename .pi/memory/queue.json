@@ -125,5 +125,35 @@
       ]
     },
     "body": "Prompt: If the path is outside the current working directory, it should ignore it!\n\nOutcome: Fixed.\n\nNow edit/write re-indexing:\n- Indexes `ctx.cwd` when the changed path is inside the current working directory.\n- Ignores the edit/write entirely when the changed path resolves outside `ctx.cwd`.\n- Still falls back to `ctx.cwd` if no path is present.\n\nValidation passed:\n- `npx vitest run .pi/extensions/codebase-memory-direct/index.test.ts .pi/extensions/edit-custom/index.test.ts`\n- `npx tsc --noEmit --pretty false`\n\nValidation: python3 - <<'PY'\nfrom pathlib import Path\np=Path('/home/tom/workspace/little-coder/.pi/extensions/codebase-memory-direct/index.ts')\ns=p.read_text()\ns=s.replace('import { dirname, isAbsolute, join, rel"
+  },
+  {
+    "type": "runbook",
+    "title": "Captured runbook",
+    "created_at": "2026-05-28T00:41:01.575Z",
+    "updated_at": "2026-05-28T00:41:01.575Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "medium",
+    "tags": [
+      "runbook"
+    ],
+    "evidence": {
+      "prompt": "Review the code please. Treat everthing as broken until verified working",
+      "tools": [
+        "skills",
+        "read",
+        "bash",
+        "lsp"
+      ],
+      "files_edited": [],
+      "files_read": [
+        "/home/tom/workspace/little-coder/skills/knowledge/code_review.md",
+        "/home/tom/workspace/little-coder/.pi/extensions/memory-context/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/branding/index.ts"
+      ],
+      "tests_run": [
+        "npm run typecheck"
+      ]
+    },
+    "body": "Prompt: Review the code please. Treat everthing as broken until verified working\n\nOutcome: ## Code review\n\nReviewed:\n- `.pi/extensions/memory-context/index.ts`\n- `.pi/extensions/branding/index.ts`\n\nVerified:\n- `npm run typecheck` passes.\n- LSP diagnostics: no diagnostics for both changed files.\n\n## Findings\n\n### 🟡 Major: Invalid auto-promoted candidates are silently deleted from the queue\n\nIn `trackShortTermMatches()`, once `match_count >= AUTO_PROMOTE_MATCHES`, the item is not pushed to `remaining`, even if `validateCandidate(item)` rejects it:\n\n```ts\nif ((item.match_count ?? 0) >= AUTO_PROMOTE_MATCHES) {\n  const candidate = validateCandidate(item);\n  if (candidate) {\n    writeAcceptedMemory(...)\n  }\n  changed = true;\n} else {\n  remaining.push(item);\n}\n```\n\nThis means a candidat\n\nValidation: npm run typecheck"
   }
 ]
