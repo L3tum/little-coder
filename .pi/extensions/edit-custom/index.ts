@@ -1,9 +1,7 @@
 import {
   createEditToolDefinition,
-  renderDiff,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer, Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 export function normalizeEditArguments(args: unknown): unknown {
@@ -61,14 +59,6 @@ export function normalizeEditArguments(args: unknown): unknown {
   };
 }
 
-function extractResultText(result: any): string {
-  return (Array.isArray(result?.content) ? result.content : [])
-    .filter((part: any) => part?.type === "text")
-    .map((part: any) => part.text || "")
-    .filter(Boolean)
-    .join("\n");
-}
-
 export default function (pi: ExtensionAPI) {
   const base = createEditToolDefinition(process.cwd());
 
@@ -124,27 +114,7 @@ export default function (pi: ExtensionAPI) {
     },
     renderResult(result: any, options: any, theme: any, context: any) {
       const normalizedArgs = normalizeEditArguments(context.args) as any;
-      const normalizedContext = { ...context, args: normalizedArgs };
-      const component = new Container();
-      const text = extractResultText(result);
-      const diff = !context.isError && typeof result?.details?.diff === "string" ? result.details.diff : undefined;
-
-      const baseComponent = base.renderResult?.(result, options, theme, normalizedContext);
-      if (context.isError) {
-        if (baseComponent) return baseComponent;
-        if (text) component.addChild(new Text(theme.fg("error", text), 0, 0));
-        return component;
-      }
-
-      if (text) component.addChild(new Text(theme.fg("toolOutput", text), 0, 0));
-      if (diff) {
-        if (text) component.addChild(new Spacer(1));
-        const rawPath = typeof normalizedArgs?.path === "string" ? normalizedArgs.path : undefined;
-        component.addChild(new Text(renderDiff(diff, { filePath: rawPath }), 1, 0));
-      } else if (baseComponent) {
-        return baseComponent;
-      }
-      return component;
+      return base.renderResult?.(result, options, theme, { ...context, args: normalizedArgs });
     },
   } as any);
 }
