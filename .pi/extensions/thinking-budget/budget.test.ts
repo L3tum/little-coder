@@ -91,9 +91,9 @@ function thinkingDelta(s: string) {
   return { assistantMessageEvent: { type: "thinking_delta", delta: s } };
 }
 
-// Always begin from a clean session — resets the extension's module-scoped
-// state so cases don't leak `forcedOff` / `priorLevel` into one another (and
-// mirrors real startup: session_start always precedes the first agent run).
+// Always begin from a clean session — resets the extension state so cases don't
+// leak `forcedOff` / `priorLevel` into one another (and mirrors real startup:
+// session_start always precedes the first agent run).
 async function startRun(h: ReturnType<typeof makeHarness>) {
   await fire(h.pi, "session_start", {}, h.ctx);
   await fire(h.pi, "agent_start", {}, h.ctx);
@@ -191,6 +191,26 @@ describe("thinking-budget recovery (issue #8)", () => {
     await fire(h.pi, "message_update", thinkingDelta("ok"), h.ctx);
     expect(h.level()).toBe("low");
     expect(h.calls).toEqual([]);
+  });
+
+  it("keeps forced-off recovery state isolated between extension instances", async () => {
+    const first = makeHarness("high");
+    const second = makeHarness("medium");
+    setupExtension(first.pi as any);
+    setupExtension(second.pi as any);
+
+    await startRun(first);
+    await fire(first.pi, "message_update", thinkingDelta("x".repeat(1000)), first.ctx);
+    expect(first.level()).toBe("off");
+
+    await fire(second.pi, "session_start", {}, second.ctx);
+    first.setLevelExternally("high");
+    await fire(first.pi, "agent_start", {}, first.ctx);
+    await fire(first.pi, "before_agent_start", { systemPromptOptions: {} }, first.ctx);
+    await fire(first.pi, "turn_start", {}, first.ctx);
+
+    expect(first.level()).toBe("off");
+    expect(second.level()).toBe("medium");
   });
 });
 

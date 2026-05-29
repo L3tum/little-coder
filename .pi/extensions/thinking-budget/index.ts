@@ -42,19 +42,6 @@ type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 const DEFAULT_BUDGET = 4096;
 
-// Per-run rolling state.
-let thinkingChars = 0;
-let budgetForTurn = DEFAULT_BUDGET;
-let aborted = false;
-// True from a budget breach until the next genuine user input. While set, we
-// re-assert thinking "off" at the start of every turn so the restart turn (and
-// any follow-on turns of the same task) can't silently come back with thinking
-// re-enabled by the post-replacement profile resolution.
-let forcedOff = false;
-// The thinking level in effect when we first forced it off, restored on the
-// next user input so a new task is unaffected.
-let priorLevel: ThinkingLevel | undefined;
-
 function charsToTokens(chars: number): number {
   // Matches local/context_manager.estimate_tokens (len/3.5)
   return Math.ceil(chars / 3.5);
@@ -80,6 +67,21 @@ function safeSetThinkingLevel(pi: ExtensionAPI, level: ThinkingLevel): void {
 }
 
 export default function (pi: ExtensionAPI) {
+  // Per-extension rolling state. Keep this inside setup so simultaneous Pi
+  // sessions in one process cannot clear or inherit each other's forced-off
+  // recovery window.
+  let thinkingChars = 0;
+  let budgetForTurn = DEFAULT_BUDGET;
+  let aborted = false;
+  // True from a budget breach until the next genuine user input. While set, we
+  // re-assert thinking "off" at the start of every turn so the restart turn (and
+  // any follow-on turns of the same task) can't silently come back with thinking
+  // re-enabled by the post-replacement profile resolution.
+  let forcedOff = false;
+  // The thinking level in effect when we first forced it off, restored on the
+  // next user input so a new task is unaffected.
+  let priorLevel: ThinkingLevel | undefined;
+
   // A new session (startup, /clear, resume, reload) is a clean slate — clear
   // everything, including the forced-off window. The recovery restart does NOT
   // fire session_start (it's a follow-up within the same session), so this

@@ -44,29 +44,48 @@ export function writeCache(latest, now = Date.now()) {
   }
 }
 
-// Compare semver strings. Only handles X.Y.Z[+pre]. Returns 1 if a > b,
-// -1 if a < b, 0 if equal. Pre-release suffixes are treated as < release.
+// Compare semver strings. Handles X.Y.Z[-pre][+build]. Returns 1 if a > b,
+// -1 if a < b, 0 if equal. Build metadata is ignored.
 export function compareSemver(a, b) {
   const parse = (v) => {
-    const [core, pre] = String(v).split("-", 2);
+    const withoutBuild = String(v).trim().replace(/^v/i, "").split("+", 1)[0];
+    const prereleaseAt = withoutBuild.indexOf("-");
+    const core = prereleaseAt === -1 ? withoutBuild : withoutBuild.slice(0, prereleaseAt);
+    const pre = prereleaseAt === -1 ? "" : withoutBuild.slice(prereleaseAt + 1);
     const parts = core.split(".").map((n) => parseInt(n, 10));
     return {
-      major: parts[0] || 0,
-      minor: parts[1] || 0,
-      patch: parts[2] || 0,
-      pre: pre || "",
+      major: Number.isFinite(parts[0]) ? parts[0] : 0,
+      minor: Number.isFinite(parts[1]) ? parts[1] : 0,
+      patch: Number.isFinite(parts[2]) ? parts[2] : 0,
+      pre: pre ? pre.split(".") : [],
     };
+  };
+  const compareNumber = (x, y) => (x === y ? 0 : x > y ? 1 : -1);
+  const comparePrerelease = (pa, pb) => {
+    if (pa.length === 0 && pb.length === 0) return 0;
+    if (pa.length === 0) return 1;
+    if (pb.length === 0) return -1;
+    const len = Math.max(pa.length, pb.length);
+    for (let i = 0; i < len; i++) {
+      if (pa[i] === undefined) return -1;
+      if (pb[i] === undefined) return 1;
+      if (pa[i] === pb[i]) continue;
+      const aNum = /^\d+$/.test(pa[i]);
+      const bNum = /^\d+$/.test(pb[i]);
+      if (aNum && bNum) return compareNumber(Number(pa[i]), Number(pb[i]));
+      if (aNum) return -1;
+      if (bNum) return 1;
+      return pa[i] > pb[i] ? 1 : -1;
+    }
+    return 0;
   };
   const pa = parse(a);
   const pb = parse(b);
-  if (pa.major !== pb.major) return pa.major > pb.major ? 1 : -1;
-  if (pa.minor !== pb.minor) return pa.minor > pb.minor ? 1 : -1;
-  if (pa.patch !== pb.patch) return pa.patch > pb.patch ? 1 : -1;
-  // Equal core: a release beats a pre-release.
-  if (pa.pre === pb.pre) return 0;
-  if (pa.pre === "") return 1;
-  if (pb.pre === "") return -1;
-  return pa.pre > pb.pre ? 1 : -1;
+  const core =
+    compareNumber(pa.major, pb.major) ||
+    compareNumber(pa.minor, pb.minor) ||
+    compareNumber(pa.patch, pb.patch);
+  return core || comparePrerelease(pa.pre, pb.pre);
 }
 
 async function fetchLatest() {

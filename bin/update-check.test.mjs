@@ -26,6 +26,17 @@ describe("compareSemver", () => {
     expect(compareSemver("1.0.0-rc.2", "1.0.0-rc.1")).toBe(1);
   });
 
+  it("orders pre-release identifiers by semver rules", () => {
+    expect(compareSemver("1.0.0-rc.10", "1.0.0-rc.2")).toBe(1);
+    expect(compareSemver("1.0.0-alpha.1", "1.0.0-alpha.beta")).toBe(-1);
+    expect(compareSemver("1.0.0-beta", "1.0.0-beta.2")).toBe(-1);
+    expect(compareSemver("1.0.0-beta.11", "1.0.0-beta.2")).toBe(1);
+  });
+
+  it("ignores build metadata and tolerates a leading v", () => {
+    expect(compareSemver("v1.2.3+build.5", "1.2.3+build.1")).toBe(0);
+  });
+
   it("tolerates short version strings", () => {
     expect(compareSemver("1.0", "1.0.0")).toBe(0);
     expect(compareSemver("1", "1.0.0")).toBe(0);
