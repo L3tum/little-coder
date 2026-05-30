@@ -376,5 +376,41 @@
     },
     "body": "## Summary\nFixed the diagnostics in `.pi/extensions/issue-agent/index.test.ts`. Cause: - Test helper calls were passing partial objects where the exported helper types expect full `Issue` objects. Fix: - Added a full reusable `issue` test object with `number`, `title`, `body`, `labels`, `url`, and `apiUrl`. - Used object spreads for label-specific cases. Validation passed: - `npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts` - `npm run typecheck`\n\n## Evidence\n- Prompt: More tests!\n- Confidence: high\n\n## Validation\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
+  },
+  {
+    "type": "action",
+    "title": "Updated index.ts",
+    "created_at": "2026-05-30T20:18:16.653Z",
+    "updated_at": "2026-05-30T20:18:16.653Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "action",
+      "index.ts"
+    ],
+    "evidence": {
+      "prompt": "The commands subagent-level and subagent-model should return the current values if no parameters or only one parameter were given",
+      "tools": [
+        "skills",
+        "code_search",
+        "read",
+        "glob",
+        "edit",
+        "bash"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
+        "/home/tom/workspace/little-coder",
+        "/home/tom/workspace/little-coder/package.json"
+      ],
+      "tests_run": [
+        "npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nImplemented. Changes: - `/subagent-level` with no args now reports the current level. - `/subagent-model` with no args now lists configured subagent models. - `/subagent-model <agent>` now reports the resolved current model for that agent. - `/subagent-model <agent> <model>` still sets the model. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: The commands subagent-level and subagent-model should return the current values if no parameters or only one parameter were given\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
   }
 ]

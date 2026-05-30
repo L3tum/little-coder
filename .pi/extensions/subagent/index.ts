@@ -55,7 +55,8 @@ function littleCoderSettings(): any { const s = readSettings(); s.little_coder ?
 function getSubagentLevel(): SubagentLevel { const raw = readSettings()?.little_coder?.subagent_level; return LEVELS.includes(raw) ? raw : "medium"; }
 function setSubagentLevel(level: SubagentLevel): void { const s = littleCoderSettings(); s.little_coder.subagent_level = level; writeSettings(s); }
 function setSubagentModel(agent: string, model: string): void { const s = littleCoderSettings(); s.little_coder.subagent_models ??= {}; s.little_coder.subagent_models[agent] = model; writeSettings(s); }
-function subagentModel(agent: string): string | undefined { return readSettings()?.little_coder?.subagent_models?.[agent] ?? readSettings()?.little_coder?.subagent_models?.all; }
+function getSubagentModels(): Record<string, string> { const raw = readSettings()?.little_coder?.subagent_models; return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}; }
+function subagentModel(agent: string): string | undefined { const models = getSubagentModels(); return models[agent] ?? models.all; }
 function steeringForLevel(level: SubagentLevel): string { return level === "off" ? "" : `\n\n## Delegation guidance\n\nSubagent level is ${level}. Use the subagent tool for well-scoped independent work when it improves reliability. Higher levels should delegate more proactively; minimal/low levels should delegate only when clearly useful.`; }
 
 // ---------------------------------------------------------------------------
@@ -451,9 +452,13 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("subagent-level", {
-    description: "Set subagent steering level: off|minimal|low|medium|high|xhigh",
+    description: "Show or set subagent steering level: /subagent-level [off|minimal|low|medium|high|xhigh]",
     handler: async (args, ctx) => {
       const level = String(args ?? "").trim() as SubagentLevel;
+      if (!level) {
+        ctx.ui?.notify?.(`Subagent level is ${getSubagentLevel()}.`, "info");
+        return;
+      }
       if (!LEVELS.includes(level)) {
         ctx.ui?.notify?.(`Usage: /subagent-level ${LEVELS.join("|")}`,
           "warning");
@@ -464,11 +469,22 @@ export default function (pi: ExtensionAPI) {
     },
   });
   pi.registerCommand("subagent-model", {
-    description: "Set model for one subagent: /subagent-model <agent> <model>",
+    description: "Show or set model for one subagent: /subagent-model [agent [model]]",
     handler: async (args, ctx) => {
       const [agent, ...rest] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
       const model = rest.join(" ");
-      if (!agent || !model) { ctx.ui?.notify?.("Usage: /subagent-model <agent> <model>", "warning"); return; }
+      if (!agent) {
+        const entries = Object.entries(getSubagentModels());
+        const summary = entries.length > 0
+          ? entries.map(([name, value]) => `${name}: ${value}`).join("\n")
+          : "No subagent models configured.";
+        ctx.ui?.notify?.(summary, "info");
+        return;
+      }
+      if (!model) {
+        ctx.ui?.notify?.(`Subagent model for ${agent} is ${subagentModel(agent) ?? "not configured"}.`, "info");
+        return;
+      }
       setSubagentModel(agent, model);
       ctx.ui?.notify?.(`Subagent model for ${agent} set to ${model}.`, "info");
     },
