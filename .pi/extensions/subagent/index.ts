@@ -57,6 +57,9 @@ function setSubagentLevel(level: SubagentLevel): void { const s = littleCoderSet
 function setSubagentModel(agent: string, model: string): void { const s = littleCoderSettings(); s.little_coder.subagent_models ??= {}; s.little_coder.subagent_models[agent] = model; writeSettings(s); }
 function getSubagentModels(): Record<string, string> { const raw = readSettings()?.little_coder?.subagent_models; return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}; }
 function subagentModel(agent: string): string | undefined { const models = getSubagentModels(); return models[agent] ?? models.all; }
+function setSubagentThinking(agent: string, thinking: SubagentLevel): void { const s = littleCoderSettings(); s.little_coder.subagent_thinking ??= {}; s.little_coder.subagent_thinking[agent] = thinking; writeSettings(s); }
+function getSubagentThinkingSettings(): Record<string, SubagentLevel> { const raw = readSettings()?.little_coder?.subagent_thinking; if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}; return Object.fromEntries(Object.entries(raw).filter((entry): entry is [string, SubagentLevel] => typeof entry[1] === "string" && LEVELS.includes(entry[1] as SubagentLevel))); }
+function subagentThinking(agent: string): SubagentLevel | undefined { const settings = getSubagentThinkingSettings(); return settings[agent] ?? settings.all; }
 function steeringForLevel(level: SubagentLevel): string { return level === "off" ? "" : `\n\n## Delegation guidance\n\nSubagent level is ${level}. Use the subagent tool for well-scoped independent work when it improves reliability. Higher levels should delegate more proactively; minimal/low levels should delegate only when clearly useful.`; }
 
 // ---------------------------------------------------------------------------
@@ -498,6 +501,39 @@ export default function (pi: ExtensionAPI) {
       ctx.ui?.notify?.(`Subagent model for all agents set to ${model}.`, "info");
     },
   });
+  pi.registerCommand("subagent-thinking", {
+    description: "Show or set thinking level for one subagent: /subagent-thinking [agent [off|minimal|low|medium|high|xhigh]]",
+    handler: async (args, ctx) => {
+      const [agent, thinking] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
+      if (!agent) {
+        const entries = Object.entries(getSubagentThinkingSettings());
+        const summary = entries.length > 0
+          ? entries.map(([name, value]) => `${name}: ${value}`).join("\n")
+          : "No subagent thinking levels configured.";
+        ctx.ui?.notify?.(summary, "info");
+        return;
+      }
+      if (!thinking) {
+        ctx.ui?.notify?.(`Subagent thinking level for ${agent} is ${subagentThinking(agent) ?? "not configured"}.`, "info");
+        return;
+      }
+      if (!LEVELS.includes(thinking as SubagentLevel)) {
+        ctx.ui?.notify?.(`Usage: /subagent-thinking <agent> ${LEVELS.join("|")}`, "warning");
+        return;
+      }
+      setSubagentThinking(agent, thinking as SubagentLevel);
+      ctx.ui?.notify?.(`Subagent thinking level for ${agent} set to ${thinking}.`, "info");
+    },
+  });
+  pi.registerCommand("subagent-thinking-all", {
+    description: "Set thinking level for all subagents: /subagent-thinking-all <off|minimal|low|medium|high|xhigh>",
+    handler: async (args, ctx) => {
+      const thinking = String(args ?? "").trim();
+      if (!LEVELS.includes(thinking as SubagentLevel)) { ctx.ui?.notify?.(`Usage: /subagent-thinking-all ${LEVELS.join("|")}`, "warning"); return; }
+      setSubagentThinking("all", thinking as SubagentLevel);
+      ctx.ui?.notify?.(`Subagent thinking level for all agents set to ${thinking}.`, "info");
+    },
+  });
 
   const depthConfig = resolveDelegationDepthConfig(pi);
   const configuredLevel = getSubagentLevel();
@@ -525,7 +561,7 @@ export default function (pi: ExtensionAPI) {
         ctx,
       );
     }
-    discoveredAgents = discovery.agents.map((agent) => ({ ...agent, model: subagentModel(agent.name) ?? agent.model }));
+    discoveredAgents = discovery.agents.map((agent) => ({ ...agent, model: subagentModel(agent.name) ?? agent.model, thinking: subagentThinking(agent.name) ?? agent.thinking }));
 
     if (ctx.hasUI) {
       if (starterDiscovery.createdAgentPath) {
@@ -624,7 +660,7 @@ ${steeringForLevel(configuredLevel)}
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
         const starterDiscovery = discoverAgentsWithStarter(ctx.cwd);
         const discovery = starterDiscovery.discovery;
-        const agents = discovery.agents.map((agent) => ({ ...agent, model: subagentModel(agent.name) ?? agent.model }));
+        const agents = discovery.agents.map((agent) => ({ ...agent, model: subagentModel(agent.name) ?? agent.model, thinking: subagentThinking(agent.name) ?? agent.thinking }));
 
         const delegationMode = parseDelegationMode(params.mode);
         if (!delegationMode) {

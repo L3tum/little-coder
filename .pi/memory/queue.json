@@ -412,5 +412,41 @@
     },
     "body": "## Summary\nImplemented. Changes: - `/subagent-level` with no args now reports the current level. - `/subagent-model` with no args now lists configured subagent models. - `/subagent-model <agent>` now reports the resolved current model for that agent. - `/subagent-model <agent> <model>` still sets the model. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: The commands subagent-level and subagent-model should return the current values if no parameters or only one parameter were given\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
+  },
+  {
+    "type": "runbook",
+    "title": "Runbook for index.ts",
+    "created_at": "2026-05-30T20:21:37.381Z",
+    "updated_at": "2026-05-30T20:21:37.381Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "runbook",
+      "index.ts"
+    ],
+    "evidence": {
+      "prompt": "Add a command that controls the thinking level for the subagent, similar to subagent-model, so that it can be controlled per agent",
+      "tools": [
+        "skills",
+        "code_search",
+        "read",
+        "bash",
+        "edit"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts"
+      ],
+      "tests_run": [
+        "npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nImplemented `/subagent-thinking`. Usage: - `/subagent-thinking` — list configured thinking overrides - `/subagent-thinking PLAN` — show current thinking override for `PLAN` - `/subagent-thinking PLAN high` — set thinking for `PLAN` - `/subagent-thinking-all low` — set default thinking for all subagents Allowed values: `off|minimal|low|medium|high|xhigh` Also wired the configured thinking level into subagent execution, overriding the agent’s built-in/frontmatter `thinking`. Validation: - `npm run typecheck` passed.\n\n## Evidence\n- Prompt: Add a command that controls the thinking level for the subagent, similar to subagent-model, so that it can be controlled per agent\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
   }
 ]
