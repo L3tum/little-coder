@@ -301,12 +301,12 @@ try {
 // Passing piEntry as an argv element (not a shell string) avoids any
 // shell-injection / space-in-path classes on every platform.
 const child = spawn(process.execPath, [piEntry, ...piArgs], {
-  stdio: issueAgentSubagent ? ["ignore", "pipe", "pipe"] : "inherit",
+  stdio: subagentMode ? ["ignore", "pipe", "pipe"] : "inherit",
   cwd: process.cwd(),
   env: process.env,
 });
 
-if (issueAgentSubagent) {
+if (subagentMode) {
   child.stdout?.on("data", (chunk) => process.stdout.write(chunk));
   child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
 }

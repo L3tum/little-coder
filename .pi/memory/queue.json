@@ -262,5 +262,50 @@
     },
     "body": "## Summary\nFixed `.pi/extensions/mode-commands/index.ts` diagnostics: - Removed unused `resolve` import. - Removed unused `file` variable.\n\n## Evidence\n- Prompt: Implement the plan as defined in @plans/subagent-and-plan-refactor.md\n- Confidence: high\n\n## Validation\n- npm test -- --runInBand\n- npm test\n- npm test\n- npm run typecheck\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.d.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.d.ts\n\nRead:\n- /home/tom/workspace/little-coder/plans/subagent-and-plan-refactor.md\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
+  },
+  {
+    "type": "runbook",
+    "title": "Runbook for little-coder.mjs, launcher-helpers.test.mjs, lsp-core.ts",
+    "created_at": "2026-05-30T09:12:54.294Z",
+    "updated_at": "2026-05-30T09:12:54.294Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "runbook",
+      "little-coder.mjs",
+      "launcher-helpers.test.mjs",
+      "lsp-core.ts",
+      "architecture.md"
+    ],
+    "evidence": {
+      "prompt": "Please fix the outlined issues. If you can add more tests as well, that would be great. The python benchmark can be ignored for now.",
+      "tools": [
+        "skills",
+        "read",
+        "edit",
+        "write",
+        "bash",
+        "EvidenceAdd"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
+        "/home/tom/workspace/little-coder/bin/launcher-helpers.test.mjs",
+        "/home/tom/workspace/little-coder/.pi/extensions/lsp/lsp-core.ts",
+        "/home/tom/workspace/little-coder/docs/architecture.md"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/bin/launcher-helpers.test.mjs",
+        "/home/tom/workspace/little-coder/.pi/extensions/lsp/lsp-core.ts",
+        "/home/tom/workspace/little-coder/.pi/memory/queue.json"
+      ],
+      "tests_run": [
+        "cat > docs/architecture.md <<'EOF'\n# Architecture Guide\n\nlittle-coder is a launcher and extension bundle for the `pi` coding-agent runtime. The historical pre-pi Python design is preserved in Git hist",
+        "npm test",
+        "npm run typecheck && node bin/little-coder.mjs --help",
+        "npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nImplemented the reviewed fixes. ### Changed - Fixed launcher crash: - Replaced undefined `issueAgentSubagent` usage with existing `subagentMode`. - Added launcher smoke coverage: - `bin/launcher-helpers.test.mjs` now runs `node bin/little-coder.mjs --help` and asserts it exits successfully without `ReferenceError`. - Standardized helper tests to use `subagentMode`. - Removed unused `PublishDiagnosticsNotification` import from `lsp-core.ts`. - Replaced stale `docs/architecture.md` with current pi/TypeScript architecture documentation. - Ignored Python benchmark setup as requested. ### Validation - `npm test` ✅ - 26 passed, 1 skipped - 285 tests passed, 3 skipped - `npm run typecheck` ✅ - `nod\n\n## Evidence\n- Prompt: Please fix the outlined issues. If you can add more tests as well, that would be great. The python benchmark can be ignored for now.\n- Confidence: high\n\n## Validation\n- cat > docs/architecture.md <<'EOF'\n# Architecture Guide\n\nlittle-coder is a launcher and extension bundle for the `pi` coding-agent runtime. The historical pre-pi Python design is preserved in Git hist\n- npm test\n- npm run typecheck && node bin/little-coder.mjs --help\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/bin/launcher-helpers.test.mjs\n- /home/tom/workspace/little-coder/.pi/extensions/lsp/lsp-core.ts\n- /home/tom/workspace/little-coder/docs/architecture.md\n\nRead:\n- /home/tom/workspace/little-coder/bin/launcher-helpers.test.mjs\n- /home/tom/workspace/little-coder/.pi/extensions/lsp/lsp-core.ts\n- /home/tom/workspace/little-coder/.pi/memory/queue.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
   }
 ]

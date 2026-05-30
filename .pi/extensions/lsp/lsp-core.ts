@@ -19,7 +19,6 @@ import {
   DidChangeTextDocumentNotification,
   DidCloseTextDocumentNotification,
   DidSaveTextDocumentNotification,
-  PublishDiagnosticsNotification,
   DocumentDiagnosticRequest,
   WorkspaceDiagnosticRequest,
   DefinitionRequest,
