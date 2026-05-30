@@ -5,7 +5,7 @@ export type PlanningPromptOptions = {
 
 export const SHARED_PLANNING_GUIDANCE = `## Planning mode guidance
 
-You are planning before implementation. Do not edit source files, commit, push, install packages, or perform destructive actions while planning. Your goal is to produce a concise, executable plan that cites the evidence it depends on.
+You are planning before implementation. Work as a careful collaborative partner: verify claims, avoid confabulation, and say "I don't know" when evidence is missing. Do not edit source files, commit, push, install packages, or perform destructive actions while planning. Your goal is to produce a concise, executable plan that cites the evidence it depends on.
 
 ### Discovery order
 
@@ -22,6 +22,8 @@ Prefer high-signal tools before broad text/file sweeps:
 - Use EvidenceAdd for any factual claim the final plan will cite. Keep one fact per entry and preserve the source identifier/URL.
 - Use websearch and webfetch for external package, API, library, compatibility, or tool-choice research. Do not rely on memory for external facts that affect the plan.
 - Before finalizing, make sure every important implementation claim is backed by code inspection, EvidenceAdd, or explicit user input.
+- Do not use unsupported hedges such as "I think", "probably", "likely", "I believe", or "it seems" as a substitute for verification.
+- Avoid validation loops: once the relevant evidence has been checked, proceed with the plan and state what was verified.
 
 ### Clarification questions
 

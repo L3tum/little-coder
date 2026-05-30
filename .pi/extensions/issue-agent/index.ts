@@ -7,7 +7,10 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { planningModePrompt } from "../plan-mode/planning-prompt.js";
+import { modePrompt } from "../mode-commands/mode-prompts.js";
+import type { AgentConfig } from "../subagent/agents.js";
+import { runAgent as runSubagentProcess } from "../subagent/runner.js";
+import { getFinalOutput } from "../subagent/types.js";
 
 const STATES = ["PLANNING", "WAITING_FOR_FEEDBACK", "EXECUTING", "REQUESTING_REVIEW", "WAITING_FOR_REVIEW", "PR_PENDING"] as const;
 type AiState = typeof STATES[number];
@@ -466,13 +469,13 @@ function issuePrompt(state: AiState, repo: string, issue: Issue, dir: string, mo
   const header = `Repo: ${repo}\nIssue: #${issue.number} ${issue.title}\nBranch: ${branchName(issue)}\nCheckout: ${dir}\nPlanning model: ${models.planning ?? "default"}\nExecution model: ${models.execution ?? "default"}\nFallback models: ${models.fallback.join(", ") || "none"}\nThinking level: ${thinkingLevel ?? "current setting"}\n\nIssue body:\n${issue.body ?? ""}${autoresearch}`;
   if (state === "PLANNING") {
     const answerBlock = answerContext ? `\n\nANSWER TO PRIOR CLARIFICATION\nPrior question/context:\n${answerContext.ask.context}\n\nAnswer:\n${answerContext.answer}` : "";
-    return `ISSUE AGENT PLANNING TASK\n${header}${answerBlock}\n\n${planningModePrompt({ mode: "issue-agent" })}\n\nInspect the checkout and produce an approved-work plan. Do not edit files, commit, push, or open a PR.`;
+    return `ISSUE AGENT PLANNING TASK\n${header}${answerBlock}\n\n${modePrompt("PLAN", { issueAgent: true })}\n\nInspect the checkout and produce an approved-work plan. Do not edit files, commit, push, or open a PR.`;
   }
-  return `ISSUE AGENT EXECUTION TASK\n${header}\n\nExecute the approved plan for this issue in the checkout. Make the necessary code changes and run appropriate checks. When complete, call issueAgentDone with a concise PR-ready summary of changes, checks run, and risks/follow-ups. If no changes are needed, still call issueAgentDone and explain why. The harness requires this tool call.`;
+  return `ISSUE AGENT EXECUTION TASK\n${header}\n\n${modePrompt("EXECUTION")}\n\nExecute the approved plan for this issue in the checkout. Make the necessary code changes and run appropriate checks. When complete, call issueAgentDone with a concise PR-ready summary of changes, checks run, and risks/follow-ups. If no changes are needed, still call issueAgentDone and explain why. The harness requires this tool call.`;
 }
 
 function reviewPrompt(repo: string, pr: PullRequestItem, dir: string): string {
-  return `ISSUE AGENT AI-REVIEW TASK\nRepo: ${repo}\nPull request: #${pr.number} ${pr.title}\nBranch: ${pr.head}\nBase: ${pr.base}\nCheckout: ${dir}\n\nPR body:\n${pr.body ?? ""}\n\nReview this PR using the code-review skill/rubric. Gather context from the checkout and inspect the diff with commands such as git diff origin/${pr.base}...HEAD. Post no comments yourself. When done, call issueAgentDone with review text that begins exactly with one of these machine-readable verdict lines followed by a blank line and the human-readable review:\nverdict: approve\nverdict: comment\nverdict: request_changes\n\nUse request_changes only for blocking defects that require rework. The harness requires this tool call; keep working until you call it.`;
+  return `ISSUE AGENT AI-REVIEW TASK\nRepo: ${repo}\nPull request: #${pr.number} ${pr.title}\nBranch: ${pr.head}\nBase: ${pr.base}\nCheckout: ${dir}\n\nPR body:\n${pr.body ?? ""}\n\n${modePrompt("REVIEW")}\n\nReview this PR using the code-review skill/rubric. Gather context from the checkout and inspect the diff with commands such as git diff origin/${pr.base}...HEAD. Post no comments yourself. When done, call issueAgentDone with review text that begins exactly with one of these machine-readable verdict lines followed by a blank line and the human-readable review:\nverdict: approve\nverdict: comment\nverdict: request_changes\n\nUse request_changes only for blocking defects that require rework. The harness requires this tool call; keep working until you call it.`;
 }
 
 function reworkPrompt(repo: string, pr: PullRequestItem, dir: string, reviewText: string): string {
@@ -526,33 +529,72 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
   mkdirSync(markerDir, { recursive: true });
   const marker = join(markerDir, `${process.pid}-${Date.now()}.json`);
   rmSync(marker, { force: true });
-  const subAgent = subAgentCommand();
-  const args = [...subAgent.prefix, "--mode", "json", "--no-session", ...(model ? ["--model", model] : []), ...(thinkingLevel ? ["--thinking", thinkingLevel] : []), "-p", prompt];
-  const child = spawn(subAgent.command, args, { cwd: dir, env: { ...process.env, ISSUE_AGENT_DONE_FILE: marker, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", LITTLE_CODER_NO_UPDATE_CHECK: "1", LITTLE_CODER_SUBAGENT: "1", CI: "1" }, stdio: ["ignore", "pipe", "pipe"] });
-  activeSubAgent = {
-    kill: () => {
-      try { child.kill("SIGTERM"); } catch {}
-      setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5000).unref();
+  if (process.env.ISSUE_AGENT_LITTLE_CODER_BIN) {
+    const subAgent = subAgentCommand();
+    const args = [...subAgent.prefix, "--mode", "json", "--no-session", ...(model ? ["--model", model] : []), ...(thinkingLevel ? ["--thinking", thinkingLevel] : []), "-p", prompt];
+    const child = spawn(subAgent.command, args, { cwd: dir, env: { ...process.env, ISSUE_AGENT_DONE_FILE: marker, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", LITTLE_CODER_NO_UPDATE_CHECK: "1", LITTLE_CODER_SUBAGENT: "1", CI: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    activeSubAgent = { kill: () => { try { child.kill("SIGTERM"); } catch {} setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5000).unref(); } };
+    let output = "";
+    let stderr = "";
+    let stdoutBuffer = "";
+    const seenAssistantText = new Set<string>();
+    const flushStdout = (text: string) => {
+      stdoutBuffer += text;
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? "";
+      for (const line of lines.filter(Boolean)) output = handleSubAgentJsonLine(line, emit, seenAssistantText) ?? output;
+    };
+    child.stdout.on("data", (chunk) => flushStdout(String(chunk)));
+    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    const code = await new Promise<number | null>((resolve) => {
+      child.on("error", (err) => { stderr += err.message; resolve(-1); });
+      child.on("close", (closeCode) => resolve(closeCode));
+    });
+    activeSubAgent = undefined;
+    if (stdoutBuffer.trim()) output = handleSubAgentJsonLine(stdoutBuffer.trim(), emit, seenAssistantText) ?? output;
+    if (existsSync(marker) && activeWork) {
+      try { const data = JSON.parse(readFileSync(marker, "utf-8")); if (data?.ask) activeWork.askRequest = data.ask; else activeWork.doneText = data?.text ?? ""; }
+      catch { activeWork.doneText = readFileSync(marker, "utf-8"); }
+      rmSync(marker, { force: true });
+    }
+    if (stopRequested) throw new Error("sub-agent stopped by request");
+    if (code !== 0) {
+      for (const line of stderr.split(/\r?\n/).filter(Boolean)) emit(`sub-agent stderr: ${line}`, "warning");
+      throw new Error(`sub-agent exited with code ${code}\n${stderr.trim() || output.trim()}`);
+    }
+    return output.trim();
+  }
+  const controller = new AbortController();
+  activeSubAgent = { kill: () => controller.abort() };
+  const agent: AgentConfig = {
+    name: "issue-agent",
+    description: "Issue-agent isolated worker",
+    model,
+    thinking: thinkingLevel,
+    systemPrompt: "",
+    source: "user",
+    filePath: "little-coder:issue-agent",
+  };
+  const result = await runSubagentProcess({
+    cwd: dir,
+    agents: [agent],
+    agentName: "issue-agent",
+    task: prompt,
+    delegationMode: "spawn",
+    parentDepth: 0,
+    parentAgentStack: [],
+    maxDepth: 3,
+    preventCycles: true,
+    signal: controller.signal,
+    env: { ISSUE_AGENT_DONE_FILE: marker, PI_SKIP_VERSION_CHECK: "1", LITTLE_CODER_NO_UPDATE_CHECK: "1", CI: "1" },
+    makeDetails: (results) => ({ mode: "single", delegationMode: "spawn", projectAgentsDir: null, results }),
+    onUpdate: (partial) => {
+      const part = partial.content?.find((c: any) => c.type === "text") as any;
+      const text = part?.text;
+      if (text) emit(`sub-agent assistant:\n${text}`, "info");
     },
-  };
-  let output = "";
-  let stderr = "";
-  let stdoutBuffer = "";
-  const seenAssistantText = new Set<string>();
-  const flushStdout = (text: string) => {
-    stdoutBuffer += text;
-    const lines = stdoutBuffer.split(/\r?\n/);
-    stdoutBuffer = lines.pop() ?? "";
-    for (const line of lines.filter(Boolean)) output = handleSubAgentJsonLine(line, emit, seenAssistantText) ?? output;
-  };
-  child.stdout.on("data", (chunk) => flushStdout(String(chunk)));
-  child.stderr.on("data", (chunk) => { stderr += String(chunk); });
-  const code = await new Promise<number | null>((resolve) => {
-    child.on("error", (err) => { stderr += err.message; resolve(-1); });
-    child.on("close", (closeCode) => resolve(closeCode));
   });
   activeSubAgent = undefined;
-  if (stdoutBuffer.trim()) output = handleSubAgentJsonLine(stdoutBuffer.trim(), emit, seenAssistantText) ?? output;
   if (existsSync(marker) && activeWork) {
     try {
       const data = JSON.parse(readFileSync(marker, "utf-8"));
@@ -564,11 +606,12 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
     rmSync(marker, { force: true });
   }
   if (stopRequested) throw new Error("sub-agent stopped by request");
-  if (code !== 0) {
-    for (const line of stderr.split(/\r?\n/).filter(Boolean)) emit(`sub-agent stderr: ${line}`, "warning");
-    throw new Error(`sub-agent exited with code ${code}\n${stderr.trim() || output.trim()}`);
+  const output = getFinalOutput(result.messages).trim();
+  if (result.exitCode !== 0) {
+    for (const line of result.stderr.split(/\r?\n/).filter(Boolean)) emit(`sub-agent stderr: ${line}`, "warning");
+    throw new Error(`sub-agent exited with code ${result.exitCode}\n${result.stderr.trim() || output}`);
   }
-  return output.trim();
+  return output;
 }
 
 function validMarker(kind: RequiredMarker, doneText?: string): boolean {
