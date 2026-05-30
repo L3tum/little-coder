@@ -105,6 +105,11 @@ export const PATCHES = [
     const text = JSON.stringify(s.systemPromptOptions, null, 2);
     items.push({ kind: 'context', id: 'context:system-prompt-options', name: 'structured prompt inputs', source: ` + "`${text.length} chars`" + String.raw`, description: 'Structured inputs Pi used to build the system prompt: selected tools, snippets, context files, skills, guidelines.', chars: text.length, path: null, raw: { label: 'Structured system prompt inputs', systemPromptOptions: s.systemPromptOptions } });
   }
+  if (Array.isArray(s.sessionEntries)) {
+    const text = JSON.stringify(s.sessionEntries, null, 2);
+    const count = s.sessionEntries.length;
+    items.push({ kind: 'context', id: 'context:session-entries', name: 'current session transcript', source: ` + "`${count} entries · ${text.length} chars`" + String.raw`, description: 'Persisted conversation entries for this session, including user/assistant/tool/custom entries recorded so far.', chars: text.length, path: null, raw: { label: 'Current session transcript (persisted session entries)', sessionEntries: s.sessionEntries } });
+  }
   if (s.providerPayload) {
     const text = JSON.stringify(s.providerPayload, null, 2);
     items.push({ kind: 'context', id: 'context:provider-payload', name: 'current provider request payload', source: ` + "`${text.length} chars`" + String.raw`, description: 'Closest view of the current request sent to the model, including messages and active tool schemas when the provider includes them.', chars: text.length, path: null, raw: { label: 'Current provider request payload (actual model context)', providerPayload: s.providerPayload } });

@@ -601,5 +601,49 @@
     },
     "body": "## Summary\nImplemented. Changes: - `/pi-insights` is now registered as `/insights`. - Generated reports are served at `http://localhost:5463`. - `/insights` now opens the HTTP URL in the browser instead of opening the raw HTML file. - The report server serves the latest `~/.pi/agent/usage-data/report.html`. - Updated the branding hint from `/pi-insights` to `/insights`. - Updated `scripts/patch-extension-notifications.mjs` so the node_modules patch persists after install. Validation: - Ran `node scripts/patch-extension-notifications.mjs` - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: The command \"/pi-insights\" currently generates a HTML file and that's it. I would like it to also start a webserver so that the HTML file is viewable in the browser, similar to what /inspect does. Also, it should just be /insights rather than /pi-insights as a command.\n- Confidence: high\n\n## Validation\n- node scripts/patch-extension-notifications.mjs && npm run typecheck\n- npm run typecheck\n- node scripts/patch-extension-notifications.mjs && npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/node_modules/@observal/pi-insights/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/usage-dashboard/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/package.json\n- /home/tom/workspace/little-coder/node_modules/@observal/pi-insights\n- /home/tom/workspace/little-coder/node_modules/@observal/pi-insights/index.ts\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
+  },
+  {
+    "type": "runbook",
+    "title": "Runbook for index.ts, patch-extension-notifications.mjs",
+    "created_at": "2026-05-30T20:58:51.461Z",
+    "updated_at": "2026-05-30T20:58:51.461Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "runbook",
+      "index.ts",
+      "patch-extension-notifications.mjs"
+    ],
+    "evidence": {
+      "prompt": "The /inspect command report right now only contains the system prompt. If the conversation already has a few messages, it will still only contain the system prompt.",
+      "tools": [
+        "skills",
+        "code_search",
+        "read",
+        "bash",
+        "glob",
+        "edit",
+        "lsp"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts",
+        "/home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts",
+        "/home/tom/workspace/little-coder/node_modules/@earendil-works/pi-coding-agent/examples/extensions/space-invaders.ts",
+        "/home/tom/workspace/little-coder/node_modules/pi-inspect/public/app.js",
+        "/home/tom/workspace/little-coder/.pi/settings.json",
+        "/home/tom/workspace/little-coder/.pi",
+        "/home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs",
+        "/home/tom/workspace/little-coder/.pi/memory/queue.json"
+      ],
+      "tests_run": [
+        "npm run typecheck && node scripts/patch-extension-notifications.mjs",
+        "npx tsc --noEmit"
+      ]
+    },
+    "body": "## Summary\nFixed `/inspect` to include the current conversation/session entries, not just the system prompt. Changes: - Snapshot now captures `sessionManager.getEntries()` as `sessionEntries`. - Inspect dashboard now shows a new context item: **current session transcript**. - Updated the postinstall patch so the pi-inspect browser UI keeps this behavior after reinstall. - Applied the patch to the current `node_modules/pi-inspect` app. Validation: - Ran `npx tsc --noEmit` successfully.\n\n## Evidence\n- Prompt: The /inspect command report right now only contains the system prompt. If the conversation already has a few messages, it will still only contain the system prompt.\n- Confidence: high\n\n## Validation\n- npm run typecheck && node scripts/patch-extension-notifications.mjs\n- npx tsc --noEmit\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder/node_modules/@earendil-works/pi-coding-agent/examples/extensions/space-invaders.ts\n- /home/tom/workspace/little-coder/node_modules/pi-inspect/public/app.js\n- /home/tom/workspace/little-coder/.pi/settings.json\n- /home/tom/workspace/little-coder/.pi\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/little-coder/.pi/memory/queue.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
   }
 ]

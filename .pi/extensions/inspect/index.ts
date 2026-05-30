@@ -435,6 +435,7 @@ async function captureSnapshot(ctx: any, extra: { systemPromptOptions?: any; pro
 	const name = sm?.getSessionName?.() ?? null;
 	const model = ctx.getModel?.()?.id ?? null;
 	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : null;
+	const sessionEntries = typeof sm?.getEntries === "function" ? sm.getEntries() : null;
 	const sessionState = stateForSession(id);
 	if (extra.systemPromptOptions !== undefined) sessionState.systemPromptOptions = extra.systemPromptOptions;
 	if (extra.providerPayload !== undefined) sessionState.providerPayload = extra.providerPayload;
@@ -455,7 +456,7 @@ async function captureSnapshot(ctx: any, extra: { systemPromptOptions?: any; pro
 	}
 	const { disabled: disabledItems, pending: pendingItems } = await discoverFromPackages(cwd, activePaths);
 	const capturedAt = Date.now();
-	const snap = { sessionId: id, sessionName: name, cwd, model, systemPrompt, systemPromptOptions, providerPayload, commands, tools, activeTools, disabledItems, pendingItems, capturedAt };
+	const snap = { sessionId: id, sessionName: name, cwd, model, systemPrompt, systemPromptOptions, providerPayload, sessionEntries, commands, tools, activeTools, disabledItems, pendingItems, capturedAt };
 	try {
 		writeSnapshot(id, snap);
 		upsertIndex({ id, cwd, name, model, capturedAt });
