@@ -191,8 +191,8 @@
       ]
     },
     "body": "## Summary\nImplemented the plan’s main refactor pieces. Summary: - Added vendored `.pi/extensions/subagent/` based on `pi-subagent`. - Added programmatic PLAN / EXECUTION / REVIEW / EXPLORE subagents using shared mode prompts. - Added `/subagent-level`, `/subagent-model`, `/subagent-model-all`. - Added `.pi/extensions/mode-commands/` with `/plan`, `/execute`, `/review`. - Added shared `.pi/extensions/mode-commands/mode-prompts.ts`. - Refactored issue-agent prompts to use shared mode prompts. - Refactored issue-agent subagent execution to use the subagent runner directly in normal operation, while preserving the old test override path. - Updated launcher behavior to treat `LITTLE_CODER_SUBAGENT` / `PI_S\n\n## Evidence\n- Prompt: Implement the plan as defined in @plans/subagent-and-plan-refactor.md\n- Confidence: high\n\n## Validation\n- npm test -- --runInBand\n- npm test\n- npm test\n- npm run typecheck\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.d.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.d.ts\n\nRead:\n- /home/tom/workspace/little-coder/plans/subagent-and-plan-refactor.md\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/litt",
-    "match_count": 1,
-    "last_matched_at": "2026-05-30T09:19:28.425Z"
+    "match_count": 2,
+    "last_matched_at": "2026-05-30T09:46:04.813Z"
   },
   {
     "type": "action",
@@ -262,8 +262,8 @@
       ]
     },
     "body": "## Summary\nFixed `.pi/extensions/mode-commands/index.ts` diagnostics: - Removed unused `resolve` import. - Removed unused `file` variable.\n\n## Evidence\n- Prompt: Implement the plan as defined in @plans/subagent-and-plan-refactor.md\n- Confidence: high\n\n## Validation\n- npm test -- --runInBand\n- npm test\n- npm test\n- npm run typecheck\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.d.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.d.ts\n\nRead:\n- /home/tom/workspace/little-coder/plans/subagent-and-plan-refactor.md\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 1,
-    "last_matched_at": "2026-05-30T09:19:28.425Z"
+    "match_count": 2,
+    "last_matched_at": "2026-05-30T09:46:04.813Z"
   },
   {
     "type": "runbook",
@@ -348,7 +348,8 @@
       ]
     },
     "body": "## Summary\nImplemented. Changes: - Added shared `autoresearchModePrompt()` in `.pi/extensions/mode-commands/mode-prompts.ts`. - Added `AUTORESEARCH` to `ModeName` and `modePrompt()`. - Added `/autoresearch` command in `.pi/extensions/mode-commands/index.ts`. - Updated `.pi/extensions/issue-agent/index.ts` to reuse the shared autoresearch prompt instead of maintaining its own inline copy. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: In addition to the other modes via @.pi/extensions/mode-commands/, also add a mode for the autoresearch feature in @.pi/extensions/issue-agent/ and make both re-use the same stuff like with the other commands\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 0
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T09:46:04.813Z"
   },
   {
     "type": "runbook",
@@ -382,6 +383,48 @@
       ]
     },
     "body": "## Summary\nImplemented. Updates in `.pi/extensions/branding/index.ts`: - Added branding lines for: - `/plan` - `/execute` - `/review` - `/autoresearch` - Split existing command mentions so each line has only one slash command. - Shortened longer issue-agent lines to better fit ~80-column terminals. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: Please add the various commands to the branding message under @.pi/extensions/branding/ as well. Also check that only one command is mentioned per line so that it doesn't overflow a ~80 character wide terminal\n- Confidence: high\n\n## Validation\n- npm run typecheck\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
+  },
+  {
+    "type": "decision",
+    "title": "Decision affecting mode-prompts.ts, AGENTS.md",
+    "created_at": "2026-05-30T09:47:29.492Z",
+    "updated_at": "2026-05-30T09:47:29.492Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "decision",
+      "mode-prompts.ts",
+      "AGENTS.md"
+    ],
+    "evidence": {
+      "prompt": "Please enhance the prompts under @.pi/extensions/mode-commands/mode-prompts.ts as well as the system prompt under @AGENTS.md more towards gentle coding (https://github.com/OttoRenner/Gentle-Coding). Do an analysis and also search online to see if it would make sense to add a tool definition that the agent can use to basically say \"I don't know\" or \"I can't\"",
+      "tools": [
+        "skills",
+        "enableBrowserTools",
+        "code_search",
+        "webfetch",
+        "EvidenceAdd",
+        "read",
+        "edit",
+        "websearch",
+        "bash"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
+        "/home/tom/workspace/little-coder/AGENTS.md"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
+        "/home/tom/workspace/little-coder/AGENTS.md",
+        "/home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts",
+        "/home/tom/workspace/little-coder/package.json"
+      ],
+      "tests_run": [
+        "npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nImplemented the gentle-coding prompt updates. Changed: - `.pi/extensions/mode-commands/mode-prompts.ts` - Execution mode now frames work as collaborative/iterative, permits stopping on contradictions/missing context, and avoids forced progress. - Review mode now explicitly allows “unknown” when evidence is incomplete. - Explore mode now says to report insufficient repo evidence instead of guessing. - Autoresearch mode now stops cleanly on noisy metrics/stalled searches/contradictory constraints instead of looping. - `AGENTS.md` - Added gentle framing to capabilities/autonomy. - Added explicit permission for dead ends, missing variables, contradictory constraints, and bounded validation. - Re\n\n## Evidence\n- Prompt: Please enhance the prompts under @.pi/extensions/mode-commands/mode-prompts.ts as well as the system prompt under @AGENTS.md more towards gentle coding (https://github.com/OttoRenner/Gentle-Coding). Do an analysis and also search online to see if it would make sense to add a tool definition that the agent can use to basically say \"I don't know\" or \n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/AGENTS.md\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/AGENTS.md\n- /home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
   }
 ]
