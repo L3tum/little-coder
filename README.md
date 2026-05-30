@@ -73,6 +73,8 @@ In the TUI you can use `/tools` to list loaded tools and `/skills` to list avail
 
 Use `/plan` to enter browser-reviewed planning mode before implementation. The legacy `/plannotator` command is kept as a compatibility shim but `/plan` is canonical. See `docs/planning-mode.md` for the planning workflow, `ask_user` behavior, and issue-agent `/answer ...` clarification flow.
 
+little-coder also includes a local memory context extension. It stores reviewable Markdown memories under `.pi/memory/`, filters low-salience candidates, supports active-day expiration, and exposes commands such as `/memory-review`, `/memory-doctor`, `/memory-prune`, and `/memory-supersede`. See `docs/memory-context.md` for details.
+
 For local providers (llama.cpp, Ollama, LM Studio) pi expects *some* value in the API-key env even though local servers ignore it:
 
 ```bash

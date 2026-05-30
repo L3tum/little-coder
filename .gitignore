@@ -6,6 +6,8 @@ node_modules/
 .pi/sessions/
 .pi/auth.json
 .pi/memory/queue.json
+.pi/memory/rejections.json
+.pi/memory/state.json
 
 # Benchmark run artifacts
 benchmarks/tb_runs/
@@ -39,3 +41,4 @@ __pycache__/
 *.log
 debug_payload.json
 brainstorm_outputs/
+.pi/memory/supersedes.json
