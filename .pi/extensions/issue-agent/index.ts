@@ -709,9 +709,7 @@ async function queueIssue(pi: ExtensionAPI, ctx: any, repo: string, issue: Issue
   const requiredMarker: RequiredMarker = state === "PLANNING" ? "plan" : "done";
   activeWork = { repo, issue, cfg, dir, fallbackIndex: -1, kind: "issue", requiredMarker };
   const ar = autoresearchConfig(issue);
-  const autoresearch = isAutoresearch(issue)
-    ? `\n\nAUTORESEARCH MODE\nThis issue has an autoresearch label. Create or resume autoresearch.md, autoresearch.sh, autoresearch.checks.sh when useful, and autoresearch.jsonl in the checkout. Run bounded experiments only: max iterations ${ar.maxIterations ?? "from issue/config, otherwise choose a small explicit cap"}; metric ${ar.metric ?? "must be stated before experiments"}; direction ${ar.direction ?? "must be stated before experiments"}. The benchmark script must emit METRIC name=value. Keep/discard changes based on benchmark plus checks. Do not run destructive commands without the existing permission gate. When done, call issueAgentDone with a structured PR body: issue link, objective/metric, baseline, best result, confidence/noise note, kept/discarded experiments, files changed, checks run, risks/follow-ups.`
-    : "";
+  const autoresearch = isAutoresearch(issue) ? `\n\n${modePrompt("AUTORESEARCH", { autoresearch: ar })}` : "";
   const thinkingLevelOverride = state === "PLANNING" ? cfg.thinkingLevels.planning : state === "EXECUTING" ? cfg.thinkingLevels.execution : undefined;
   const thinkingLevel = thinkingLevelOf(issue.labels, thinkingLevelOverride);
   const answerContext = state === "PLANNING" ? latestIssueAgentAnswer(await listComments(repo, issue, cfg.token).catch(() => [])) : undefined;

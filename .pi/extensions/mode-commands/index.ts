@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { executionModePrompt, planModePrompt, reviewModePrompt } from "./mode-prompts.js";
+import { autoresearchModePrompt, executionModePrompt, planModePrompt, reviewModePrompt } from "./mode-prompts.js";
 
 function latestPlan(cwd: string): string | undefined {
   const dirs = [join(cwd, "plans"), cwd];
@@ -46,6 +46,13 @@ export default function (pi: ExtensionAPI) {
     description: "Enter read-only review mode",
     handler: async (_args, ctx) => {
       appendPrompt(ctx, reviewModePrompt());
+    },
+  });
+
+  pi.registerCommand("autoresearch", {
+    description: "Enter autoresearch mode",
+    handler: async (_args, ctx) => {
+      appendPrompt(ctx, autoresearchModePrompt());
     },
   });
 }
