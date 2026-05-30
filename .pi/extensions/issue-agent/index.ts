@@ -2,7 +2,7 @@
 // Adapted for little-coder: issue-backed Ralph harness (Forgejo/GitHub), not file-backed tasks.
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -11,6 +11,7 @@ import { modePrompt } from "../mode-commands/mode-prompts.js";
 import type { AgentConfig } from "../subagent/agents.js";
 import { runAgent as runSubagentProcess } from "../subagent/runner.js";
 import { getFinalOutput } from "../subagent/types.js";
+import { startSubprocess } from "../_shared/subprocess.js";
 
 const STATES = ["PLANNING", "WAITING_FOR_FEEDBACK", "EXECUTING", "REQUESTING_REVIEW", "WAITING_FOR_REVIEW", "PR_PENDING"] as const;
 type AiState = typeof STATES[number];
@@ -532,7 +533,7 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
   if (process.env.ISSUE_AGENT_LITTLE_CODER_BIN) {
     const subAgent = subAgentCommand();
     const args = [...subAgent.prefix, "--mode", "json", "--no-session", ...(model ? ["--model", model] : []), ...(thinkingLevel ? ["--thinking", thinkingLevel] : []), "-p", prompt];
-    const child = spawn(subAgent.command, args, { cwd: dir, env: { ...process.env, ISSUE_AGENT_DONE_FILE: marker, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", LITTLE_CODER_NO_UPDATE_CHECK: "1", LITTLE_CODER_SUBAGENT: "1", CI: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = startSubprocess(subAgent.command, args, { name: "issue-agent sub-agent", cwd: dir, env: { ...process.env, ISSUE_AGENT_DONE_FILE: marker, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1", LITTLE_CODER_NO_UPDATE_CHECK: "1", LITTLE_CODER_SUBAGENT: "1", CI: "1" }, stdio: ["ignore", "pipe", "pipe"] }).child;
     activeSubAgent = { kill: () => { try { child.kill("SIGTERM"); } catch {} setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 5000).unref(); } };
     let output = "";
     let stderr = "";
@@ -544,8 +545,8 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
       stdoutBuffer = lines.pop() ?? "";
       for (const line of lines.filter(Boolean)) output = handleSubAgentJsonLine(line, emit, seenAssistantText) ?? output;
     };
-    child.stdout.on("data", (chunk) => flushStdout(String(chunk)));
-    child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+    child.stdout!.on("data", (chunk) => flushStdout(String(chunk)));
+    child.stderr!.on("data", (chunk) => { stderr += String(chunk); });
     const code = await new Promise<number | null>((resolve) => {
       child.on("error", (err) => { stderr += err.message; resolve(-1); });
       child.on("close", (closeCode) => resolve(closeCode));

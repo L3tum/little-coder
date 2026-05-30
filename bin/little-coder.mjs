@@ -147,6 +147,7 @@ function bundledPackageArgs(pkgJson, { subagentMode = false } = {}) {
 // ---- 4. Auto-discover bundled extensions ----
 const rootPkgJson = readJson(join(pkgRoot, "package.json")) ?? {};
 const extDir = join(pkgRoot, ".pi", "extensions");
+const subprocessPreload = join(extDir, "_shared", "subprocess-preload.mjs");
 const rawUserArgs = process.argv.slice(2);
 const subagentMode = Boolean(process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH);
 const extArgs = discoverBundledExtensionArgs(extDir, { subagentMode, resolveExtensionEntry });
@@ -300,7 +301,8 @@ try {
 // pi inherits the exact runtime that already passed our >= 22.19.0 preflight.
 // Passing piEntry as an argv element (not a shell string) avoids any
 // shell-injection / space-in-path classes on every platform.
-const child = spawn(process.execPath, [piEntry, ...piArgs], {
+const nodeArgs = existsSync(subprocessPreload) ? ["--import", subprocessPreload, piEntry, ...piArgs] : [piEntry, ...piArgs];
+const child = spawn(process.execPath, nodeArgs, {
   stdio: subagentMode ? ["ignore", "pipe", "pipe"] : "inherit",
   cwd: process.cwd(),
   env: process.env,

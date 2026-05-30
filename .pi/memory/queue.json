@@ -253,8 +253,8 @@
       ]
     },
     "body": "## Summary\nImplemented the fixes. Changes: - Added saved project-agent trust: - Prompts at `session_start` when project-local agents are found. - Saves trusted project agent dirs in `~/.pi/agent/settings.json`. - Redacts project-agent descriptions in the system prompt until trusted. `efedca1`, `edb0212` - Fixed parallel subagent failures: - Parallel runs now return `isError: true` when any child result fails. `e5754e6` - Added tests: - Trust setting parsing/checking. - Project-agent description redaction. - Parallel mixed-failure result signaling. `e032ffc` - Updated `.gitignore`: - Added only `.pi/memory/queue.json`, not all `.pi/memory`. `e5519bc` - Reverted the local `queue.json` working-tree change\n\n## Evidence\n- Prompt: Fix the highlighted issues. Ask to trust project agents at session start and save that as a setting. Do not add .pi/memory to .gitignore, but do add queue.json to it. Add tests\n- Confidence: high\n\n## Validation\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.gitignore\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder\n- /tmp/pi-bash-bfb135e8be6ac079.log\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 1,
-    "last_matched_at": "2026-05-30T19:13:18.836Z"
+    "match_count": 2,
+    "last_matched_at": "2026-05-30T20:42:52.491Z"
   },
   {
     "type": "action",
@@ -297,7 +297,8 @@
       ]
     },
     "body": "## Summary\nImplemented tests for both requested implementations. Changes: - Added issue-agent tests for: - Matching the latest `/answer` to the most recent clarification request. - `handleSubAgentJsonLine` handling tool start/end events, assistant content, errors, and invalid JSON. - Added subagent tests for: - Delegation mode parsing. - Fork session snapshot JSONL generation. - Depth/boolean/stack/argv guard parsing. - Cycle violation detection. - Exported `__subagentTest` test helpers from `.pi/extensions/subagent/index.ts`. Validation: - `npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts` - `npm run typecheck` Both passed.\n\n## Evidence\n- Prompt: Please add tests to the @.pi/extensions/issue-agent/ as well as @.pi/extensions/subagent/ implementations\n- Confidence: high\n\n## Validation\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts --runInBand\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 0
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T20:42:52.491Z"
   },
   {
     "type": "action",
@@ -335,7 +336,8 @@
       ]
     },
     "body": "## Summary\nAdded more tests. New issue-agent coverage: - CLI arg parsing. - Truthy flag parsing. - AI label syntaxes: slash, colon, bracket. - State fallback behavior. - Priority parsing/defaults. - Model override/fallback label parsing. - Thinking level validation. - Dependency extraction. - Branch slug generation. - Autoresearch metadata parsing. New subagent coverage: - User/project agent discovery. - Nearest project `.pi/agents` lookup. - Project agent precedence over user agent with same name. - Frontmatter tool parsing for string and YAML array forms. - Invalid agent file skipping. - Built-in agent availability with starter discovery. Also expanded `__issueAgentTest` exports for the newly tested \n\n## Evidence\n- Prompt: More tests!\n- Confidence: high\n\n## Validation\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 0
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T20:42:52.491Z"
   },
   {
     "type": "action",
@@ -375,7 +377,8 @@
       ]
     },
     "body": "## Summary\nFixed the diagnostics in `.pi/extensions/issue-agent/index.test.ts`. Cause: - Test helper calls were passing partial objects where the exported helper types expect full `Issue` objects. Fix: - Added a full reusable `issue` test object with `number`, `title`, `body`, `labels`, `url`, and `apiUrl`. - Used object spreads for label-specific cases. Validation passed: - `npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts` - `npm run typecheck`\n\n## Evidence\n- Prompt: More tests!\n- Confidence: high\n\n## Validation\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 0
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T20:42:52.491Z"
   },
   {
     "type": "action",
@@ -411,7 +414,8 @@
       ]
     },
     "body": "## Summary\nImplemented. Changes: - `/subagent-level` with no args now reports the current level. - `/subagent-model` with no args now lists configured subagent models. - `/subagent-model <agent>` now reports the resolved current model for that agent. - `/subagent-model <agent> <model>` still sets the model. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: The commands subagent-level and subagent-model should return the current values if no parameters or only one parameter were given\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 0
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T20:42:52.491Z"
   },
   {
     "type": "runbook",
@@ -447,6 +451,106 @@
       ]
     },
     "body": "## Summary\nImplemented `/subagent-thinking`. Usage: - `/subagent-thinking` — list configured thinking overrides - `/subagent-thinking PLAN` — show current thinking override for `PLAN` - `/subagent-thinking PLAN high` — set thinking for `PLAN` - `/subagent-thinking-all low` — set default thinking for all subagents Allowed values: `off|minimal|low|medium|high|xhigh` Also wired the configured thinking level into subagent execution, overriding the agent’s built-in/frontmatter `thinking`. Validation: - `npm run typecheck` passed.\n\n## Evidence\n- Prompt: Add a command that controls the thinking level for the subagent, similar to subagent-model, so that it can be controlled per agent\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T20:42:52.491Z"
+  },
+  {
+    "type": "runbook",
+    "title": "Runbook for subprocess.ts, index.ts, runner.ts",
+    "created_at": "2026-05-30T20:45:13.750Z",
+    "updated_at": "2026-05-30T20:45:13.750Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "runbook",
+      "subprocess.ts",
+      "index.ts",
+      "runner.ts",
+      "index.ts",
+      "index.ts"
+    ],
+    "evidence": {
+      "prompt": "There's a few extensions and other code that starts background processes, such as @.pi/extensions/subagent/, @.pi/extensions/inspect/, @.pi/extensions/plan-mode/ (with plannotator_submit_plan), etc.\nWhether these processes are running or not is opaque to the user.\nI'd like to instead have it so each process is registered through a common StartSubprocess method which internally tracks them and also unregisters them automatically when they stop or error out. There should be a command for the user ",
+      "tools": [
+        "skills",
+        "code_status",
+        "code_search",
+        "findRead",
+        "read",
+        "glob",
+        "bash",
+        "write",
+        "edit"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subprocess/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts",
+        "/home/tom/workspace/little-coder/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions",
+        "/home/tom/workspace/little-coder/.pi/extensions/_shared",
+        "/home/tom/workspace/little-coder/.pi/extensions/clear-command/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
+        "/home/tom/workspace/little-coder/package.json"
+      ],
+      "tests_run": [
+        "npm run typecheck",
+        "npm run typecheck",
+        "npm test -- --runInBand",
+        "npm test"
+      ]
+    },
+    "body": "## Summary\nImplemented managed subprocess tracking. What changed: - Added shared subprocess manager: - `.pi/extensions/_shared/subprocess.ts` - `startSubprocess` / `StartSubprocess` - automatic unregister on `close` / `error` - list and stop helpers - Added user commands: - `/subprocesses` - `/subprocesses stop <id>` - `/subprocess` alias - Routed existing subprocess starts through the manager: - `.pi/extensions/subagent/runner.ts` - `.pi/extensions/inspect/index.ts` - `.pi/extensions/issue-agent/index.ts` Notes: - Running subprocesses now show id, name, pid, status, age, and command. - Stopping sends `SIGTERM`; existing per-feature cleanup logic still handles close/error behavior. - The registry is in\n\n## Evidence\n- Prompt: There's a few extensions and other code that starts background processes, such as @.pi/extensions/subagent/, @.pi/extensions/inspect/, @.pi/extensions/plan-mode/ (with plannotator_submit_plan), etc. Whether these processes are running or not is opaque to the user. I'd like to instead have it so each process is registered through a common StartSubpr\n- Confidence: high\n\n## Validation\n- npm run typecheck\n- npm run typecheck\n- npm test -- --runInBand\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subprocess/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions\n- /home/tom/workspace/little-coder/.pi/extensions/_shared\n- /home/tom/workspace/little-coder/.pi/extensions/clear-command/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
+  },
+  {
+    "type": "action",
+    "title": "Updated subprocess.ts, subprocess-preload.mjs, little-coder.mjs",
+    "created_at": "2026-05-30T20:48:16.744Z",
+    "updated_at": "2026-05-30T20:48:16.744Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "action",
+      "subprocess.ts",
+      "subprocess-preload.mjs",
+      "little-coder.mjs"
+    ],
+    "evidence": {
+      "prompt": "Make sure this tracks all subprocesses. The tool `plannotator_submit_plan` also starts a subprocess for example.",
+      "tools": [
+        "bash",
+        "read",
+        "write",
+        "edit"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess-preload.mjs",
+        "/home/tom/workspace/little-coder/bin/little-coder.mjs"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/index.ts",
+        "/home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/plannotator-events.ts",
+        "/home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/plannotator-browser.ts",
+        "/home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/server/network.ts",
+        "/home/tom/workspace/little-coder/.pi/settings.json",
+        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
+        "/home/tom/workspace/little-coder/bin/launcher-helpers.mjs",
+        "/home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts"
+      ],
+      "tests_run": [
+        "npm run typecheck && npm test"
+      ]
+    },
+    "body": "## Summary\nFixed. Subprocess tracking now covers direct and indirect `child_process.spawn()` calls, including package extensions like `@plannotator/pi-extension`. Changes: - Added a Node preload: - `.pi/extensions/_shared/subprocess-preload.mjs` - patches `node:child_process.spawn` - calls `syncBuiltinESMExports()` so ESM named imports like `import { spawn } from \"node:child_process\"` are also patched - Updated launcher: - `bin/little-coder.mjs` now starts Pi with `--import .pi/extensions/_shared/subprocess-preload.mjs` - Updated subprocess registry: - added `registerChildProcess` - deduplicates explicit `startSubprocess(...)` registrations vs auto-tracked patched `spawn(...)` - This means `plannotator\n\n## Evidence\n- Prompt: Make sure this tracks all subprocesses. The tool `plannotator_submit_plan` also starts a subprocess for example.\n- Confidence: high\n\n## Validation\n- npm run typecheck && npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess-preload.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n\nRead:\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/index.ts\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/plannotator-events.ts\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/plannotator-browser.ts\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/server/network.ts\n- /home/tom/workspace/little-coder/.pi/settings.json\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
   }
 ]

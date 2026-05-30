@@ -5,6 +5,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { startSubprocess } from "../_shared/subprocess.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -282,7 +283,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       const propagatedMaxDepth = Math.max(0, Math.floor(maxDepth));
       const propagatedStack = [...parentAgentStack, agentName];
       const { command, prefixArgs } = resolvePiSpawn();
-      const proc = spawn(command, [...prefixArgs, ...piArgs], {
+      const proc = startSubprocess(command, [...prefixArgs, ...piArgs], {
+        name: `subagent:${agentName}`,
         cwd: taskCwd ?? cwd,
         shell: false,
         stdio: ["pipe", "pipe", "pipe"],
@@ -296,12 +298,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
           LITTLE_CODER_SUBAGENT: "1",
           ...env,
         },
-      });
+      }).child;
 
-      proc.stdin.on("error", () => {
+      proc.stdin!.on("error", () => {
         /* ignore broken pipe on fast exits */
       });
-      proc.stdin.end();
+      proc.stdin!.end();
 
       let buffer = "";
       let didClose = false;
@@ -364,8 +366,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
             flushBufferedLines(buffer);
             buffer = "";
           }
-          proc.stdout.removeListener("data", onStdoutData);
-          proc.stderr.removeListener("data", onStderrData);
+          proc.stdout!.removeListener("data", onStdoutData);
+          proc.stderr!.removeListener("data", onStderrData);
           finish(0);
           terminateChild();
         }, AGENT_END_GRACE_MS);
@@ -383,8 +385,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
         result.stderr += chunk.toString();
       };
 
-      proc.stdout.on("data", onStdoutData);
-      proc.stderr.on("data", onStderrData);
+      proc.stdout!.on("data", onStdoutData);
+      proc.stderr!.on("data", onStderrData);
 
       proc.on("close", (code) => {
         didClose = true;
