@@ -255,5 +255,45 @@
     },
     "body": "## Summary\nImplemented. Why it was unreliable: - `skill-inject` selected reference skills from `event.prompt` only, not the system prompt. - Review mode lives in the system prompt (`## Review mode`), so entering review mode alone did not reliably trigger `code-review`. - A plain phrase like “review mode” also did not strongly match the old review trigger set. Changes made: - Updated `.pi/extensions/skill-inject/index.ts` - Added `review mode` as a review trigger. - Includes a review-mode hint when the system prompt contains review mode, so `code-review` gets selected reliably. - Uses that combined selection prompt for both knowledge and tool-skill selection. - Updated `.pi/extensions/mode-commands/mode\n\n## Evidence\n- Prompt: On the review mode in @.pi/extensions/mode-commands/ but also in @.pi/extensions/skill-inject/, it seems like the code-review skill @skills/knowledge/code_review.md is not reliably injected. I'm wondering why that is. Also add to the skill the framing of \"Treat everything as broken until you verified it's working\". Also it should already be in the \n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/skill-inject/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/skills/knowledge/code_review.md\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/skill-inject/index.ts\n- /home/tom/workspace/little-coder/skills/knowledge/code_review.md\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
+  },
+  {
+    "type": "observation",
+    "title": "Observation about .gitignore, index.ts, index.test.ts",
+    "created_at": "2026-05-30T11:19:57.721Z",
+    "updated_at": "2026-05-30T11:19:57.721Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "observation",
+      ".gitignore",
+      "index.ts",
+      "index.test.ts"
+    ],
+    "evidence": {
+      "prompt": "Fix the highlighted issues. Ask to trust project agents at session start and save that as a setting. Do not add .pi/memory to .gitignore, but do add queue.json to it. Add tests",
+      "tools": [
+        "findRead",
+        "edit",
+        "write",
+        "bash",
+        "read",
+        "EvidenceAdd"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.gitignore",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder",
+        "/tmp/pi-bash-bfb135e8be6ac079.log"
+      ],
+      "tests_run": [
+        "npm run typecheck",
+        "npm test"
+      ]
+    },
+    "body": "## Summary\nImplemented the fixes. Changes: - Added saved project-agent trust: - Prompts at `session_start` when project-local agents are found. - Saves trusted project agent dirs in `~/.pi/agent/settings.json`. - Redacts project-agent descriptions in the system prompt until trusted. `efedca1`, `edb0212` - Fixed parallel subagent failures: - Parallel runs now return `isError: true` when any child result fails. `e5754e6` - Added tests: - Trust setting parsing/checking. - Project-agent description redaction. - Parallel mixed-failure result signaling. `e032ffc` - Updated `.gitignore`: - Added only `.pi/memory/queue.json`, not all `.pi/memory`. `e5519bc` - Reverted the local `queue.json` working-tree change\n\n## Evidence\n- Prompt: Fix the highlighted issues. Ask to trust project agents at session start and save that as a setting. Do not add .pi/memory to .gitignore, but do add queue.json to it. Add tests\n- Confidence: high\n\n## Validation\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.gitignore\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder\n- /tmp/pi-bash-bfb135e8be6ac079.log\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
   }
 ]

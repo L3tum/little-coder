@@ -132,6 +132,38 @@ interface SessionSnapshotSource {
   getBranch: () => unknown[];
 }
 
+function trustedProjectAgentsKey(projectAgentsDir: string): string {
+  return path.resolve(projectAgentsDir);
+}
+
+export function getTrustedProjectAgentDirs(settings: any): string[] {
+  const raw = settings?.little_coder?.trusted_project_agent_dirs;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+export function areProjectAgentsTrusted(settings: any, projectAgentsDir: string | null): boolean {
+  if (!projectAgentsDir) return false;
+  return getTrustedProjectAgentDirs(settings).includes(trustedProjectAgentsKey(projectAgentsDir));
+}
+
+function trustProjectAgents(projectAgentsDir: string): void {
+  const s = littleCoderSettings();
+  const trusted = new Set(getTrustedProjectAgentDirs(s));
+  trusted.add(trustedProjectAgentsKey(projectAgentsDir));
+  s.little_coder.trusted_project_agent_dirs = Array.from(trusted).sort();
+  writeSettings(s);
+}
+
+export function agentsForPrompt(agents: AgentConfig[], projectAgentsTrusted: boolean): AgentConfig[] {
+  if (projectAgentsTrusted) return agents;
+  return agents.map((agent) =>
+    agent.source === "project"
+      ? { ...agent, description: "Project-local agent (trust this repository to reveal its description)." }
+      : agent,
+  );
+}
+
 function parseDelegationMode(raw: unknown): DelegationMode | null {
   if (raw === undefined) return DEFAULT_DELEGATION_MODE;
   if (typeof raw !== "string") return null;
@@ -364,19 +396,43 @@ function getRequestedProjectAgents(
  * Prompt the user to confirm project-local agents if needed.
  * Returns false if the user declines.
  */
+export function buildParallelToolResult(
+  results: SingleResult[],
+  makeDetails: ReturnType<typeof makeDetailsFactory>,
+) {
+  const successCount = results.filter((r) => isResultSuccess(r)).length;
+  const summaries = results.map((r) =>
+    `[${r.agent}] ${isResultError(r) ? "failed" : "completed"}: ${getResultSummaryText(r)}`,
+  );
+  const hasFailures = results.some((r) => isResultError(r));
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`,
+      },
+    ],
+    details: makeDetails("parallel")(results),
+    ...(hasFailures ? { isError: true } : {}),
+  };
+}
+
 async function confirmProjectAgentsIfNeeded(
   projectAgents: AgentConfig[],
   projectAgentsDir: string | null,
   ctx: { ui: { confirm: (title: string, body: string) => Promise<boolean> } },
 ): Promise<boolean> {
   if (projectAgents.length === 0) return true;
+  if (areProjectAgentsTrusted(readSettings(), projectAgentsDir)) return true;
 
   const names = projectAgents.map((a) => a.name).join(", ");
   const dir = projectAgentsDir ?? "(unknown)";
-  return ctx.ui.confirm(
-    "Run project-local agents?",
-    `Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
+  const approved = await ctx.ui.confirm(
+    "Trust project-local agents?",
+    `Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories. This choice will be saved.`,
   );
+  if (approved && projectAgentsDir) trustProjectAgents(projectAgentsDir);
+  return approved;
 }
 
 // ---------------------------------------------------------------------------
@@ -433,6 +489,8 @@ export default function (pi: ExtensionAPI) {
   const { currentDepth, maxDepth, ancestorAgentStack, preventCycles } = depthConfig;
 
   let discoveredAgents: AgentConfig[] = [];
+  let discoveredProjectAgentsDir: string | null = null;
+  let projectAgentsTrustedForPrompt = false;
 
   // Auto-discover agents on session start
   pi.on("session_start", async (_event, ctx) => {
@@ -440,6 +498,17 @@ export default function (pi: ExtensionAPI) {
 
     const starterDiscovery = discoverAgentsWithStarter(ctx.cwd);
     const discovery = starterDiscovery.discovery;
+    discoveredProjectAgentsDir = discovery.projectAgentsDir;
+    const hasProjectAgents = discovery.agents.some((agent) => agent.source === "project");
+    projectAgentsTrustedForPrompt = areProjectAgentsTrusted(readSettings(), discoveredProjectAgentsDir);
+    if (hasProjectAgents && !projectAgentsTrustedForPrompt && ctx.hasUI) {
+      const projectAgents = discovery.agents.filter((agent) => agent.source === "project");
+      projectAgentsTrustedForPrompt = await confirmProjectAgentsIfNeeded(
+        projectAgents,
+        discoveredProjectAgentsDir,
+        ctx,
+      );
+    }
     discoveredAgents = discovery.agents.map((agent) => ({ ...agent, model: subagentModel(agent.name) ?? agent.model }));
 
     if (ctx.hasUI) {
@@ -470,7 +539,8 @@ export default function (pi: ExtensionAPI) {
     if (!canUseSubagentTool) return;
     if (discoveredAgents.length === 0) return;
 
-    const agentList = discoveredAgents
+    projectAgentsTrustedForPrompt = areProjectAgentsTrusted(readSettings(), discoveredProjectAgentsDir);
+    const agentList = agentsForPrompt(discoveredAgents, projectAgentsTrustedForPrompt)
       .map((a) => `- **${a.name}**: ${a.description}`)
       .join("\n");
     return {
@@ -632,7 +702,8 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
           agents,
           requested,
         );
-        const shouldConfirmProjectAgents = params.confirmProjectAgents ?? true;
+        const projectAgentsTrusted = areProjectAgentsTrusted(readSettings(), discovery.projectAgentsDir);
+        const shouldConfirmProjectAgents = !projectAgentsTrusted && (params.confirmProjectAgents ?? true);
         if (requestedProjectAgents.length > 0 && shouldConfirmProjectAgents) {
           if (ctx.hasUI) {
             const approved = await confirmProjectAgentsIfNeeded(
@@ -862,19 +933,6 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
       if (heartbeat) clearInterval(heartbeat);
     }
 
-    const successCount = results.filter((r) => isResultSuccess(r)).length;
-    const summaries = results.map((r) =>
-      `[${r.agent}] ${isResultError(r) ? "failed" : "completed"}: ${getResultSummaryText(r)}`,
-    );
-
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`,
-        },
-      ],
-      details: makeDetails("parallel")(results),
-    };
+    return buildParallelToolResult(results, makeDetails);
   }
 }

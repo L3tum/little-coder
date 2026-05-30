@@ -5,6 +5,7 @@ node_modules/
 # Pi session + auth state (local to each user)
 .pi/sessions/
 .pi/auth.json
+.pi/memory/queue.json
 
 # Benchmark run artifacts
 benchmarks/tb_runs/
