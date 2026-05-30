@@ -16,7 +16,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkForUpdate } from "./update-check.mjs";
-import { applySubAgentEnv, discoverBundledExtensionArgs, shouldAppendSystemPrompt } from "./launcher-helpers.mjs";
+import { discoverBundledExtensionArgs, shouldAppendSystemPrompt } from "./launcher-helpers.mjs";
 
 // ---- 1. Node version preflight (>= 22.19.0, matching pi.dev) ----
 const MIN_NODE = [22, 19, 0];
@@ -122,7 +122,7 @@ function addPiResources(args, flag, baseDir, resources) {
   }
 }
 
-function bundledPackageArgs(pkgJson, { issueAgentSubagent = false } = {}) {
+function bundledPackageArgs(pkgJson, { subagentMode = false } = {}) {
   const args = [];
   const packageNames = Array.isArray(pkgJson?.littleCoder?.packages)
     ? pkgJson.littleCoder.packages
@@ -130,7 +130,7 @@ function bundledPackageArgs(pkgJson, { issueAgentSubagent = false } = {}) {
 
   for (const packageName of packageNames) {
     if (typeof packageName !== "string" || packageName.length === 0) continue;
-    if (issueAgentSubagent && packageName === "pi-ask-user") continue;
+    if (subagentMode && packageName === "pi-ask-user") continue;
     const pkgJsonPath = join(pkgRoot, "node_modules", ...packageName.split("/"), "package.json");
     const depPkgJson = readJson(pkgJsonPath);
     const manifest = depPkgJson?.pi;
@@ -147,11 +147,11 @@ function bundledPackageArgs(pkgJson, { issueAgentSubagent = false } = {}) {
 // ---- 4. Auto-discover bundled extensions ----
 const rootPkgJson = readJson(join(pkgRoot, "package.json")) ?? {};
 const extDir = join(pkgRoot, ".pi", "extensions");
+const subprocessPreload = join(extDir, "_shared", "subprocess-preload.mjs");
 const rawUserArgs = process.argv.slice(2);
-const issueAgentSubagent = rawUserArgs.includes("--issue-agent-subagent");
-if (issueAgentSubagent) applySubAgentEnv(process.env);
-const extArgs = discoverBundledExtensionArgs(extDir, { issueAgentSubagent, resolveExtensionEntry });
-const packageArgs = bundledPackageArgs(rootPkgJson, { issueAgentSubagent });
+const subagentMode = Boolean(process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH);
+const extArgs = discoverBundledExtensionArgs(extDir, { subagentMode, resolveExtensionEntry });
+const packageArgs = bundledPackageArgs(rootPkgJson, { subagentMode });
 
 // ---- 5. Update check (best-effort, blocks on TTY prompt only) ----
 const currentVersion = typeof rootPkgJson?.version === "string" ? rootPkgJson.version : "0.0.0";
@@ -168,7 +168,7 @@ if (exitAfterCheck) {
 // --append-system-prompt : amend the prompt with cwd AGENTS.md when present
 //
 // Strip our own flags before forwarding to pi so it doesn't reject them.
-const userArgs = rawUserArgs.filter((a) => a !== "--no-update-check" && a !== "--issue-agent-subagent");
+const userArgs = rawUserArgs.filter((a) => a !== "--no-update-check");
 const agentsMd = join(pkgRoot, "AGENTS.md");
 const cwdAgentsMd = join(process.cwd(), "AGENTS.md");
 const appendCwdAgents = shouldAppendSystemPrompt(agentsMd, cwdAgentsMd);
@@ -301,13 +301,14 @@ try {
 // pi inherits the exact runtime that already passed our >= 22.19.0 preflight.
 // Passing piEntry as an argv element (not a shell string) avoids any
 // shell-injection / space-in-path classes on every platform.
-const child = spawn(process.execPath, [piEntry, ...piArgs], {
-  stdio: issueAgentSubagent ? ["ignore", "pipe", "pipe"] : "inherit",
+const nodeArgs = existsSync(subprocessPreload) ? ["--import", subprocessPreload, piEntry, ...piArgs] : [piEntry, ...piArgs];
+const child = spawn(process.execPath, nodeArgs, {
+  stdio: subagentMode ? ["ignore", "pipe", "pipe"] : "inherit",
   cwd: process.cwd(),
   env: process.env,
 });
 
-if (issueAgentSubagent) {
+if (subagentMode) {
   child.stdout?.on("data", (chunk) => process.stdout.write(chunk));
   child.stderr?.on("data", (chunk) => process.stderr.write(chunk));
 }

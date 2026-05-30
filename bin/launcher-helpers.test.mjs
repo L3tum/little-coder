@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { applySubAgentEnv, discoverBundledExtensionArgs, shouldAppendSystemPrompt } from "./launcher-helpers.mjs";
 
 function makeExt(root, name) {
@@ -9,6 +11,8 @@ function makeExt(root, name) {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "index.ts"), "export default function() {}\n");
 }
+
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 describe("launcher helpers", () => {
   it("keeps branding in normal mode and removes it in issue-agent sub-agent mode", () => {
@@ -18,11 +22,11 @@ describe("launcher helpers", () => {
       makeExt(extDir, "branding");
       makeExt(extDir, "issue-agent");
 
-      const normal = discoverBundledExtensionArgs(extDir, { issueAgentSubagent: false });
+      const normal = discoverBundledExtensionArgs(extDir, { subagentMode: false });
       expect(normal.join("\n")).toContain("branding/index.ts");
       expect(normal.join("\n")).toContain("issue-agent/index.ts");
 
-      const sub = discoverBundledExtensionArgs(extDir, { issueAgentSubagent: true });
+      const sub = discoverBundledExtensionArgs(extDir, { subagentMode: true });
       expect(sub.join("\n")).not.toContain("branding/index.ts");
       expect(sub.join("\n")).toContain("issue-agent/index.ts");
     } finally {
@@ -77,5 +81,17 @@ describe("launcher helpers", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  it("launcher starts far enough to delegate --help to pi", () => {
+    const result = spawnSync(process.execPath, [join(repoRoot, "bin", "little-coder.mjs"), "--help"], {
+      cwd: repoRoot,
+      env: { ...process.env, LITTLE_CODER_NO_UPDATE_CHECK: "1" },
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(`${result.stdout}\n${result.stderr}`).not.toContain("ReferenceError");
+    expect(result.status).toBe(0);
   });
 });

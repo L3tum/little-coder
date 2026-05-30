@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawnSync, type ChildProcess } from "node:child_process";
 import {
 	mkdirSync,
 	readdirSync,
@@ -28,6 +28,7 @@ import {
 	type ResolvedResource,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import { startSubprocess } from "../_shared/subprocess.js";
 
 const inspectPackageRoot = resolvePath(fileURLToPath(new URL("../../../node_modules/pi-inspect/", import.meta.url)));
 const serverPath = joinPath(inspectPackageRoot, "server.js");
@@ -434,6 +435,7 @@ async function captureSnapshot(ctx: any, extra: { systemPromptOptions?: any; pro
 	const name = sm?.getSessionName?.() ?? null;
 	const model = ctx.getModel?.()?.id ?? null;
 	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : null;
+	const sessionEntries = typeof sm?.getEntries === "function" ? sm.getEntries() : null;
 	const sessionState = stateForSession(id);
 	if (extra.systemPromptOptions !== undefined) sessionState.systemPromptOptions = extra.systemPromptOptions;
 	if (extra.providerPayload !== undefined) sessionState.providerPayload = extra.providerPayload;
@@ -454,7 +456,7 @@ async function captureSnapshot(ctx: any, extra: { systemPromptOptions?: any; pro
 	}
 	const { disabled: disabledItems, pending: pendingItems } = await discoverFromPackages(cwd, activePaths);
 	const capturedAt = Date.now();
-	const snap = { sessionId: id, sessionName: name, cwd, model, systemPrompt, systemPromptOptions, providerPayload, commands, tools, activeTools, disabledItems, pendingItems, capturedAt };
+	const snap = { sessionId: id, sessionName: name, cwd, model, systemPrompt, systemPromptOptions, providerPayload, sessionEntries, commands, tools, activeTools, disabledItems, pendingItems, capturedAt };
 	try {
 		writeSnapshot(id, snap);
 		upsertIndex({ id, cwd, name, model, capturedAt });
@@ -491,12 +493,13 @@ async function openAppTarget(target: string): Promise<"app" | "web" | null> {
 async function startServer(notify: (m: string, l?: "info" | "error") => void): Promise<boolean> {
 	if (await probePort(port)) return true;
 	lastStderr = "";
-	child = spawn(process.execPath, [serverPath], {
+	child = startSubprocess(process.execPath, [serverPath], {
+		name: "pi-inspect server",
 		env: { ...process.env, PORT: String(port) },
 		stdio: ["ignore", "ignore", "pipe"],
 		detached: true,
 		windowsHide: true,
-	});
+	}).child;
 	child.stderr?.on("data", (b) => { lastStderr += b.toString(); });
 	child.on("exit", () => { child = null; });
 	if (!(await waitForPort(port))) {

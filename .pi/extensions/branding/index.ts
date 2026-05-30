@@ -89,59 +89,79 @@ function buildHeader(theme: Theme): string[] {
   const sep = theme.fg("muted", " · ");
   const extensionLine1 = [
     theme.fg("muted", "Use "),
-    theme.fg("text", "/plannotator"),
-    theme.fg("muted", " or "),
-    theme.fg("text", "--plan"),
-    theme.fg("muted", " for plan review"),
+    theme.fg("text", "/plan"),
+    theme.fg("muted", " for planning mode"),
   ].join("");
   const extensionLine2 = [
     theme.fg("muted", "Use "),
-    theme.fg("text", "/pi-insights"),
-    theme.fg("muted", " for usage insights"),
-    sep,
-    theme.fg("text", "Alt+S"),
-    theme.fg("muted", " to stash editor text"),
+    theme.fg("text", "/execute"),
+    theme.fg("muted", " to execute the latest plan"),
   ].join("");
   const extensionLine3 = [
     theme.fg("muted", "Use "),
-    theme.fg("text", "/workspace-permissions"),
-    theme.fg("muted", " for out-of-workspace file access policy"),
+    theme.fg("text", "/review"),
+    theme.fg("muted", " for read-only review mode"),
   ].join("");
   const extensionLine4 = [
     theme.fg("muted", "Use "),
+    theme.fg("text", "/autoresearch"),
+    theme.fg("muted", " for bounded experiment mode"),
+  ].join("");
+  const extensionLine5 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/plannotator"),
+    theme.fg("muted", " for plan review"),
+  ].join("");
+  const extensionLine6 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/insights"),
+    theme.fg("muted", " for usage insights"),
+  ].join("");
+  const extensionLine7 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/workspace-permissions"),
+    theme.fg("muted", " for workspace access policy"),
+  ].join("");
+  const extensionLine8 = [
+    theme.fg("muted", "Use "),
     theme.fg("text", "/lsp-doctor"),
-    theme.fg("muted", " to show recognized and usable LSP servers"),
+    theme.fg("muted", " to inspect usable LSP servers"),
   ].join("");
   const memoryCounts = readMemoryCounts();
-  const memoryCta = memoryCounts.pending > 0
-    ? [sep, theme.fg("text", "/memory-review"), theme.fg("muted", " to triage pending memories")]
-    : [];
-  const extensionLine5 = [
+  const extensionLine9 = [
     theme.fg("muted", "Use "),
     theme.fg("text", "/codebase"),
     theme.fg("muted", " to inspect codebase-memory"),
-    sep,
+  ].join("");
+  const memoryLine = [
     theme.fg("muted", "Memory: "),
     theme.fg("text", `${memoryCounts.pending}`),
     theme.fg("muted", " pending short-term"),
     sep,
     theme.fg("text", `${memoryCounts.longTerm}`),
     theme.fg("muted", " long-term"),
-    ...memoryCta,
-    sep,
+  ].join("");
+  const memoryReviewLine = memoryCounts.pending > 0 ? [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/memory-review"),
+    theme.fg("muted", " to triage pending memories"),
+  ].join("") : undefined;
+  const memoryListLine = [
+    theme.fg("muted", "Use "),
     theme.fg("text", "/memory-list"),
-    theme.fg("muted", " / "),
-    theme.fg("text", "/memory-search"),
     theme.fg("muted", " to browse long-term memories"),
+  ].join("");
+  const memorySearchLine = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/memory-search"),
+    theme.fg("muted", " to search long-term memories"),
   ].join("");
   const issueAgentSection = [
     theme.bold("Issue agent:"),
     [
       theme.fg("muted", "Run "),
       theme.fg("text", "/issue-agent --repos=url[,url]"),
-      theme.fg("muted", " to work GitHub/Forgejo issues labeled "),
-      theme.fg("text", "ai:*"),
-      theme.fg("muted", " and create Forgejo labels"),
+      theme.fg("muted", " to work labeled issues"),
     ].join(""),
     [
       theme.fg("muted", "States: "),
@@ -150,15 +170,13 @@ function buildHeader(theme: Theme): string[] {
       theme.fg("text", "WAITING_FOR_FEEDBACK"),
       sep,
       theme.fg("text", "EXECUTING"),
-      sep,
-      theme.fg("text", "WAITING_FOR_REVIEW"),
     ].join(""),
     [
       theme.fg("muted", "Flow: PLAN comment → wait for "),
       theme.fg("text", "/approve"),
       theme.fg("muted", " or "),
       theme.fg("text", "ai:state/EXECUTING"),
-      theme.fg("muted", " → commit, push branch, open PR"),
+      theme.fg("muted", " → push branch and open PR"),
     ].join(""),
     [
       theme.fg("muted", "Labels: "),
@@ -167,16 +185,11 @@ function buildHeader(theme: Theme): string[] {
       theme.fg("text", "ai:planning-model/x"),
       sep,
       theme.fg("text", "ai:execution-model/y"),
-      sep,
-      theme.fg("text", "ai:thinking-level/high"),
     ].join(""),
     [
       theme.fg("muted", "Provider limits add "),
       theme.fg("text", "ai:blocked/usage-limit"),
-      theme.fg("muted", ", "),
-      theme.fg("text", "ai:provider-status/*"),
-      theme.fg("muted", ", and "),
-      theme.fg("text", "ai:retry-after/*"),
+      theme.fg("muted", ", plus provider status/retry labels"),
     ].join(""),
     [
       theme.fg("muted", "Options: "),
@@ -185,8 +198,6 @@ function buildHeader(theme: Theme): string[] {
       theme.fg("text", "--fallback-models=a,b"),
       sep,
       theme.fg("text", "--thinking-level=low"),
-      theme.fg("muted", " or labels "),
-      theme.fg("text", "ai:fallback-*-model/x"),
     ].join(""),
     [
       theme.fg("muted", "Setup: provide an API key via "),
@@ -204,7 +215,29 @@ function buildHeader(theme: Theme): string[] {
     `${dim("!")} bash`,
     `${dim("ctrl-r")} more`,
   ].join(sep);
-  return ["", logo, tagline, extensionLine1, extensionLine2, extensionLine3, extensionLine4, extensionLine5, "", ...issueAgentSection, "", hints, ""];
+  return [
+    "",
+    logo,
+    tagline,
+    extensionLine1,
+    extensionLine2,
+    extensionLine3,
+    extensionLine4,
+    extensionLine5,
+    extensionLine6,
+    extensionLine7,
+    extensionLine8,
+    extensionLine9,
+    memoryLine,
+    ...(memoryReviewLine ? [memoryReviewLine] : []),
+    memoryListLine,
+    memorySearchLine,
+    "",
+    ...issueAgentSection,
+    "",
+    hints,
+    "",
+  ];
 }
 
 function applyBranding(ctx: { ui: { setHeader: Function; setTitle: Function }; cwd: string; model?: { name?: string; id?: string; provider?: string } }): void {
