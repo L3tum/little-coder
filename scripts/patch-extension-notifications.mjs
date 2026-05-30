@@ -54,7 +54,7 @@ export const PATCHES = [
   {
     name: "pi-insights browser URL notification",
     path: ["node_modules", "@observal", "pi-insights", "index.ts"],
-    oldText: `\tctx.ui.notify(\`✅ Report saved: \${REPORT_PATH}\`, "success");\n\tctx.ui.notify(\`Pi Insights report URL: file://\${REPORT_PATH}\`, "info");\n\n\tif (!noOpen) {\n\t\tconst opener = platform() === "darwin" ? "open" : "xdg-open";\n\t\texecFile(opener, [REPORT_PATH]).catch(() => {\n\t\t\tctx.ui.notify(\`Open manually: file://\${REPORT_PATH}\`, "info");\n\t\t});\n\t}\n}`,
+    oldText: `\tctx.ui.notify(\`✅ Report saved: \${REPORT_PATH}\`, "success");\n\n\tif (!noOpen) {\n\t\tconst opener = platform() === "darwin" ? "open" : "xdg-open";\n\t\texecFile(opener, [REPORT_PATH]).catch(() => {\n\t\t\tctx.ui.notify(\`Open manually: \${REPORT_PATH}\`, "info");\n\t\t});\n\t}\n}`,
     newText: `\tconst reportUrl = await startReportServer();\n\tctx.ui.notify(\`✅ Report saved: \${REPORT_PATH}\`, "success");\n\tctx.ui.notify(\`Pi Insights report URL: \${reportUrl}\`, "info");\n\n\tif (!noOpen) {\n\t\tconst opener = platform() === "darwin" ? "open" : "xdg-open";\n\t\texecFile(opener, [reportUrl]).catch(() => {\n\t\t\tctx.ui.notify(\`Open manually: \${reportUrl}\`, "info");\n\t\t});\n\t}\n}`,
     alreadyAppliedText: [
       "const reportUrl = await startReportServer();",
