@@ -974,6 +974,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
   let getThinkingLevelFn: (() => string) | null = null;
   let currentThinkingLevel: string | null = null;
   let liveAssistantUsage: SessionAssistantUsage | null = null;
+  let subagentUsage: { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number } | null = null;
   let openaiUsageSnapshot: UsageSnapshot | undefined;
   let openaiUsageTimer: NodeJS.Timeout | undefined;
   let openaiUsageAbortController: AbortController | undefined;
@@ -1256,6 +1257,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     lastUserPrompt = "";
     isStreaming = false;
     liveAssistantUsage = null;
+    subagentUsage = null;
     stashedEditorText = null;
 
     const settings = readSettings(ctx.cwd);
@@ -1318,6 +1320,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     getThinkingLevelFn = null;
     currentThinkingLevel = null;
     liveAssistantUsage = null;
+    subagentUsage = null;
     openaiUsageSnapshot = undefined;
     if (openaiUsageTimer) clearInterval(openaiUsageTimer);
     openaiUsageTimer = undefined;
@@ -1355,6 +1358,31 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     }
   });
 
+  // Accumulate subagent usage so it shows in the footer
+  pi.on("tool_result", async (event) => {
+    if (event.toolName !== "subagent") return;
+    const details = (event as any).details;
+    if (!details || !Array.isArray(details.results)) return;
+    let input = 0, output = 0, cacheRead = 0, cacheWrite = 0, cost = 0;
+    for (const r of details.results) {
+      if (!r?.usage) continue;
+      input += r.usage.input || 0;
+      output += r.usage.output || 0;
+      cacheRead += r.usage.cacheRead || 0;
+      cacheWrite += r.usage.cacheWrite || 0;
+      cost += r.usage.cost || 0;
+    }
+    if (!subagentUsage) {
+      subagentUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+    }
+    subagentUsage.input += input;
+    subagentUsage.output += output;
+    subagentUsage.cacheRead += cacheRead;
+    subagentUsage.cacheWrite += cacheWrite;
+    subagentUsage.cost += cost;
+    requestStatusRender();
+  });
+
   // Also catch user escape commands (! prefix)
   // Note: This fires BEFORE execution, so we use a longer delay and multiple re-renders
   // to ensure we catch the update after the command completes.
@@ -1387,6 +1415,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     currentCtx = ctx;
     currentThinkingLevel = null;
     liveAssistantUsage = null;
+    subagentUsage = null;
     requestImmediateStatusRender({ deferDuringTyping: false });
   });
 
@@ -2137,6 +2166,15 @@ export default function powerlineFooter(pi: ExtensionAPI) {
       if (getUsageTokenTotal(m.usage) > 0) {
         lastAssistant = m;
       }
+    }
+
+    // Add subagent usage (from child processes) to the totals
+    if (subagentUsage) {
+      input += subagentUsage.input;
+      output += subagentUsage.output;
+      cacheRead += subagentUsage.cacheRead;
+      cacheWrite += subagentUsage.cacheWrite;
+      cost += subagentUsage.cost;
     }
 
     // Calculate context percentage.
