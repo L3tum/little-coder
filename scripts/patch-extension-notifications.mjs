@@ -56,6 +56,11 @@ export const PATCHES = [
     path: ["node_modules", "@observal", "pi-insights", "index.ts"],
     oldText: `\tctx.ui.notify(\`✅ Report saved: \${REPORT_PATH}\`, "success");\n\tctx.ui.notify(\`Pi Insights report URL: file://\${REPORT_PATH}\`, "info");\n\n\tif (!noOpen) {\n\t\tconst opener = platform() === "darwin" ? "open" : "xdg-open";\n\t\texecFile(opener, [REPORT_PATH]).catch(() => {\n\t\t\tctx.ui.notify(\`Open manually: file://\${REPORT_PATH}\`, "info");\n\t\t});\n\t}\n}`,
     newText: `\tconst reportUrl = await startReportServer();\n\tctx.ui.notify(\`✅ Report saved: \${REPORT_PATH}\`, "success");\n\tctx.ui.notify(\`Pi Insights report URL: \${reportUrl}\`, "info");\n\n\tif (!noOpen) {\n\t\tconst opener = platform() === "darwin" ? "open" : "xdg-open";\n\t\texecFile(opener, [reportUrl]).catch(() => {\n\t\t\tctx.ui.notify(\`Open manually: \${reportUrl}\`, "info");\n\t\t});\n\t}\n}`,
+    alreadyAppliedText: [
+      "const reportUrl = await startReportServer();",
+      "Pi Insights report URL: ${reportUrl}",
+      "execFile(opener, [reportUrl])",
+    ],
   },
   {
     name: "pi-insights canonical command",
@@ -118,8 +123,13 @@ export const PATCHES = [
   },
 ];
 
+export function isPatchApplied(current, patch) {
+  if (current.includes(patch.newText)) return true;
+  return Array.isArray(patch.alreadyAppliedText) && patch.alreadyAppliedText.every((text) => current.includes(text));
+}
+
 export function applyTextPatch(current, patch) {
-  if (current.includes(patch.newText)) return current;
+  if (isPatchApplied(current, patch)) return current;
   if (!current.includes(patch.oldText)) {
     throw new Error(`${patch.name}: expected text not found`);
   }

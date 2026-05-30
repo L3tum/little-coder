@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { PATCHES, applyTextPatch } from "./patch-extension-notifications.mjs";
+import { PATCHES, applyTextPatch, isPatchApplied } from "./patch-extension-notifications.mjs";
 
 const root = process.cwd();
 
@@ -11,7 +11,7 @@ describe("postinstall node_modules patches", () => {
       const file = join(root, ...patch.path);
       const current = readFileSync(file, "utf8");
       const canApply = current.includes(patch.oldText);
-      const alreadyApplied = current.includes(patch.newText);
+      const alreadyApplied = isPatchApplied(current, patch);
       expect(
         canApply || alreadyApplied,
         `${patch.name} target should contain oldText or patched text`,
