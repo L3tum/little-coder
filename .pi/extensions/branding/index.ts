@@ -114,7 +114,7 @@ function buildHeader(theme: Theme): string[] {
   ].join("");
   const extensionLine6 = [
     theme.fg("muted", "Use "),
-    theme.fg("text", "/pi-insights"),
+    theme.fg("text", "/insights"),
     theme.fg("muted", " for usage insights"),
   ].join("");
   const extensionLine7 = [

@@ -126,7 +126,8 @@
       ]
     },
     "body": "## Summary\nImplemented. Updates in `.pi/extensions/branding/index.ts`: - Added branding lines for: - `/plan` - `/execute` - `/review` - `/autoresearch` - Split existing command mentions so each line has only one slash command. - Shortened longer issue-agent lines to better fit ~80-column terminals. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: Please add the various commands to the branding message under @.pi/extensions/branding/ as well. Also check that only one command is mentioned per line so that it doesn't overflow a ~80 character wide terminal\n- Confidence: high\n\n## Validation\n- npm run typecheck\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 0
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T20:51:29.097Z"
   },
   {
     "type": "decision",
@@ -508,7 +509,8 @@
       ]
     },
     "body": "## Summary\nImplemented managed subprocess tracking. What changed: - Added shared subprocess manager: - `.pi/extensions/_shared/subprocess.ts` - `startSubprocess` / `StartSubprocess` - automatic unregister on `close` / `error` - list and stop helpers - Added user commands: - `/subprocesses` - `/subprocesses stop <id>` - `/subprocess` alias - Routed existing subprocess starts through the manager: - `.pi/extensions/subagent/runner.ts` - `.pi/extensions/inspect/index.ts` - `.pi/extensions/issue-agent/index.ts` Notes: - Running subprocesses now show id, name, pid, status, age, and command. - Stopping sends `SIGTERM`; existing per-feature cleanup logic still handles close/error behavior. - The registry is in\n\n## Evidence\n- Prompt: There's a few extensions and other code that starts background processes, such as @.pi/extensions/subagent/, @.pi/extensions/inspect/, @.pi/extensions/plan-mode/ (with plannotator_submit_plan), etc. Whether these processes are running or not is opaque to the user. I'd like to instead have it so each process is registered through a common StartSubpr\n- Confidence: high\n\n## Validation\n- npm run typecheck\n- npm run typecheck\n- npm test -- --runInBand\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subprocess/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions\n- /home/tom/workspace/little-coder/.pi/extensions/_shared\n- /home/tom/workspace/little-coder/.pi/extensions/clear-command/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 0
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T20:51:29.097Z"
   },
   {
     "type": "action",
@@ -551,6 +553,53 @@
       ]
     },
     "body": "## Summary\nFixed. Subprocess tracking now covers direct and indirect `child_process.spawn()` calls, including package extensions like `@plannotator/pi-extension`. Changes: - Added a Node preload: - `.pi/extensions/_shared/subprocess-preload.mjs` - patches `node:child_process.spawn` - calls `syncBuiltinESMExports()` so ESM named imports like `import { spawn } from \"node:child_process\"` are also patched - Updated launcher: - `bin/little-coder.mjs` now starts Pi with `--import .pi/extensions/_shared/subprocess-preload.mjs` - Updated subprocess registry: - added `registerChildProcess` - deduplicates explicit `startSubprocess(...)` registrations vs auto-tracked patched `spawn(...)` - This means `plannotator\n\n## Evidence\n- Prompt: Make sure this tracks all subprocesses. The tool `plannotator_submit_plan` also starts a subprocess for example.\n- Confidence: high\n\n## Validation\n- npm run typecheck && npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess-preload.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n\nRead:\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/index.ts\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/plannotator-events.ts\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/plannotator-browser.ts\n- /home/tom/workspace/little-coder/node_modules/@plannotator/pi-extension/server/network.ts\n- /home/tom/workspace/little-coder/.pi/settings.json\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/.pi/extensions/_shared/subprocess.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
+  },
+  {
+    "type": "runbook",
+    "title": "Runbook for index.ts, index.ts, patch-extension-notifications.mjs",
+    "created_at": "2026-05-30T20:54:29.180Z",
+    "updated_at": "2026-05-30T20:54:29.180Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "runbook",
+      "index.ts",
+      "index.ts",
+      "patch-extension-notifications.mjs"
+    ],
+    "evidence": {
+      "prompt": "The command \"/pi-insights\" currently generates a HTML file and that's it. I would like it to also start a webserver so that the HTML file is viewable in the browser, similar to what /inspect does. Also, it should just be /insights rather than /pi-insights as a command.",
+      "tools": [
+        "skills",
+        "code_search",
+        "read",
+        "glob",
+        "bash",
+        "edit"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/node_modules/@observal/pi-insights/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/branding/index.ts",
+        "/home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/usage-dashboard/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts",
+        "/home/tom/workspace/little-coder",
+        "/home/tom/workspace/little-coder/package.json",
+        "/home/tom/workspace/little-coder/node_modules/@observal/pi-insights",
+        "/home/tom/workspace/little-coder/node_modules/@observal/pi-insights/index.ts",
+        "/home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs",
+        "/home/tom/workspace/little-coder/.pi/extensions/branding/index.ts"
+      ],
+      "tests_run": [
+        "node scripts/patch-extension-notifications.mjs && npm run typecheck",
+        "npm run typecheck",
+        "node scripts/patch-extension-notifications.mjs && npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nImplemented. Changes: - `/pi-insights` is now registered as `/insights`. - Generated reports are served at `http://localhost:5463`. - `/insights` now opens the HTTP URL in the browser instead of opening the raw HTML file. - The report server serves the latest `~/.pi/agent/usage-data/report.html`. - Updated the branding hint from `/pi-insights` to `/insights`. - Updated `scripts/patch-extension-notifications.mjs` so the node_modules patch persists after install. Validation: - Ran `node scripts/patch-extension-notifications.mjs` - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: The command \"/pi-insights\" currently generates a HTML file and that's it. I would like it to also start a webserver so that the HTML file is viewable in the browser, similar to what /inspect does. Also, it should just be /insights rather than /pi-insights as a command.\n- Confidence: high\n\n## Validation\n- node scripts/patch-extension-notifications.mjs && npm run typecheck\n- npm run typecheck\n- node scripts/patch-extension-notifications.mjs && npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/node_modules/@observal/pi-insights/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/usage-dashboard/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/inspect/index.ts\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/package.json\n- /home/tom/workspace/little-coder/node_modules/@observal/pi-insights\n- /home/tom/workspace/little-coder/node_modules/@observal/pi-insights/index.ts\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/little-coder/.pi/extensions/branding/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
   }
 ]
