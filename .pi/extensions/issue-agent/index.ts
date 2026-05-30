@@ -1086,7 +1086,7 @@ async function runLoop(pi: ExtensionAPI, ctx: any, cfg: Config, notify: (msg: st
   }
 }
 
-export const __issueAgentTest = { runSubAgent, handleSubAgentJsonLine, stateOf, normalizePullRequest, listPullRequests, hasReviewCommand, hasUnansweredReviewCommand, reviewCycle, parseVerdict, reviewEvent, validMarker, hasAgentSource, createPullRequest, addLabels, setAiState, stateLabel, formatIssueAgentAskComment, latestIssueAgentAnswer, issuePrompt };
+export const __issueAgentTest = { runSubAgent, handleSubAgentJsonLine, parseArgs, isTruthy, labelValue, stateOf, priorityOf, modelsOf, thinkingLevelOf, dependencyOf, branchName, isAutoresearch, autoresearchConfig, normalizePullRequest, listPullRequests, hasReviewCommand, hasUnansweredReviewCommand, reviewCycle, parseVerdict, reviewEvent, validMarker, hasAgentSource, createPullRequest, addLabels, setAiState, stateLabel, formatIssueAgentAskComment, latestIssueAgentAnswer, issuePrompt };
 
 export default function (pi: ExtensionAPI) {
   const chatStatus = (message: string, type: "info" | "warning" | "error" = "info") => {

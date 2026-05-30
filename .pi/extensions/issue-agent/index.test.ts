@@ -16,9 +16,33 @@ function assistantLine(text: string): string {
 }
 
 describe("issue-agent lifecycle helpers", () => {
-  it("parses REQUESTING_REVIEW state labels", () => {
+  it("parses command args, truthy flags, and ai label syntaxes", () => {
+    expect(__issueAgentTest.parseArgs('--repos "https://github.com/a/b" --dry-run --interval=50')).toEqual({ repos: "https://github.com/a/b", "dry-run": "true", interval: "50" });
+    expect(__issueAgentTest.isTruthy("yes")).toBe(true);
+    expect(__issueAgentTest.isTruthy("false")).toBe(false);
+    expect(__issueAgentTest.labelValue(["ai:priority/5", "ai[planning-model:openai/o3]"], "priority")).toBe("5");
+    expect(__issueAgentTest.labelValue(["ai:priority/5", "ai[planning-model:openai/o3]"], "planning-model")).toBe("openai/o3");
+  });
+
+  it("parses REQUESTING_REVIEW state labels and priority defaults", () => {
     expect(__issueAgentTest.stateOf(["ai:state/REQUESTING_REVIEW"])).toBe("REQUESTING_REVIEW");
     expect(__issueAgentTest.stateOf(["ai[state:REQUESTING_REVIEW]"])).toBe("REQUESTING_REVIEW");
+    expect(__issueAgentTest.stateOf(["ai:state/unknown"])).toBe("PLANNING");
+    expect(__issueAgentTest.priorityOf(["ai:priority:2"])).toBe(2);
+    expect(__issueAgentTest.priorityOf(["ai:priority/not-a-number"])).toBe(100);
+  });
+
+  it("derives model, thinking, dependency, branch, and autoresearch metadata", () => {
+    const labels = ["ai:planning-model/plan-model", "ai:execution-model:exec-model", "ai:fallback-small-model/fallback-a", "ai[fallback-large-model:fallback-b]", "ai:thinking-level/high"];
+    expect(__issueAgentTest.modelsOf(labels, { fallback: [] })).toEqual({ planning: "plan-model", execution: "exec-model", fallback: ["fallback-a", "fallback-b"] });
+    expect(__issueAgentTest.modelsOf(labels, { planning: "override", fallback: ["fallback-override"] })).toEqual({ planning: "override", execution: "exec-model", fallback: ["fallback-override"] });
+    expect(__issueAgentTest.thinkingLevelOf(labels)).toBe("high");
+    expect(__issueAgentTest.thinkingLevelOf(["ai:thinking-level/banana"])).toBeUndefined();
+    const issue = { number: 7, title: "Fix: Thing!!!", body: "Depends-On: #42", labels: [] as string[], url: "u", apiUrl: "a" };
+    expect(__issueAgentTest.dependencyOf(issue)).toBe(42);
+    expect(__issueAgentTest.branchName(issue)).toBe("ai/7-fix-thing");
+    expect(__issueAgentTest.isAutoresearch({ ...issue, labels: ["ai:autoresearch"] })).toBe(true);
+    expect(__issueAgentTest.autoresearchConfig({ ...issue, labels: ["autoresearch:max-iterations=3", "autoresearch:metric=accuracy", "autoresearch:direction=max"] })).toEqual({ maxIterations: "3", metric: "accuracy", direction: "max" });
   });
 
   it("normalizes pull request rows with branch/base metadata", () => {
@@ -66,6 +90,36 @@ describe("issue-agent lifecycle helpers", () => {
     expect(answer?.answer).toBe("Use A");
     expect(answer?.ask.context).toBe(ask.context);
     expect(__issueAgentTest.latestIssueAgentAnswer([{ body: askComment }, { body: "/answer Use A" }, { body: "## AI Plan" }])).toBeUndefined();
+  });
+
+  it("matches the latest /answer with the most recent unanswered clarification", () => {
+    const first = __issueAgentTest.formatIssueAgentAskComment({ question: "First?", context: "first context" });
+    const second = __issueAgentTest.formatIssueAgentAskComment({ questions: ["Second?", "More detail?"], context: "second context" });
+    const answer = __issueAgentTest.latestIssueAgentAnswer([
+      { body: first },
+      { body: "/answer stale" },
+      { body: second },
+      { body: "/answer fresh" },
+    ]);
+    expect(answer?.answer).toBe("fresh");
+    expect(answer?.ask.context).toBe("second context");
+  });
+
+  it("handles sub-agent json tool events, errors, and assistant content", () => {
+    const emitted: Array<{ msg: string; type?: string }> = [];
+    const emit = (msg: string, type?: "info" | "warning" | "error") => emitted.push({ msg, type });
+    expect(__issueAgentTest.handleSubAgentJsonLine(JSON.stringify({ type: "tool_execution_start", toolName: "read" }), emit)).toBeUndefined();
+    expect(__issueAgentTest.handleSubAgentJsonLine(JSON.stringify({ type: "tool_execution_end", toolName: "read", isError: true }), emit)).toBeUndefined();
+    expect(__issueAgentTest.handleSubAgentJsonLine(JSON.stringify({ message: { role: "assistant", content: [{ type: "text", text: "done" }] } }), emit, new Set())).toBe("done");
+    expect(__issueAgentTest.handleSubAgentJsonLine(JSON.stringify({ message: { stopReason: "error", errorMessage: "bad" } }), emit)).toBe("bad");
+    expect(__issueAgentTest.handleSubAgentJsonLine("not json", emit)).toBeUndefined();
+    expect(emitted.map((e) => e.msg)).toEqual([
+      "sub-agent tool started: read",
+      "sub-agent tool failed: read",
+      "sub-agent assistant:\ndone",
+      "sub-agent error: bad",
+    ]);
+    expect(emitted.map((e) => e.type)).toEqual(["info", "warning", "info", "error"]);
   });
 
   it("issue planning prompt includes shared guidance and issueAgentAsk", () => {

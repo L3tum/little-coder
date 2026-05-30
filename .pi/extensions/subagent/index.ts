@@ -936,3 +936,14 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
     return buildParallelToolResult(results, makeDetails);
   }
 }
+
+export const __subagentTest = {
+  parseDelegationMode,
+  buildForkSessionSnapshotJsonl,
+  parseNonNegativeInt,
+  parseBoolean,
+  parseAgentStack,
+  getMaxDepthFlagFromArgv,
+  getPreventCyclesFlagFromArgv,
+  getCycleViolations,
+};

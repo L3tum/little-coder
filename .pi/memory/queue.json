@@ -96,47 +96,6 @@
   },
   {
     "type": "runbook",
-    "title": "Runbook for mode-prompts.ts, index.ts, index.ts",
-    "created_at": "2026-05-30T09:20:46.956Z",
-    "updated_at": "2026-05-30T09:20:46.956Z",
-    "source": "memory-context deterministic turn_end",
-    "confidence": "high",
-    "tags": [
-      "runbook",
-      "mode-prompts.ts",
-      "index.ts",
-      "index.ts"
-    ],
-    "evidence": {
-      "prompt": "In addition to the other modes via @.pi/extensions/mode-commands/, also add a mode for the autoresearch feature in @.pi/extensions/issue-agent/ and make both re-use the same stuff like with the other commands",
-      "tools": [
-        "skills",
-        "code_search",
-        "read",
-        "bash",
-        "edit"
-      ],
-      "files_edited": [
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts"
-      ],
-      "files_read": [
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
-        "/home/tom/workspace/little-coder/package.json"
-      ],
-      "tests_run": [
-        "npm run typecheck"
-      ]
-    },
-    "body": "## Summary\nImplemented. Changes: - Added shared `autoresearchModePrompt()` in `.pi/extensions/mode-commands/mode-prompts.ts`. - Added `AUTORESEARCH` to `ModeName` and `modePrompt()`. - Added `/autoresearch` command in `.pi/extensions/mode-commands/index.ts`. - Updated `.pi/extensions/issue-agent/index.ts` to reuse the shared autoresearch prompt instead of maintaining its own inline copy. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: In addition to the other modes via @.pi/extensions/mode-commands/, also add a mode for the autoresearch feature in @.pi/extensions/issue-agent/ and make both re-use the same stuff like with the other commands\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 2,
-    "last_matched_at": "2026-05-30T09:53:22.085Z"
-  },
-  {
-    "type": "runbook",
     "title": "Runbook for index.ts",
     "created_at": "2026-05-30T09:29:05.166Z",
     "updated_at": "2026-05-30T09:29:05.166Z",
@@ -294,6 +253,128 @@
       ]
     },
     "body": "## Summary\nImplemented the fixes. Changes: - Added saved project-agent trust: - Prompts at `session_start` when project-local agents are found. - Saves trusted project agent dirs in `~/.pi/agent/settings.json`. - Redacts project-agent descriptions in the system prompt until trusted. `efedca1`, `edb0212` - Fixed parallel subagent failures: - Parallel runs now return `isError: true` when any child result fails. `e5754e6` - Added tests: - Trust setting parsing/checking. - Project-agent description redaction. - Parallel mixed-failure result signaling. `e032ffc` - Updated `.gitignore`: - Added only `.pi/memory/queue.json`, not all `.pi/memory`. `e5519bc` - Reverted the local `queue.json` working-tree change\n\n## Evidence\n- Prompt: Fix the highlighted issues. Ask to trust project agents at session start and save that as a setting. Do not add .pi/memory to .gitignore, but do add queue.json to it. Add tests\n- Confidence: high\n\n## Validation\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.gitignore\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder\n- /tmp/pi-bash-bfb135e8be6ac079.log\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T19:13:18.836Z"
+  },
+  {
+    "type": "action",
+    "title": "Updated index.ts, index.test.ts, index.test.ts",
+    "created_at": "2026-05-30T19:14:49.136Z",
+    "updated_at": "2026-05-30T19:14:49.136Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "action",
+      "index.ts",
+      "index.test.ts",
+      "index.test.ts"
+    ],
+    "evidence": {
+      "prompt": "Please add tests to the @.pi/extensions/issue-agent/ as well as @.pi/extensions/subagent/ implementations",
+      "tools": [
+        "code_search",
+        "glob",
+        "read",
+        "bash",
+        "edit"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts"
+      ],
+      "tests_run": [
+        "npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts --runInBand",
+        "npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts",
+        "npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nImplemented tests for both requested implementations. Changes: - Added issue-agent tests for: - Matching the latest `/answer` to the most recent clarification request. - `handleSubAgentJsonLine` handling tool start/end events, assistant content, errors, and invalid JSON. - Added subagent tests for: - Delegation mode parsing. - Fork session snapshot JSONL generation. - Depth/boolean/stack/argv guard parsing. - Cycle violation detection. - Exported `__subagentTest` test helpers from `.pi/extensions/subagent/index.ts`. Validation: - `npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts` - `npm run typecheck` Both passed.\n\n## Evidence\n- Prompt: Please add tests to the @.pi/extensions/issue-agent/ as well as @.pi/extensions/subagent/ implementations\n- Confidence: high\n\n## Validation\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts --runInBand\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
+  },
+  {
+    "type": "action",
+    "title": "Updated index.ts, index.test.ts, index.test.ts",
+    "created_at": "2026-05-30T19:16:42.432Z",
+    "updated_at": "2026-05-30T19:16:42.432Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "action",
+      "index.ts",
+      "index.test.ts",
+      "index.test.ts"
+    ],
+    "evidence": {
+      "prompt": "More tests!",
+      "tools": [
+        "read",
+        "edit",
+        "bash"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts"
+      ],
+      "tests_run": [
+        "npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts",
+        "npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nAdded more tests. New issue-agent coverage: - CLI arg parsing. - Truthy flag parsing. - AI label syntaxes: slash, colon, bracket. - State fallback behavior. - Priority parsing/defaults. - Model override/fallback label parsing. - Thinking level validation. - Dependency extraction. - Branch slug generation. - Autoresearch metadata parsing. New subagent coverage: - User/project agent discovery. - Nearest project `.pi/agents` lookup. - Project agent precedence over user agent with same name. - Frontmatter tool parsing for string and YAML array forms. - Invalid agent file skipping. - Built-in agent availability with starter discovery. Also expanded `__issueAgentTest` exports for the newly tested \n\n## Evidence\n- Prompt: More tests!\n- Confidence: high\n\n## Validation\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 0
+  },
+  {
+    "type": "action",
+    "title": "Updated index.ts, index.test.ts, index.test.ts",
+    "created_at": "2026-05-30T19:17:06.034Z",
+    "updated_at": "2026-05-30T19:17:06.034Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "action",
+      "index.ts",
+      "index.test.ts",
+      "index.test.ts"
+    ],
+    "evidence": {
+      "prompt": "More tests!",
+      "tools": [
+        "read",
+        "edit",
+        "bash"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts"
+      ],
+      "tests_run": [
+        "npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts",
+        "npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck",
+        "npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nFixed the diagnostics in `.pi/extensions/issue-agent/index.test.ts`. Cause: - Test helper calls were passing partial objects where the exported helper types expect full `Issue` objects. Fix: - Added a full reusable `issue` test object with `number`, `title`, `body`, `labels`, `url`, and `apiUrl`. - Used object spreads for label-specific cases. Validation passed: - `npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts` - `npm run typecheck`\n\n## Evidence\n- Prompt: More tests!\n- Confidence: high\n\n## Validation\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n- npm test -- .pi/extensions/issue-agent/index.test.ts .pi/extensions/subagent/index.test.ts && npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.test.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.test.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
   }
 ]
