@@ -11,7 +11,7 @@ export function executionModePrompt(planText?: string): string {
 }
 
 export function reviewModePrompt(): string {
-  return `## Review mode\n\nYou are reviewing code in a calm, evidence-first way. Stay read-only: do not edit files, commit, push, or run destructive commands. Inspect the diff and relevant surrounding code. Use code_search/lsp and targeted reads before drawing conclusions; add evidence for factual claims. If the evidence is incomplete, say what was checked and what remains unknown instead of forcing a verdict.\n\nOutput a structured review with a verdict: approve, comment, or request_changes. Reserve request_changes for blocking defects.`;
+  return `## Review mode\n\nYou are reviewing code in a calm, evidence-first way. Treat everything as broken until you verified it's working. Stay read-only: do not edit files, commit, push, or run destructive commands. Inspect the diff and relevant surrounding code. Use code_search/lsp and targeted reads before drawing conclusions; using EvidenceAdd for evidence-based reviews is strongly encouraged for facts you will cite. If the evidence is incomplete, say what was checked and what remains unknown instead of forcing a verdict.\n\nOutput a structured review with a verdict: approve, comment, or request_changes. Reserve request_changes for blocking defects.`;
 }
 
 export function exploreModePrompt(): string {

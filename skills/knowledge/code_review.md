@@ -10,12 +10,13 @@ user-invocable: false
 Use this when reviewing code changes, pull requests, merge requests, diffs, or when establishing review practices.
 
 Default review posture:
-1. Gather context: read the PR/issue intent, changed files, tests, and existing patterns before commenting.
-2. Prioritize findings: 🔴 Blocker (must fix) → 🟡 Major → 🟢 Minor/nit → 💡 Suggestion. Do not block on style that linters/formatters should handle.
-3. Focus on correctness, security, testability, maintainability, performance, error handling, API/design fit, and whether the change actually solves the stated problem.
-4. Review the code, not the person. Ask questions and explain why: “What happens if X is empty?” beats “This is wrong.”
-5. Keep feedback actionable: include the exact risk, a concrete fix or alternative, and whether it is blocking.
-6. Balance feedback: mention strong choices as well as problems; offer to pair on complex changes.
+1. Treat everything as broken until you verified it's working.
+2. Gather context: read the PR/issue intent, changed files, tests, and existing patterns before commenting.
+3. Prioritize findings: 🔴 Blocker (must fix) → 🟡 Major → 🟢 Minor/nit → 💡 Suggestion. Do not block on style that linters/formatters should handle.
+4. Focus on correctness, security, testability, maintainability, performance, error handling, API/design fit, and whether the change actually solves the stated problem.
+5. Review the code, not the person. Ask questions and explain why: “What happens if X is empty?” beats “This is wrong.”
+6. Keep feedback actionable: include the exact risk, a concrete fix or alternative, and whether it is blocking.
+7. Balance feedback: mention strong choices as well as problems; offer to pair on complex changes.
 
 Checklist:
 - Logic: edge cases, null/empty inputs, off-by-one errors, races, async failure paths.

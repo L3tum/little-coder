@@ -50,222 +50,6 @@
     "last_matched_at": "2026-05-30T00:00:25.342Z"
   },
   {
-    "type": "action",
-    "title": "Validated project behavior",
-    "created_at": "2026-05-29T11:50:05.923Z",
-    "updated_at": "2026-05-29T11:50:05.923Z",
-    "source": "memory-context deterministic turn_end",
-    "confidence": "medium",
-    "tags": [
-      "action"
-    ],
-    "evidence": {
-      "prompt": "Please use the skill \"code-review\" to review the entire codebase. Focus on verifying that everything works, deduplicating code, dead code and bad architectural decisions. Document along the way what you think may be good to document. Treat everything as broken until verified working.",
-      "tools": [
-        "skills",
-        "code_status",
-        "read",
-        "code_search",
-        "bash"
-      ],
-      "files_edited": [],
-      "files_read": [
-        "/home/tom/.pi/agent/skills/harness/skills/knowledge/code_review.md",
-        "/home/tom/workspace/little-coder/README.md",
-        "/home/tom/workspace/little-coder/package.json",
-        "/home/tom/workspace/little-coder/tsconfig.json",
-        "/home/tom/workspace/little-coder/vitest.config.ts"
-      ],
-      "tests_run": [
-        "find /home/tom/workspace/little-coder -maxdepth 2 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' | sort",
-        "find /home/tom/workspace/little-coder -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' -not -path '*/.pi/extensions/powerline-foot"
-      ]
-    },
-    "body": "## Summary\nNow I have a clear picture of the project structure. This is the **little-coder** AI coding agent harness. Let me read all the key source files systematically.\n\n## Evidence\n- Prompt: Please use the skill \"code-review\" to review the entire codebase. Focus on verifying that everything works, deduplicating code, dead code and bad architectural decisions. Document along the way what you think may be good to document. Treat everything as broken until verified working.\n- Confidence: medium\n\n## Validation\n- find /home/tom/workspace/little-coder -maxdepth 2 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' | sort\n- find /home/tom/workspace/little-coder -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' -not -path '*/.pi/extensions/powerline-foot\n\n## Files\nEdited:\n- none\n\nRead:\n- /home/tom/.pi/agent/skills/harness/skills/knowledge/code_review.md\n- /home/tom/workspace/little-coder/README.md\n- /home/tom/workspace/little-coder/package.json\n- /home/tom/workspace/little-coder/tsconfig.json\n- /home/tom/workspace/little-coder/vitest.config.ts\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 2,
-    "last_matched_at": "2026-05-30T00:00:25.342Z"
-  },
-  {
-    "type": "action",
-    "title": "Validated project behavior",
-    "created_at": "2026-05-29T11:50:45.737Z",
-    "updated_at": "2026-05-29T11:50:45.737Z",
-    "source": "memory-context deterministic turn_end",
-    "confidence": "medium",
-    "tags": [
-      "action"
-    ],
-    "evidence": {
-      "prompt": "Please use the skill \"code-review\" to review the entire codebase. Focus on verifying that everything works, deduplicating code, dead code and bad architectural decisions. Document along the way what you think may be good to document. Treat everything as broken until verified working.",
-      "tools": [
-        "skills",
-        "code_status",
-        "read",
-        "code_search",
-        "bash"
-      ],
-      "files_edited": [],
-      "files_read": [
-        "/home/tom/.pi/agent/skills/harness/skills/knowledge/code_review.md",
-        "/home/tom/workspace/little-coder/README.md",
-        "/home/tom/workspace/little-coder/package.json",
-        "/home/tom/workspace/little-coder/tsconfig.json",
-        "/home/tom/workspace/little-coder/vitest.config.ts",
-        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
-        "/home/tom/workspace/little-coder/bin/launcher-helpers.mjs",
-        "/home/tom/workspace/little-coder/models.json"
-      ],
-      "tests_run": [
-        "find /home/tom/workspace/little-coder -maxdepth 2 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' | sort",
-        "find /home/tom/workspace/little-coder -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' -not -path '*/.pi/extensions/powerline-foot"
-      ]
-    },
-    "body": "## Summary\nNow let me read all the core source files. I'll start with the launcher and key extensions.\n\n## Evidence\n- Prompt: Please use the skill \"code-review\" to review the entire codebase. Focus on verifying that everything works, deduplicating code, dead code and bad architectural decisions. Document along the way what you think may be good to document. Treat everything as broken until verified working.\n- Confidence: medium\n\n## Validation\n- find /home/tom/workspace/little-coder -maxdepth 2 -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' | sort\n- find /home/tom/workspace/little-coder -type f -not -path '*/node_modules/*' -not -path '*/.git/*' -not -path '*/.venv-test/*' -not -path '*/.pytest_cache/*' -not -path '*/.pi/extensions/powerline-foot\n\n## Files\nEdited:\n- none\n\nRead:\n- /home/tom/.pi/agent/skills/harness/skills/knowledge/code_review.md\n- /home/tom/workspace/little-coder/README.md\n- /home/tom/workspace/little-coder/package.json\n- /home/tom/workspace/little-coder/tsconfig.json\n- /home/tom/workspace/little-coder/vitest.config.ts\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/models.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 2,
-    "last_matched_at": "2026-05-30T00:00:25.342Z"
-  },
-  {
-    "type": "observation",
-    "title": "Observation about mode-prompts.ts, index.ts, agents.ts",
-    "created_at": "2026-05-30T01:08:07.152Z",
-    "updated_at": "2026-05-30T01:08:07.152Z",
-    "source": "memory-context deterministic turn_end",
-    "confidence": "high",
-    "tags": [
-      "observation",
-      "mode-prompts.ts",
-      "index.ts",
-      "agents.ts",
-      "index.ts",
-      "runner.ts"
-    ],
-    "evidence": {
-      "prompt": "Implement the plan as defined in @plans/subagent-and-plan-refactor.md",
-      "tools": [
-        "skills",
-        "read",
-        "code_search",
-        "findRead",
-        "bash",
-        "webfetch",
-        "write",
-        "edit"
-      ],
-      "files_edited": [
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
-        "/home/tom/workspace/little-coder/bin/launcher-helpers.mjs",
-        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
-        "/home/tom/workspace/little-coder/AGENTS.md",
-        "/home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.d.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.d.ts"
-      ],
-      "files_read": [
-        "/home/tom/workspace/little-coder/plans/subagent-and-plan-refactor.md",
-        "/home/tom/workspace/little-coder",
-        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
-        "/home/tom/workspace/little-coder/bin/launcher-helpers.mjs",
-        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
-        "/home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs",
-        "/home/tom/workspace/little-coder/AGENTS.md",
-        "/tmp/pi-bash-5699adf057c15f65.log",
-        "/tmp/pi-bash-45abde086ab38d6e.log",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.js",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.js"
-      ],
-      "tests_run": [
-        "npm test -- --runInBand",
-        "npm test",
-        "npm test",
-        "npm run typecheck",
-        "npm run typecheck",
-        "npm test"
-      ]
-    },
-    "body": "## Summary\nImplemented the plan’s main refactor pieces. Summary: - Added vendored `.pi/extensions/subagent/` based on `pi-subagent`. - Added programmatic PLAN / EXECUTION / REVIEW / EXPLORE subagents using shared mode prompts. - Added `/subagent-level`, `/subagent-model`, `/subagent-model-all`. - Added `.pi/extensions/mode-commands/` with `/plan`, `/execute`, `/review`. - Added shared `.pi/extensions/mode-commands/mode-prompts.ts`. - Refactored issue-agent prompts to use shared mode prompts. - Refactored issue-agent subagent execution to use the subagent runner directly in normal operation, while preserving the old test override path. - Updated launcher behavior to treat `LITTLE_CODER_SUBAGENT` / `PI_S\n\n## Evidence\n- Prompt: Implement the plan as defined in @plans/subagent-and-plan-refactor.md\n- Confidence: high\n\n## Validation\n- npm test -- --runInBand\n- npm test\n- npm test\n- npm run typecheck\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.d.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.d.ts\n\nRead:\n- /home/tom/workspace/little-coder/plans/subagent-and-plan-refactor.md\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/litt",
-    "match_count": 2,
-    "last_matched_at": "2026-05-30T09:46:04.813Z"
-  },
-  {
-    "type": "action",
-    "title": "Updated mode-prompts.ts, index.ts, agents.ts",
-    "created_at": "2026-05-30T01:08:39.789Z",
-    "updated_at": "2026-05-30T01:08:39.789Z",
-    "source": "memory-context deterministic turn_end",
-    "confidence": "high",
-    "tags": [
-      "action",
-      "mode-prompts.ts",
-      "index.ts",
-      "agents.ts",
-      "index.ts",
-      "runner.ts"
-    ],
-    "evidence": {
-      "prompt": "Implement the plan as defined in @plans/subagent-and-plan-refactor.md",
-      "tools": [
-        "skills",
-        "read",
-        "code_search",
-        "findRead",
-        "bash",
-        "webfetch",
-        "write",
-        "edit"
-      ],
-      "files_edited": [
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
-        "/home/tom/workspace/little-coder/bin/launcher-helpers.mjs",
-        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
-        "/home/tom/workspace/little-coder/AGENTS.md",
-        "/home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.d.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.d.ts"
-      ],
-      "files_read": [
-        "/home/tom/workspace/little-coder/plans/subagent-and-plan-refactor.md",
-        "/home/tom/workspace/little-coder",
-        "/home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts",
-        "/home/tom/workspace/little-coder/bin/launcher-helpers.mjs",
-        "/home/tom/workspace/little-coder/bin/little-coder.mjs",
-        "/home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs",
-        "/home/tom/workspace/little-coder/AGENTS.md",
-        "/tmp/pi-bash-5699adf057c15f65.log",
-        "/tmp/pi-bash-45abde086ab38d6e.log",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.js",
-        "/home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.js",
-        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts"
-      ],
-      "tests_run": [
-        "npm test -- --runInBand",
-        "npm test",
-        "npm test",
-        "npm run typecheck",
-        "npm run typecheck",
-        "npm test"
-      ]
-    },
-    "body": "## Summary\nFixed `.pi/extensions/mode-commands/index.ts` diagnostics: - Removed unused `resolve` import. - Removed unused `file` variable.\n\n## Evidence\n- Prompt: Implement the plan as defined in @plans/subagent-and-plan-refactor.md\n- Confidence: high\n\n## Validation\n- npm test -- --runInBand\n- npm test\n- npm test\n- npm run typecheck\n- npm run typecheck\n- npm test\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/agents.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-events.d.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/runner-cli.d.ts\n\nRead:\n- /home/tom/workspace/little-coder/plans/subagent-and-plan-refactor.md\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/plan-mode/planning-prompt.ts\n- /home/tom/workspace/little-coder/.pi/extensions/subagent/index.ts\n- /home/tom/workspace/little-coder/bin/launcher-helpers.mjs\n- /home/tom/workspace/little-coder/bin/little-coder.mjs\n- /home/tom/workspace/little-coder/scripts/patch-extension-notifications.mjs\n- /home/tom/workspace/little-coder/AGENTS.md\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 2,
-    "last_matched_at": "2026-05-30T09:46:04.813Z"
-  },
-  {
     "type": "runbook",
     "title": "Runbook for little-coder.mjs, launcher-helpers.test.mjs, lsp-core.ts",
     "created_at": "2026-05-30T09:12:54.294Z",
@@ -348,8 +132,8 @@
       ]
     },
     "body": "## Summary\nImplemented. Changes: - Added shared `autoresearchModePrompt()` in `.pi/extensions/mode-commands/mode-prompts.ts`. - Added `AUTORESEARCH` to `ModeName` and `modePrompt()`. - Added `/autoresearch` command in `.pi/extensions/mode-commands/index.ts`. - Updated `.pi/extensions/issue-agent/index.ts` to reuse the shared autoresearch prompt instead of maintaining its own inline copy. Validation: - Ran `npm run typecheck` successfully.\n\n## Evidence\n- Prompt: In addition to the other modes via @.pi/extensions/mode-commands/, also add a mode for the autoresearch feature in @.pi/extensions/issue-agent/ and make both re-use the same stuff like with the other commands\n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/issue-agent/index.ts\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
-    "match_count": 1,
-    "last_matched_at": "2026-05-30T09:46:04.813Z"
+    "match_count": 2,
+    "last_matched_at": "2026-05-30T09:53:22.085Z"
   },
   {
     "type": "runbook",
@@ -425,6 +209,51 @@
       ]
     },
     "body": "## Summary\nImplemented the gentle-coding prompt updates. Changed: - `.pi/extensions/mode-commands/mode-prompts.ts` - Execution mode now frames work as collaborative/iterative, permits stopping on contradictions/missing context, and avoids forced progress. - Review mode now explicitly allows “unknown” when evidence is incomplete. - Explore mode now says to report insufficient repo evidence instead of guessing. - Autoresearch mode now stops cleanly on noisy metrics/stalled searches/contradictory constraints instead of looping. - `AGENTS.md` - Added gentle framing to capabilities/autonomy. - Added explicit permission for dead ends, missing variables, contradictory constraints, and bounded validation. - Re\n\n## Evidence\n- Prompt: Please enhance the prompts under @.pi/extensions/mode-commands/mode-prompts.ts as well as the system prompt under @AGENTS.md more towards gentle coding (https://github.com/OttoRenner/Gentle-Coding). Do an analysis and also search online to see if it would make sense to add a tool definition that the agent can use to basically say \"I don't know\" or \n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/AGENTS.md\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/AGENTS.md\n- /home/tom/workspace/little-coder/.pi/extensions/extra-tools/index.ts\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
+    "match_count": 1,
+    "last_matched_at": "2026-05-30T09:53:22.085Z"
+  },
+  {
+    "type": "observation",
+    "title": "Observation about index.ts, mode-prompts.ts, code_review.md",
+    "created_at": "2026-05-30T09:54:44.180Z",
+    "updated_at": "2026-05-30T09:54:44.180Z",
+    "source": "memory-context deterministic turn_end",
+    "confidence": "high",
+    "tags": [
+      "observation",
+      "index.ts",
+      "mode-prompts.ts",
+      "code_review.md"
+    ],
+    "evidence": {
+      "prompt": "On the review mode in @.pi/extensions/mode-commands/ but also in @.pi/extensions/skill-inject/, it seems like the code-review skill @skills/knowledge/code_review.md is not reliably injected. I'm wondering why that is.\nAlso add to the skill the framing of \"Treat everything as broken until you verified it's working\".\nAlso it should already be in the prompt under @.pi/extensions/mode-commands/mode-prompts.ts , but verify and otherwise add that using evidence-based reviews with the tool EvidenceAdd ",
+      "tools": [
+        "skills",
+        "code_search",
+        "read",
+        "findRead",
+        "glob",
+        "edit",
+        "bash",
+        "EvidenceAdd"
+      ],
+      "files_edited": [
+        "/home/tom/workspace/little-coder/.pi/extensions/skill-inject/index.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
+        "/home/tom/workspace/little-coder/skills/knowledge/code_review.md"
+      ],
+      "files_read": [
+        "/home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts",
+        "/home/tom/workspace/little-coder/.pi/extensions/skill-inject/index.ts",
+        "/home/tom/workspace/little-coder/skills/knowledge/code_review.md",
+        "/home/tom/workspace/little-coder",
+        "/home/tom/workspace/little-coder/package.json"
+      ],
+      "tests_run": [
+        "npm run typecheck"
+      ]
+    },
+    "body": "## Summary\nImplemented. Why it was unreliable: - `skill-inject` selected reference skills from `event.prompt` only, not the system prompt. - Review mode lives in the system prompt (`## Review mode`), so entering review mode alone did not reliably trigger `code-review`. - A plain phrase like “review mode” also did not strongly match the old review trigger set. Changes made: - Updated `.pi/extensions/skill-inject/index.ts` - Added `review mode` as a review trigger. - Includes a review-mode hint when the system prompt contains review mode, so `code-review` gets selected reliably. - Uses that combined selection prompt for both knowledge and tool-skill selection. - Updated `.pi/extensions/mode-commands/mode\n\n## Evidence\n- Prompt: On the review mode in @.pi/extensions/mode-commands/ but also in @.pi/extensions/skill-inject/, it seems like the code-review skill @skills/knowledge/code_review.md is not reliably injected. I'm wondering why that is. Also add to the skill the framing of \"Treat everything as broken until you verified it's working\". Also it should already be in the \n- Confidence: high\n\n## Validation\n- npm run typecheck\n\n## Files\nEdited:\n- /home/tom/workspace/little-coder/.pi/extensions/skill-inject/index.ts\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/skills/knowledge/code_review.md\n\nRead:\n- /home/tom/workspace/little-coder/.pi/extensions/mode-commands/mode-prompts.ts\n- /home/tom/workspace/little-coder/.pi/extensions/skill-inject/index.ts\n- /home/tom/workspace/little-coder/skills/knowledge/code_review.md\n- /home/tom/workspace/little-coder\n- /home/tom/workspace/little-coder/package.json\n\n## Follow-up\n- Review for durability before accepting as long-term memory.",
     "match_count": 0
   }
 ]

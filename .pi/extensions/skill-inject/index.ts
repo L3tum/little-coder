@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSkillFile } from "./frontmatter.ts";
@@ -36,13 +37,30 @@ const INTENT_MAP: Record<string, string[]> = {
 };
 
 const RESEARCH_TRIGGERS = [/\bbrows(?:e|ing|er)\b/i, /\bonline\b/i, /\bresearch(?:ing)?\b/i, /\blook\s+up\b/i, /\blookup\b/i, /\bsearch\s+(?:the|for)\b/i, /\bweb\s*search\b/i, /\bwikipedia\b/i, /\bwebsite\b/i, /\bweb\s*page\b/i, /\bgoogle\b/i, /\bcite|citation\b/i, /\bfact[-\s]?check/i];
-const REVIEW_TRIGGERS = [/\bcode\s+review\b/i, /\breview(?:ing)?\s+(?:this\s+)?(?:code|diff|pr|pull\s+request|merge\s+request|change|changes)\b/i, /\b(?:pr|pull\s+request|merge\s+request)\s+review\b/i, /\brequest\s+changes\b/i, /\bapprove\s+(?:this\s+)?(?:pr|pull\s+request|merge\s+request|change|changes)\b/i];
+const REVIEW_TRIGGERS = [/\bcode\s+review\b/i, /\breview\s+mode\b/i, /\breview(?:ing)?\s+(?:this\s+)?(?:code|diff|pr|pull\s+request|merge\s+request|change|changes)\b/i, /\b(?:pr|pull\s+request|merge\s+request)\s+review\b/i, /\brequest\s+changes\b/i, /\bapprove\s+(?:this\s+)?(?:pr|pull\s+request|merge\s+request|change|changes)\b/i];
 const RESEARCH_DIRECTIVE = ["", "## Research-first directive", "This task involves online research.", "1. If Browser* tools are not active yet, call enableBrowserTools first.", "2. Gather facts with BrowserNavigate / BrowserExtract (or websearch for first hops).", "3. Save each citable fact via EvidenceAdd before relying on it.", "4. Only then answer or make file edits.", ""].join("\n");
 const MIN_SCORE_THRESHOLD = 2.0;
 const PER_ENTRY_CAP = 150;
 
 function skillsRoot(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "skills");
+}
+
+function settingsPath(): string { return join(homedir(), ".pi", "agent", "settings.json"); }
+function readSettings(): any { try { return JSON.parse(readFileSync(settingsPath(), "utf-8")); } catch { return {}; } }
+function writeSettings(settings: any): void { mkdirSync(dirname(settingsPath()), { recursive: true }); writeFileSync(settingsPath(), JSON.stringify(settings, null, 2) + "\n"); }
+function littleCoderSettings(): any { const s = readSettings(); s.little_coder ??= {}; return s; }
+function persistedBudget(key: "knowledgeTokenBudget" | "skillTokenBudget"): number | undefined {
+  const lc = readSettings()?.little_coder ?? {};
+  const snakeKey = key === "knowledgeTokenBudget" ? "knowledge_token_budget" : "skill_token_budget";
+  const value = lc[key] ?? lc[snakeKey];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+function setPersistedBudgets(knowledgeTokenBudget: number, skillTokenBudget: number): void {
+  const s = littleCoderSettings();
+  s.little_coder.knowledgeTokenBudget = knowledgeTokenBudget;
+  s.little_coder.skillTokenBudget = skillTokenBudget;
+  writeSettings(s);
 }
 
 function inferType(sourceDir: string, fmType: unknown): string {
@@ -113,14 +131,18 @@ function scoreEntry(userText: string, e: SkillEntry): number {
   return score;
 }
 
-function selectToolSkills(prompt: string, budget: number, allowed?: Set<string>, required: string[] = []): SkillEntry[] {
+function selectToolSkills(prompt: string, budget: number, allowed?: Set<string>, required: string[] = []): { selected: SkillEntry[]; skippedBudget: SkillEntry[] } {
   const selected: SkillEntry[] = [];
+  const skippedBudget: SkillEntry[] = [];
   let used = 0;
   const tryAdd = (name: string, force = false): void => {
     const sk = toolSkills.get(name);
-    if (!sk || selected.includes(sk)) return;
+    if (!sk || selected.includes(sk) || skippedBudget.includes(sk)) return;
     if (allowed && !allowed.has(name)) return;
-    if (!force && used + sk.tokenCost > budget) return;
+    if (!force && used + sk.tokenCost > budget) {
+      skippedBudget.push(sk);
+      return;
+    }
     selected.push(sk);
     used += sk.tokenCost;
   };
@@ -128,27 +150,35 @@ function selectToolSkills(prompt: string, budget: number, allowed?: Set<string>,
   if (lastFailedTool) tryAdd(lastFailedTool);
   for (const name of recentToolCalls.slice(0, 4)) tryAdd(name);
   for (const name of predictTools(prompt)) tryAdd(name);
-  return selected;
+  return { selected, skippedBudget };
 }
 
-function selectReferenceSkills(prompt: string, budget: number): SkillEntry[] {
+function selectReferenceSkills(prompt: string, budget: number): { selected: SkillEntry[]; skippedBudget: SkillEntry[] } {
   const scored = allSkills
     .filter((s) => !s.targetTool)
     .map((entry) => ({ entry, score: scoreEntry(prompt, entry) }))
     .filter((x) => x.score >= MIN_SCORE_THRESHOLD)
     .sort((a, b) => b.score - a.score);
   const selected: SkillEntry[] = [];
+  const skippedBudget: SkillEntry[] = [];
   let used = 0;
   for (const { entry } of scored) {
-    if (used + entry.tokenCost > budget) continue;
+    if (used + entry.tokenCost > budget) {
+      skippedBudget.push(entry);
+      continue;
+    }
     selected.push(entry);
     used += entry.tokenCost;
   }
-  return selected;
+  return { selected, skippedBudget };
 }
 
 function looksLikeResearchTask(text: string): boolean {
   return !!text && RESEARCH_TRIGGERS.some((re) => re.test(text));
+}
+
+function looksLikeReviewTask(text: string): boolean {
+  return !!text && REVIEW_TRIGGERS.some((re) => re.test(text));
 }
 
 function buildBlock(tools: SkillEntry[], refs: SkillEntry[]): string {
@@ -208,6 +238,31 @@ export default function (pi: ExtensionAPI) {
     pi.sendUserMessage(explicitSkillPrompt(skill), { deliverAs: "steer" });
     if (ctx.hasUI) ctx.ui.notify(`Loaded skill: ${skill.name}`, "info");
   };
+
+  pi.registerCommand("skill-budgets", {
+    description: "Set persisted skill injection budgets: /skill-budgets <knowledge-tokens> <tool-tokens>",
+    handler: async (args, ctx) => {
+      const parts = String(args ?? "").trim().split(/\s+/).filter(Boolean);
+      const currentKnowledge = persistedBudget("knowledgeTokenBudget") ?? 200;
+      const currentTools = persistedBudget("skillTokenBudget") ?? 300;
+      if (parts.length === 0) {
+        ctx.ui?.notify?.(`Skill injection budgets: knowledge=${currentKnowledge}, tools=${currentTools}. Usage: /skill-budgets <knowledge-tokens> <tool-tokens>`, "info");
+        return;
+      }
+      if (parts.length !== 2) {
+        ctx.ui?.notify?.("Usage: /skill-budgets <knowledge-tokens> <tool-tokens>", "warning");
+        return;
+      }
+      const knowledge = Number(parts[0]);
+      const tools = Number(parts[1]);
+      if (!Number.isInteger(knowledge) || !Number.isInteger(tools) || knowledge < 0 || tools < 0) {
+        ctx.ui?.notify?.("Budgets must be non-negative integer token counts.", "warning");
+        return;
+      }
+      setPersistedBudgets(knowledge, tools);
+      ctx.ui?.notify?.(`Skill injection budgets set to knowledge=${knowledge}, tools=${tools}.`, "info");
+    },
+  });
 
   pi.registerCommand("skills", {
     description: "List all available skills",
@@ -278,13 +333,17 @@ export default function (pi: ExtensionAPI) {
     const allowed = allowedList && allowedList.length > 0 ? new Set(allowedList) : undefined;
 
     const prompt = event.prompt ?? "";
-    const refBudget: number = lc.isSubtask ? 0 : (lc.knowledgeTokenBudget ?? 200);
-    const refs = refBudget > 0 ? selectReferenceSkills(prompt, refBudget) : [];
+    const modeHint = looksLikeReviewTask(basePrompt) ? "review mode code review" : "";
+    const selectionPrompt = `${prompt}\n${modeHint}`;
+    const refBudget: number = lc.isSubtask ? 0 : (lc.knowledgeTokenBudget ?? persistedBudget("knowledgeTokenBudget") ?? 200);
+    const refSelection = refBudget > 0 ? selectReferenceSkills(selectionPrompt, refBudget) : { selected: [], skippedBudget: [] };
+    const refs = refSelection.selected;
     const requiredTools = Array.from(new Set([...(Array.isArray(lc.requiredTools) ? lc.requiredTools : []), ...refs.flatMap((s) => s.requiresTools)]));
-    const toolBudget: number = lc.skillTokenBudget ?? 300;
-    const tools = toolBudget > 0 ? selectToolSkills(prompt, toolBudget, allowed, requiredTools) : [];
+    const toolBudget: number = lc.skillTokenBudget ?? persistedBudget("skillTokenBudget") ?? 300;
+    const toolSelection = toolBudget > 0 ? selectToolSkills(selectionPrompt, toolBudget, allowed, requiredTools) : { selected: [], skippedBudget: [] };
+    const tools = toolSelection.selected;
     const researchTask = looksLikeResearchTask(prompt);
-    if (tools.length === 0 && refs.length === 0 && !researchTask) return;
+    if (tools.length === 0 && refs.length === 0 && !researchTask && toolSelection.skippedBudget.length === 0 && refSelection.skippedBudget.length === 0) return;
 
     const key = `${tools.map((s) => s.targetTool).sort().join("|")}::${refs.map((s) => s.name).sort().join("|")}`;
     let block = selectionCache.get(key);
@@ -298,6 +357,8 @@ export default function (pi: ExtensionAPI) {
       const parts: string[] = [];
       if (tools.length > 0) parts.push(`+${tools.length} tools [${tools.map((s) => s.targetTool).join(",")}]`);
       if (refs.length > 0) parts.push(`+${refs.length} refs [${refs.map((s) => s.name).join(",")}]`);
+      if (toolSelection.skippedBudget.length > 0) parts.push(`skipped tools budget [${toolSelection.skippedBudget.map((s) => s.targetTool ?? s.name).join(",")}]`);
+      if (refSelection.skippedBudget.length > 0) parts.push(`skipped refs budget [${refSelection.skippedBudget.map((s) => s.name).join(",")}]`);
       if (researchTask) parts.push("+research-directive");
       ctx.ui.notify(`skill-inject: ${parts.join(" ")}`, "info");
     } catch {}
