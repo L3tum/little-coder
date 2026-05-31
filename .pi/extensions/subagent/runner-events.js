@@ -83,6 +83,7 @@ export function processPiEvent(event, result) {
       return addAssistantMessage(result, event.message);
 
     case "turn_end":
+      result.sawAgentEnd = true;
       return addAssistantMessage(result, event.message);
 
     case "agent_end":
