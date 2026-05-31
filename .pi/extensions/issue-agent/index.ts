@@ -561,7 +561,8 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
     if (stopRequested) throw new Error("sub-agent stopped by request");
     if (code !== 0) {
       for (const line of stderr.split(/\r?\n/).filter(Boolean)) emit(`sub-agent stderr: ${line}`, "warning");
-      throw new Error(`sub-agent exited with code ${code}\n${stderr.trim() || output.trim()}`);
+      const detail = stderr.trim() || output.trim() || `sub-agent process exited with code ${code} (no stderr output — check llama.cpp/llama-swap logs for API errors like 502)`;
+      throw new Error(`sub-agent exited with code ${code}\n${detail}`);
     }
     return output.trim();
   }
@@ -610,7 +611,8 @@ async function runSubAgent(prompt: string, dir: string, workdir: string, model: 
   const output = getFinalOutput(result.messages).trim();
   if (result.exitCode !== 0) {
     for (const line of result.stderr.split(/\r?\n/).filter(Boolean)) emit(`sub-agent stderr: ${line}`, "warning");
-    throw new Error(`sub-agent exited with code ${result.exitCode}\n${result.stderr.trim() || output}`);
+    const detail = result.stderr.trim() || output.trim() || `sub-agent process exited with code ${result.exitCode} (no stderr output — check llama.cpp/llama-swap logs for API errors like 502)`;
+    throw new Error(`sub-agent exited with code ${result.exitCode}\n${detail}`);
   }
   return output;
 }

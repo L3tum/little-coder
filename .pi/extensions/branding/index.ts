@@ -88,20 +88,29 @@ function buildHeader(theme: Theme): string[] {
   ].join("");
   const extensionLine6 = [
     theme.fg("muted", "Use "),
+    theme.fg("text", "/usage"),
+    theme.fg("muted", " for the inline usage dashboard, or "),
     theme.fg("text", "/insights"),
-    theme.fg("muted", " for usage insights"),
+    theme.fg("muted", " for the full report"),
   ].join("");
   const extensionLine7 = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/web start|status|open"),
+    theme.fg("muted", " for the local web dashboard"),
+  ].join("");
+  const extensionLine8 = [
     theme.fg("muted", "Use "),
     theme.fg("text", "/workspace-permissions"),
     theme.fg("muted", " for workspace access policy"),
   ].join("");
-  const extensionLine8 = [
+  const extensionLine9 = [
     theme.fg("muted", "Use "),
     theme.fg("text", "/lsp-doctor"),
+    theme.fg("muted", " or "),
+    theme.fg("text", "/lsp"),
     theme.fg("muted", " to inspect usable LSP servers"),
   ].join("");
-  const extensionLine9 = [
+  const extensionLine10 = [
     theme.fg("muted", "Use "),
     theme.fg("text", "/codebase"),
     theme.fg("muted", " to inspect codebase-memory"),
@@ -112,10 +121,37 @@ function buildHeader(theme: Theme): string[] {
     theme.fg("muted", ", "),
     theme.fg("text", "/reflect-review"),
     theme.fg("muted", ", "),
+    theme.fg("text", "/reflect-accept"),
+    theme.fg("muted", ", "),
     theme.fg("text", "/breadcrumbs"),
     theme.fg("muted", ", and "),
     theme.fg("text", "/skills"),
     theme.fg("muted", " for reusable session learning"),
+  ].join("");
+  const skillLine = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/skill [name]"),
+    theme.fg("muted", ", "),
+    theme.fg("text", "/skill-budgets"),
+    theme.fg("muted", ", and "),
+    theme.fg("text", "/promote-user-skill"),
+    theme.fg("muted", " to load, tune, and package skills"),
+  ].join("");
+  const subagentLine = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/subagent-level"),
+    theme.fg("muted", ", "),
+    theme.fg("text", "/subagent-model"),
+    theme.fg("muted", ", and "),
+    theme.fg("text", "/subagent-thinking"),
+    theme.fg("muted", " to tune delegation"),
+  ].join("");
+  const subprocessLine = [
+    theme.fg("muted", "Use "),
+    theme.fg("text", "/subprocesses"),
+    theme.fg("muted", " and "),
+    theme.fg("text", "/subprocess"),
+    theme.fg("muted", " to inspect background workers"),
   ].join("");
   const issueAgentSection = [
     theme.bold("Issue agent:"),
@@ -189,7 +225,11 @@ function buildHeader(theme: Theme): string[] {
     extensionLine7,
     extensionLine8,
     extensionLine9,
+    extensionLine10,
     reflectionLine,
+    skillLine,
+    subagentLine,
+    subprocessLine,
     "",
     ...issueAgentSection,
     "",

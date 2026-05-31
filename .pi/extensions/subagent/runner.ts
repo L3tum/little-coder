@@ -388,14 +388,20 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       proc.stdout!.on("data", onStdoutData);
       proc.stderr!.on("data", onStderrData);
 
-      proc.on("close", (code) => {
+      proc.on("close", (code, signal) => {
         didClose = true;
         if (buffer.trim()) flushBufferedLines(buffer);
-        finish(code ?? 0);
+        if (signal) {
+          const signalNumber = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGILL: 4, SIGTRAP: 5, SIGABRT: 6, SIGFPE: 8, SIGSEGV: 11, SIGPIPE: 13, SIGALRM: 14, SIGTERM: 15, SIGKILL: 9, SIGCHLD: 17, SIGCONT: 18, SIGSTOP: 19, SIGTSTP: 20, SIGTTIN: 21, SIGTTOU: 22 }[signal] ?? 0;
+          result.stderr += (result.stderr.trim() ? "\n" : "") + `Process killed by signal ${signal}.`;
+          finish(128 + signalNumber);
+        } else {
+          finish(code ?? 0);
+        }
       });
 
       proc.on("error", (err) => {
-        if (!result.stderr.trim()) result.stderr = err.message;
+        result.stderr += (result.stderr.trim() ? "\n" : "") + err.message;
         finish(1);
       });
 
