@@ -6,6 +6,7 @@ token_cost: 150
 keywords: [code review, review, reviews, reviewing, pr review, pull request, pull request review, merge request, diff, reviewer, feedback, request changes, approve, approval, blocker, nit, testability, maintainability]
 requires_tools: [read, code_search, lsp]
 user-invocable: false
+description: Concise guidance for Code Review.
 ---
 Use this when reviewing code changes, pull requests, merge requests, diffs, or when establishing review practices.
 

@@ -5,6 +5,8 @@ target_tool: findRead
 priority: 10
 token_cost: 120
 user-invocable: false
+description: Guidance for finding files by glob and reading matched contents in one bounded call.
+keywords: [findread, find, read, glob, files, contents, pattern, search]
 ---
 ## findRead Tool
 Find files matching a glob pattern and read their contents in one call. Combines Glob + Read so you don't need two separate tool calls.
@@ -14,7 +16,9 @@ OPTIONAL: path (base directory, defaults to cwd), maxFiles (default 5, max 50), 
 
 RULES:
 - Use ** for recursive matching across directories
+- Output starts with the effective invocation: `pattern`, `path`, `maxFiles`, `maxCharacters`, and `ignoreDefaultExcludes`
 - Returns each file's absolute path followed by its content, separated by headers
+- No-match and error responses still include the effective invocation prefix
 - **Always use conservative limits** — this tool can easily overload the context window
 - Default maxFiles is 5 and default maxCharacters is 4000; increase only when needed
 - Never use maxFiles > 10 or maxCharacters > 10000 without a specific reason

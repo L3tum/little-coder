@@ -34,41 +34,6 @@ export const PATCHES = [
     newText: `function openBrowserForServer(serverUrl: string, ctx: ExtensionContext): void {\n\tctx.ui.notify(\`Plannotator listening at: \${serverUrl}\`, "info");\n\tconst browserResult = openBrowser(serverUrl);\n\tif (!browserResult.opened) {\n\t\tctx.ui.notify(\`Open this URL to review: \${serverUrl}\`, "info");\n\t}\n}`,
   },
   {
-    name: "pi-insights http server imports",
-    path: ["node_modules", "@observal", "pi-insights", "index.ts"],
-    oldText: `import { execFile as execFileCb } from "node:child_process";\nimport { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";`,
-    newText: `import { execFile as execFileCb } from "node:child_process";\nimport { createServer, type Server } from "node:http";\nimport { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";`,
-  },
-  {
-    name: "pi-insights http server constants",
-    path: ["node_modules", "@observal", "pi-insights", "index.ts"],
-    oldText: `const REPORT_PATH = join(DATA_DIR, "report.html");\nconst REPORT_MD_PATH = join(DATA_DIR, "report.md");`,
-    newText: `const REPORT_PATH = join(DATA_DIR, "report.html");\nconst REPORT_MD_PATH = join(DATA_DIR, "report.md");\nconst REPORT_PORT = 5463;\nconst REPORT_URL = \`http://localhost:\${REPORT_PORT}\`;\n\nlet reportServer: Server | null = null;`,
-  },
-  {
-    name: "pi-insights http server helper",
-    path: ["node_modules", "@observal", "pi-insights", "index.ts"],
-    oldText: `function displayLabel(key: string): string {\n\treturn (\n\t\tLABEL_MAP[key] ??\n\t\tkey.replace(/_/g, " ").replace(/\\b\\w/g, (c) => c.toUpperCase())\n\t);\n}`,
-    newText: `function displayLabel(key: string): string {\n\treturn (\n\t\tLABEL_MAP[key] ??\n\t\tkey.replace(/_/g, " ").replace(/\\b\\w/g, (c) => c.toUpperCase())\n\t);\n}\n\nasync function startReportServer(): Promise<string> {\n\tif (reportServer?.listening) return REPORT_URL;\n\n\treportServer = createServer(async (req, res) => {\n\t\tconst path = new URL(req.url ?? "/", REPORT_URL).pathname;\n\t\tif (path !== "/" && path !== "/report.html") {\n\t\t\tres.writeHead(404, { "content-type": "text/plain; charset=utf-8" });\n\t\t\tres.end("Not found");\n\t\t\treturn;\n\t\t}\n\n\t\ttry {\n\t\t\tconst html = await readFile(REPORT_PATH, "utf8");\n\t\t\tres.writeHead(200, {\n\t\t\t\t"content-type": "text/html; charset=utf-8",\n\t\t\t\t"cache-control": "no-store",\n\t\t\t});\n\t\t\tres.end(html);\n\t\t} catch {\n\t\t\tres.writeHead(404, { "content-type": "text/plain; charset=utf-8" });\n\t\t\tres.end("Pi Insights report has not been generated yet. Run /insights first.");\n\t\t}\n\t});\n\n\tawait new Promise<void>((resolve, reject) => {\n\t\tconst onError = (err: NodeJS.ErrnoException) => {\n\t\t\tif (err.code === "EADDRINUSE") resolve();\n\t\t\telse reject(err);\n\t\t};\n\t\treportServer!.once("error", onError);\n\t\treportServer!.listen(REPORT_PORT, "127.0.0.1", () => {\n\t\t\treportServer!.off("error", onError);\n\t\t\tresolve();\n\t\t});\n\t});\n\n\treturn REPORT_URL;\n}`,
-  },
-  {
-    name: "pi-insights browser URL notification",
-    path: ["node_modules", "@observal", "pi-insights", "index.ts"],
-    oldText: `\tctx.ui.notify(\`✅ Report saved: \${REPORT_PATH}\`, "success");\n\n\tif (!noOpen) {\n\t\tconst opener = platform() === "darwin" ? "open" : "xdg-open";\n\t\texecFile(opener, [REPORT_PATH]).catch(() => {\n\t\t\tctx.ui.notify(\`Open manually: \${REPORT_PATH}\`, "info");\n\t\t});\n\t}\n}`,
-    newText: `\tconst reportUrl = await startReportServer();\n\tctx.ui.notify(\`✅ Report saved: \${REPORT_PATH}\`, "success");\n\tctx.ui.notify(\`Pi Insights report URL: \${reportUrl}\`, "info");\n\n\tif (!noOpen) {\n\t\tconst opener = platform() === "darwin" ? "open" : "xdg-open";\n\t\texecFile(opener, [reportUrl]).catch(() => {\n\t\t\tctx.ui.notify(\`Open manually: \${reportUrl}\`, "info");\n\t\t});\n\t}\n}`,
-    alreadyAppliedText: [
-      "const reportUrl = await startReportServer();",
-      "Pi Insights report URL: ${reportUrl}",
-      "execFile(opener, [reportUrl])",
-    ],
-  },
-  {
-    name: "pi-insights canonical command",
-    path: ["node_modules", "@observal", "pi-insights", "index.ts"],
-    oldText: `pi.registerCommand("pi-insights", {`,
-    newText: `pi.registerCommand("insights", {`,
-  },
-  {
     name: "pi-inspect clearer group labels",
     path: ["node_modules", "pi-inspect", "public", "app.js"],
     oldText: `const KIND_LABEL = { context: 'Context', tool: 'Tools', command: 'Commands', prompt: 'Prompts', skill: 'Skills' };`,

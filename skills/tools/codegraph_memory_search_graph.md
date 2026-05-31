@@ -5,6 +5,8 @@ target_tool: code_search
 priority: 10
 token_cost: 150
 user-invocable: false
+description: Guidance for structural codebase search over symbols, relationships, and routes.
+keywords: [code, search, codebase, symbol, definition, references, function, class, route, semantic, graph]
 ---
 ## code_search Tool
 Search the code knowledge graph for functions, classes, routes, and variables. This is a **structural code search** — it understands code relationships, not just text.

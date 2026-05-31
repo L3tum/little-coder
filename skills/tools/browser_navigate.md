@@ -5,6 +5,8 @@ target_tool: BrowserNavigate
 priority: 8
 token_cost: 80
 user-invocable: false
+description: Guidance for navigating the interactive browser to complete HTTP or HTTPS URLs.
+keywords: [browser, navigate, url, website, interactive, page, http, https]
 ---
 ## BrowserNavigate Tool
 Load a URL in the shared browser page.

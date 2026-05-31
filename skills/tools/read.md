@@ -5,6 +5,8 @@ target_tool: read
 priority: 10
 token_cost: 100
 user-invocable: false
+description: Guidance for reading files by absolute path with optional line ranges.
+keywords: [read, file, view, show, lines, absolute, path]
 ---
 ## Read Tool
 Read a file's contents with line numbers.

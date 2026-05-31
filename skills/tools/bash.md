@@ -5,6 +5,8 @@ target_tool: bash
 priority: 10
 token_cost: 120
 user-invocable: false
+description: Guidance for running shell commands safely with bounded timeouts and cwd handling.
+keywords: [shell, command, bash, run, execute, test, build, install, cwd, timeout]
 ---
 ## Bash Tool
 Execute a shell command and return stdout+stderr.

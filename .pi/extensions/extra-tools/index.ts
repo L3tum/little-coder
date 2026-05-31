@@ -226,9 +226,19 @@ export default function (pi: ExtensionAPI) {
       } as any;
     },
     async execute(_id, { pattern, path, maxFiles, maxCharacters, ignoreDefaultExcludes }): Promise<any> {
+      const base = path || process.cwd();
+      const limit = Math.min(maxFiles ?? 5, 50);
+      const charLimit = maxCharacters ?? 4000;
+      const invocation = [
+        "findRead invocation:",
+        `pattern=${JSON.stringify(pattern)}`,
+        `path=${JSON.stringify(base)}`,
+        `maxFiles=${limit}`,
+        `maxCharacters=${charLimit}`,
+        `ignoreDefaultExcludes=${ignoreDefaultExcludes !== false}`,
+        "",
+      ].join("\n");
       try {
-        const base = path || process.cwd();
-        const limit = Math.min(maxFiles ?? 5, 50);
         const outcome = await globFiles(pattern, {
           base,
           maxMatches: limit,
@@ -237,11 +247,10 @@ export default function (pi: ExtensionAPI) {
         const matches = outcome.matches;
 
         if (matches.length === 0) {
-          return { content: [{ type: "text", text: renderGlobOutcome(outcome) }], details: { filesRead: 0, totalMatched: 0 } };
+          return { content: [{ type: "text", text: invocation + renderGlobOutcome(outcome) }], details: { filesRead: 0, totalMatched: 0 } };
         }
 
         const capped = matches;
-        const charLimit = maxCharacters ?? 4000;
         const truncated: string[] = [];
 
         const parts: string[] = [];
@@ -276,12 +285,12 @@ export default function (pi: ExtensionAPI) {
         }
 
         return {
-          content: [{ type: "text", text: parts.join("\n\n") + suffix.join("\n") }],
+          content: [{ type: "text", text: invocation + parts.join("\n\n") + suffix.join("\n") }],
           details: { filesRead: capped.length, totalMatched: matches.length },
         };
       } catch (e) {
         return {
-          content: [{ type: "text", text: `Error: ${(e as Error).message}` }],
+          content: [{ type: "text", text: invocation + `Error: ${(e as Error).message}` }],
           details: { verified: false, applied: 0, skipped: 0, lines: 0 },
           isError: true,
         };

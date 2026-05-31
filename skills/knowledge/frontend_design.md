@@ -5,6 +5,7 @@ topic: Frontend Design
 token_cost: 150
 keywords: [frontend, design, ui, ux, css, html, react, vue, component, layout, typography, color, animation, aesthetic, styling, interface, web, landing, page, dashboard, responsive, theme, font, spacing, visual, creative, distinctive, production]
 user-invocable: false
+description: Concise guidance for Frontend Design.
 ---
 Create distinctive, production-grade frontend interfaces that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.
 

@@ -314,8 +314,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "enableBrowserTools",
     label: "EnableBrowserTools",
-    description: "Load Browser* tools into the active registry on demand. Call this before BrowserNavigate/BrowserExtract when a task needs interactive browsing.",
-    promptSnippet: "enableBrowserTools(): load BrowserNavigate/BrowserExtract/BrowserClick and related Browser* tools on demand.",
+    description: "Load Browser* tools into the active registry on demand. Prefer webfetch/websearch for non-interactive retrieval; enable Browser* only for interactive navigation, click, type, extract, history, or scroll workflows.",
+    promptSnippet: "enableBrowserTools(): load BrowserNavigate/BrowserExtract/BrowserClick and related Browser* tools only for interactive browsing; use webfetch/websearch first for simple retrieval.",
     parameters: Type.Object({}),
     async execute() {
       return { content: [{ type: "text", text: enable() }], details: {} };

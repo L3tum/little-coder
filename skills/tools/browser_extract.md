@@ -5,6 +5,8 @@ target_tool: BrowserExtract
 priority: 9
 token_cost: 110
 user-invocable: false
+description: Guidance for extracting readable text from the current interactive browser page.
+keywords: [browser, extract, page, read, markdown, cursor, citation, interactive]
 ---
 ## BrowserExtract Tool
 Return readable markdown of the current page, chunked at ~2KB.

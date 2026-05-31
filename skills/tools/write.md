@@ -5,6 +5,8 @@ target_tool: write
 priority: 10
 token_cost: 110
 user-invocable: false
+description: Guidance for creating new files only, not modifying existing files.
+keywords: [write, create, new, file, content]
 ---
 ## Write Tool
 Create a **new** file with the given content. Creates parent directories automatically.
