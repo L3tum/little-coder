@@ -6,8 +6,8 @@ confidence: "high"
 source: "memory-context deterministic turn_end"
 created_at: "2026-05-27T00:23:04.789Z"
 updated_at: "2026-05-27T00:23:04.790Z"
-use_count: 3
-last_used_at: "active-day:1"
+use_count: 6
+last_used_at: "active-day:2"
 ---
 Prompt: Please fix the issues.
 It should show the current, not the most-recent.

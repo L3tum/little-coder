@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createReadToolDefinition, createWriteToolDefinition } from "@earendil-works/pi-coding-agent";
 import { findCompatibleToolName, rewriteValueToSchema, type CompatRewriteStats } from "./heuristics.ts";
 
 interface CompatStats {
@@ -59,6 +60,30 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async () => {
     stats = emptyStats();
+    // Tools with required `path` parameters (read, write) fail TypeBox
+    // validation when the model sends `file_path` instead.  Validation
+    // happens *before* the tool_call extension event, so the heuristic
+    // rewrite in on("tool_call") never runs.  Workaround: wrap these tools
+    // with a prepareArguments shim that applies the rewrite before validation.
+    const wrapPrepare = (def: any) => {
+      def.prepareArguments = (args: unknown) => {
+        if (!args || typeof args !== "object" || Array.isArray(args)) return args;
+        const out = rewriteValueToSchema(
+          args as Record<string, unknown>,
+          def.parameters as any,
+        ) as {
+          value: unknown;
+          changed: boolean;
+          stats: CompatRewriteStats;
+        };
+        if (!out.changed || !out.value || typeof out.value !== "object" || Array.isArray(out.value))
+          return args;
+        return out.value;
+      };
+      return def;
+    };
+    pi.registerTool(wrapPrepare(createReadToolDefinition(process.cwd())) as any);
+    pi.registerTool(wrapPrepare(createWriteToolDefinition(process.cwd())) as any);
   });
 
   pi.registerCommand("compat-stats", {
