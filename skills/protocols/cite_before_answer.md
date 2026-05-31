@@ -6,6 +6,8 @@ when_to_use: always, before producing a final answer on a research task
 context: inline
 token_cost: 120
 user_invocable: false
+description: Checklist for citing saved evidence before final answers on research tasks.
+keywords: [cite, citation, evidence, final answer, research, source]
 ---
 ## Cite-before-answer checklist
 

@@ -73,7 +73,9 @@ In the TUI you can use `/tools` to list loaded tools and `/skills` to list avail
 
 Use `/plan` to enter browser-reviewed planning mode before implementation. The legacy `/plannotator` command is kept as a compatibility shim but `/plan` is canonical. See `docs/planning-mode.md` for the planning workflow, `ask_user` behavior, and issue-agent `/answer ...` clarification flow.
 
-little-coder also includes a local memory context extension. It stores reviewable Markdown memories under `.pi/memory/`, filters low-salience candidates, supports active-day expiration, and exposes commands such as `/memory-review`, `/memory-doctor`, `/memory-prune`, and `/memory-supersede`. See `docs/memory-context.md` for details.
+little-coder uses reflection-generated skills and breadcrumbs for reusable session learning. Use `/reflect`, `/reflect-review`, `/breadcrumbs`, `/skills`, and `/promote-user-skill` to draft, review, search, load, and promote reusable guidance. Reflection writes accepted drafts to user-level `~/.pi/skills/<skill>/SKILL.md`; `/promote-user-skill [skill]` copies stable user skills into repo `skills/user/<skill>/` after duplicate checks so they can be packaged.
+
+Use `/usage` for the inline usage dashboard, `/insights` for the vendored Pi Insights report, and `/web start|stop|restart|status|open` for the local web dashboard bound to `127.0.0.1` with SSH tunnel instructions.
 
 For local providers (llama.cpp, Ollama, LM Studio) pi expects *some* value in the API-key env even though local servers ignore it:
 

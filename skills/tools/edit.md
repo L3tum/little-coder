@@ -5,6 +5,8 @@ target_tool: edit
 priority: 10
 token_cost: 150
 user-invocable: false
+description: Guidance for exact in-place file edits using targeted replacements.
+keywords: [edit, change, modify, replace, patch, fix, refactor, update, file]
 ---
 ## Edit Tool
 Replace exact text in a file. This is the **default tool for changing any existing file** — prefer it over Write for anything except creating a new file from scratch.

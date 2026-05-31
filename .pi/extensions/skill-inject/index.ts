@@ -1,15 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSkillFile } from "./frontmatter.ts";
 
-interface SkillEntry {
+export interface SkillEntry {
   name: string;
   type: string;
   sourceDir: string;
+  origin: "repo" | "user";
+  path: string;
   body: string;
   tokenCost: number;
   targetTool?: string;
@@ -25,25 +27,23 @@ const selectionCache = new Map<string, string>();
 let loaded = false;
 const recentToolCalls: string[] = [];
 let lastFailedTool: string | null = null;
-
-const INTENT_MAP: Record<string, string[]> = {
-  read: ["read"], show: ["read"], view: ["read"], cat: ["read"],
-  write: ["write"], create: ["write", "bash"], implement: ["write", "read"], code: ["write", "read"],
-  edit: ["edit"], change: ["edit"], modify: ["edit"], fix: ["edit"], update: ["edit"], replace: ["edit"], add: ["edit", "write"], refactor: ["edit", "read"],
-  run: ["bash"], execute: ["bash"], install: ["bash"], build: ["bash"], test: ["bash"],
-  find: ["glob", "grep", "findRead", "code_search"], search: ["grep", "findRead", "code_search"], grep: ["grep"], glob: ["glob", "findRead"],
-  function: ["code_search", "grep"], class: ["code_search", "grep"], where: ["code_search"], calls: ["code_search"], callsite: ["code_search"], caller: ["code_search"], implementation: ["code_search"], implements: ["code_search"], reference: ["code_search"], references: ["code_search"], dependency: ["code_search"], depends: ["code_search"], route: ["code_search"], endpoint: ["code_search"], symbol: ["code_search"], definition: ["code_search"], declare: ["code_search"], declares: ["code_search"], variable: ["code_search"], module: ["code_search"], import: ["code_search"], exports: ["code_search"], struct: ["code_search"], interface: ["code_search"], inherit: ["code_search"], extends: ["code_search"], override: ["code_search"], overrides: ["code_search"], codegraph: ["code_search"], codebase: ["code_search"], graph: ["code_search"], semantic: ["code_search"],
-  fetch: ["webfetch"], download: ["webfetch"], url: ["webfetch"], web: ["websearch"], research: ["enableBrowserTools", "EvidenceAdd"], researching: ["enableBrowserTools", "EvidenceAdd"], wikipedia: ["enableBrowserTools", "EvidenceAdd"], article: ["enableBrowserTools", "EvidenceAdd"], citation: ["EvidenceAdd", "enableBrowserTools"], cite: ["EvidenceAdd"], source: ["EvidenceAdd", "enableBrowserTools"], fact: ["EvidenceAdd"], factcheck: ["EvidenceAdd", "enableBrowserTools"], question: ["EvidenceAdd", "enableBrowserTools"], answer: ["EvidenceAdd", "EvidenceList"], navigate: ["enableBrowserTools"], browse: ["enableBrowserTools"], page: ["enableBrowserTools"], click: ["enableBrowserTools"], findread: ["findRead"],
-};
+let userTurn = 0;
+let longConversationLastWarnTurn = -999;
+const recentInjected = new Map<string, number>();
+const COOLDOWN_TURNS = 3;
 
 const RESEARCH_TRIGGERS = [/\bbrows(?:e|ing|er)\b/i, /\bonline\b/i, /\bresearch(?:ing)?\b/i, /\blook\s+up\b/i, /\blookup\b/i, /\bsearch\s+(?:the|for)\b/i, /\bweb\s*search\b/i, /\bwikipedia\b/i, /\bwebsite\b/i, /\bweb\s*page\b/i, /\bgoogle\b/i, /\bcite|citation\b/i, /\bfact[-\s]?check/i];
-const REVIEW_TRIGGERS = [/\bcode\s+review\b/i, /\breview\s+mode\b/i, /\breview(?:ing)?\s+(?:this\s+)?(?:code|diff|pr|pull\s+request|merge\s+request|change|changes)\b/i, /\b(?:pr|pull\s+request|merge\s+request)\s+review\b/i, /\brequest\s+changes\b/i, /\bapprove\s+(?:this\s+)?(?:pr|pull\s+request|merge\s+request|change|changes)\b/i];
+const REVIEW_TRIGGERS = [/\bcode\s+review\b/i, /\breview\s+mode\b/i, /\breview(?:ing)?\s+(?:this\s+|the\s+)?(?:code|diff|pr|pull\s+request|merge\s+request|change|changes|uncommitted\s+changes)\b/i, /\breview(?:ing)?\s+.*\bchanges\b/i, /\b(?:pr|pull\s+request|merge\s+request)\s+review\b/i, /\brequest\s+changes\b/i, /\bapprove\s+(?:this\s+)?(?:pr|pull\s+request|merge\s+request|change|changes)\b/i];
 const RESEARCH_DIRECTIVE = ["", "## Research-first directive", "This task involves online research.", "1. If Browser* tools are not active yet, call enableBrowserTools first.", "2. Gather facts with BrowserNavigate / BrowserExtract (or websearch for first hops).", "3. Save each citable fact via EvidenceAdd before relying on it.", "4. Only then answer or make file edits.", ""].join("\n");
 const MIN_SCORE_THRESHOLD = 2.0;
 const PER_ENTRY_CAP = 150;
 
-function skillsRoot(): string {
+function repoSkillsRoot(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "skills");
+}
+
+function userSkillsRoot(): string {
+  return join(homedir(), ".pi", "skills");
 }
 
 function settingsPath(): string { return join(homedir(), ".pi", "agent", "settings.json"); }
@@ -87,36 +87,51 @@ function walkMarkdown(dir: string): string[] {
 function loadSkills(): void {
   if (loaded) return;
   loaded = true;
-  const root = skillsRoot();
-  for (const path of walkMarkdown(root)) {
-    const parsed = parseSkillFile(readFileSync(path, "utf-8"));
-    if (!parsed?.body) continue;
-    const fm = parsed.frontmatter;
-    const rel = relative(root, path).split(/[\\/]/);
-    const sourceDir = rel[0] || basename(dirname(path));
-    const type = inferType(sourceDir, fm.type);
-    const targetTool = typeof fm.target_tool === "string" && fm.target_tool ? fm.target_tool : undefined;
-    const name = (typeof fm.name === "string" && fm.name) || (typeof fm.topic === "string" && fm.topic) || targetTool || basename(path, ".md");
-    const description = typeof fm.description === "string" && fm.description ? fm.description : undefined;
-    let tokenCost = typeof fm.token_cost === "number" ? fm.token_cost : 150;
-    if (type !== "tool" && tokenCost > PER_ENTRY_CAP) tokenCost = PER_ENTRY_CAP;
-    const keywords = Array.isArray(fm.keywords) ? (fm.keywords as string[]).map((k) => k.toLowerCase()) : [];
-    const requiresTools = Array.isArray(fm.requires_tools) ? (fm.requires_tools as string[]) : [];
-    const entry = { name, type, sourceDir, body: parsed.body, tokenCost, targetTool, description, keywords, requiresTools };
-    allSkills.push(entry);
-    explicitSkills.set(name, entry);
-    explicitSkills.set(name.toLowerCase(), entry);
-    if (targetTool) toolSkills.set(targetTool, entry);
+  const roots = [
+    { root: repoSkillsRoot(), origin: "repo" as const },
+    { root: userSkillsRoot(), origin: "user" as const },
+  ];
+  for (const { root, origin } of roots) {
+    for (const path of walkMarkdown(root)) {
+      const parsed = parseSkillFile(readFileSync(path, "utf-8"));
+      if (!parsed?.body) continue;
+      const fm = parsed.frontmatter;
+      const rel = relative(root, path).split(/[\\/]/);
+      const sourceDir = origin === "user" ? "user" : (rel[0] || basename(dirname(path)));
+      const type = inferType(sourceDir, fm.type);
+      const targetTool = typeof fm.target_tool === "string" && fm.target_tool ? fm.target_tool : undefined;
+      const name = (typeof fm.name === "string" && fm.name) || (typeof fm.topic === "string" && fm.topic) || targetTool || basename(path, ".md");
+      const description = typeof fm.description === "string" && fm.description ? fm.description : firstBodyLine(parsed.body);
+      let tokenCost = typeof fm.token_cost === "number" ? fm.token_cost : 150;
+      if (type !== "tool" && tokenCost > PER_ENTRY_CAP) tokenCost = PER_ENTRY_CAP;
+      const keywords = Array.isArray(fm.keywords) ? (fm.keywords as string[]).map((k) => k.toLowerCase()) : [];
+      const requiresTools = Array.isArray(fm.requires_tools) ? (fm.requires_tools as string[]) : [];
+      const entry = { name, type, sourceDir, origin, path, body: parsed.body, tokenCost, targetTool, description, keywords, requiresTools };
+      allSkills.push(entry);
+      explicitSkills.set(`${origin}:${name}`, entry);
+      explicitSkills.set(`${origin}:${name.toLowerCase()}`, entry);
+      if (origin === "user" || !explicitSkills.has(name)) {
+        explicitSkills.set(name, entry);
+        explicitSkills.set(name.toLowerCase(), entry);
+      }
+      if (targetTool && (origin === "user" || !toolSkills.has(targetTool))) toolSkills.set(targetTool, entry);
+    }
   }
 }
 
-function predictTools(userText: string): string[] {
-  const text = userText.toLowerCase();
-  const words = new Set(text.split(/\s+/).filter(Boolean));
+function firstBodyLine(body: string): string | undefined {
+  return body.split("\n").map((line) => line.replace(/^#+\s*/, "").trim()).find(Boolean)?.slice(0, 140);
+}
+
+export function predictTools(userText: string, skills: SkillEntry[] = allSkills): string[] {
+  const scored = skills
+    .filter((s) => s.targetTool)
+    .map((entry) => ({ entry, score: scoreEntry(userText, entry) }))
+    .filter((x) => x.score >= 1)
+    .sort((a, b) => b.score - a.score || (a.entry.origin === "user" ? -1 : 1));
   const predicted: string[] = [];
-  for (const [kw, toolNames] of Object.entries(INTENT_MAP)) {
-    if (!words.has(kw) && !text.includes(kw)) continue;
-    for (const tn of toolNames) if (!predicted.includes(tn)) predicted.push(tn);
+  for (const { entry } of scored) {
+    if (entry.targetTool && !predicted.includes(entry.targetTool)) predicted.push(entry.targetTool);
   }
   return predicted;
 }
@@ -131,14 +146,20 @@ function scoreEntry(userText: string, e: SkillEntry): number {
   return score;
 }
 
-function selectToolSkills(prompt: string, budget: number, allowed?: Set<string>, required: string[] = []): { selected: SkillEntry[]; skippedBudget: SkillEntry[] } {
+function selectToolSkills(prompt: string, budget: number, allowed?: Set<string>, required: string[] = []): { selected: SkillEntry[]; skippedBudget: SkillEntry[]; suppressedRecent: SkillEntry[] } {
   const selected: SkillEntry[] = [];
   const skippedBudget: SkillEntry[] = [];
+  const suppressedRecent: SkillEntry[] = [];
   let used = 0;
   const tryAdd = (name: string, force = false): void => {
     const sk = toolSkills.get(name);
-    if (!sk || selected.includes(sk) || skippedBudget.includes(sk)) return;
+    if (!sk || selected.includes(sk) || skippedBudget.includes(sk) || suppressedRecent.includes(sk)) return;
     if (allowed && !allowed.has(name)) return;
+    const recent = recentInjected.get(sk.name);
+    if (!force && recent !== undefined && userTurn - recent < COOLDOWN_TURNS) {
+      suppressedRecent.push(sk);
+      return;
+    }
     if (!force && used + sk.tokenCost > budget) {
       skippedBudget.push(sk);
       return;
@@ -147,10 +168,10 @@ function selectToolSkills(prompt: string, budget: number, allowed?: Set<string>,
     used += sk.tokenCost;
   };
   for (const t of required) tryAdd(t, true);
-  if (lastFailedTool) tryAdd(lastFailedTool);
+  if (lastFailedTool) tryAdd(lastFailedTool, true);
   for (const name of recentToolCalls.slice(0, 4)) tryAdd(name);
   for (const name of predictTools(prompt)) tryAdd(name);
-  return { selected, skippedBudget };
+  return { selected, skippedBudget, suppressedRecent };
 }
 
 function selectReferenceSkills(prompt: string, budget: number): { selected: SkillEntry[]; skippedBudget: SkillEntry[] } {
@@ -209,6 +230,28 @@ function findExplicitSkill(name: string): SkillEntry | undefined {
   return explicitSkills.get(key) ?? explicitSkills.get(key.toLowerCase());
 }
 
+function copyDir(src: string, dest: string): void {
+  mkdirSync(dest, { recursive: true });
+  for (const name of readdirSync(src)) {
+    const from = join(src, name);
+    const to = join(dest, name);
+    const st = statSync(from);
+    if (st.isDirectory()) copyDir(from, to);
+    else copyFileSync(from, to);
+  }
+}
+
+function promotableUserSkills(): SkillEntry[] {
+  loadSkills();
+  return allSkills.filter((s) => s.origin === "user" && !allSkills.some((r) => r.origin === "repo" && r.name === s.name));
+}
+
+function listPromotableUserSkills(): string {
+  const skills = promotableUserSkills();
+  if (skills.length === 0) return "No user skills are promotable; every user skill name already exists in repo skills.";
+  return ["Promotable user skills:", ...skills.map((s) => `  ${s.name} — ${s.description ?? s.type}`)].join("\n");
+}
+
 function listAllSkills(): string {
   loadSkills();
   if (allSkills.length === 0) return "No skills loaded.";
@@ -222,8 +265,8 @@ function listAllSkills(): string {
     lines.push(`${group}:`);
     for (const s of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const label = s.targetTool ? `${s.name} -> ${s.targetTool}` : s.name;
-      const kw = s.keywords.length > 0 ? ` [${s.keywords.join(", ")}]` : "";
-      lines.push(`  ${label} (${s.tokenCost} tok)${kw}`);
+      const desc = s.description ? ` — ${s.description}` : "";
+      lines.push(`  ${label} (${s.tokenCost} tok, ${s.origin})${desc}`);
     }
     lines.push("");
   }
@@ -268,6 +311,42 @@ export default function (pi: ExtensionAPI) {
     description: "List all available skills",
     handler: async (_args, ctx) => {
       if (ctx.hasUI) ctx.ui.notify(listAllSkills(), "info");
+    },
+  });
+
+  pi.registerCommand("promote-user-skill", {
+    description: "Copy a user-level skill into repo skills/user/ after duplicate checks",
+    handler: async (args, ctx) => {
+      const raw = String(args ?? "").trim();
+      if (!raw) {
+        ctx.ui?.notify?.(listPromotableUserSkills(), "info");
+        return;
+      }
+      const force = /(?:^|\s)--force(?:\s|$)/.test(raw);
+      const name = raw.replace(/(?:^|\s)--force(?:\s|$)/g, " ").trim();
+      const skill = allSkills.find((s) => s.origin === "user" && s.name === name);
+      if (!skill) {
+        ctx.ui?.notify?.(`Unknown user skill: ${name}`, "error");
+        return;
+      }
+      const sameName = allSkills.find((s) => s.origin === "repo" && s.name === skill.name);
+      if (sameName && !force) {
+        ctx.ui?.notify?.(`Repo skill named '${skill.name}' already exists. Use --force with a renamed user skill; not overwriting.`, "warning");
+        return;
+      }
+      const nearDup = allSkills.find((s) => s.origin === "repo" && s.description && skill.description && s.description.toLowerCase() === skill.description.toLowerCase());
+      if (nearDup && !force) {
+        ctx.ui?.notify?.(`Possible duplicate of repo skill '${nearDup.name}' by description. Rename/refine it or rerun with --force.`, "warning");
+        return;
+      }
+      const srcDir = statSync(skill.path).isDirectory() ? skill.path : dirname(skill.path);
+      const dest = join(repoSkillsRoot(), "user", skill.name);
+      if (existsSync(dest) && !force) {
+        ctx.ui?.notify?.(`Destination exists: ${dest}. Not overwriting; use --force only after resolving conflicts.`, "warning");
+        return;
+      }
+      copyDir(srcDir, dest);
+      ctx.ui?.notify?.(`Promoted user skill '${skill.name}' to ${dest}`, "info");
     },
   });
 
@@ -320,6 +399,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
+    userTurn += 1;
     loadSkills();
     if (allSkills.length === 0) return;
     const opts: any = (event as any).systemPromptOptions ?? {};
@@ -339,11 +419,15 @@ export default function (pi: ExtensionAPI) {
     const refSelection = refBudget > 0 ? selectReferenceSkills(selectionPrompt, refBudget) : { selected: [], skippedBudget: [] };
     const refs = refSelection.selected;
     const requiredTools = Array.from(new Set([...(Array.isArray(lc.requiredTools) ? lc.requiredTools : []), ...refs.flatMap((s) => s.requiresTools)]));
-    const toolBudget: number = lc.skillTokenBudget ?? persistedBudget("skillTokenBudget") ?? 300;
-    const toolSelection = toolBudget > 0 ? selectToolSkills(selectionPrompt, toolBudget, allowed, requiredTools) : { selected: [], skippedBudget: [] };
+    const baseToolBudget: number = lc.skillTokenBudget ?? persistedBudget("skillTokenBudget") ?? 300;
+    const toolBudget = userTurn === 1 ? baseToolBudget * 2 : baseToolBudget;
+    const toolSelection = toolBudget > 0 ? selectToolSkills(selectionPrompt, toolBudget, allowed, requiredTools) : { selected: [], skippedBudget: [], suppressedRecent: [] };
     const tools = toolSelection.selected;
     const researchTask = looksLikeResearchTask(prompt);
-    if (tools.length === 0 && refs.length === 0 && !researchTask && toolSelection.skippedBudget.length === 0 && refSelection.skippedBudget.length === 0) return;
+    const contextTokens = estimateTokens(basePrompt);
+    const shouldWarnLong = (contextTokens > contextLimit * 0.75 || userTurn >= 16) && userTurn - longConversationLastWarnTurn >= 6;
+    if (shouldWarnLong) longConversationLastWarnTurn = userTurn;
+    if (tools.length === 0 && refs.length === 0 && !researchTask && !shouldWarnLong && toolSelection.skippedBudget.length === 0 && refSelection.skippedBudget.length === 0 && toolSelection.suppressedRecent.length === 0) return;
 
     const key = `${tools.map((s) => s.targetTool).sort().join("|")}::${refs.map((s) => s.name).sort().join("|")}`;
     let block = selectionCache.get(key);
@@ -352,6 +436,7 @@ export default function (pi: ExtensionAPI) {
       selectionCache.set(key, block);
     }
     const directive = researchTask ? RESEARCH_DIRECTIVE : "";
+    for (const s of [...tools, ...refs]) recentInjected.set(s.name, userTurn);
 
     try {
       const parts: string[] = [];
@@ -359,7 +444,9 @@ export default function (pi: ExtensionAPI) {
       if (refs.length > 0) parts.push(`+${refs.length} refs [${refs.map((s) => s.name).join(",")}]`);
       if (toolSelection.skippedBudget.length > 0) parts.push(`skipped tools budget [${toolSelection.skippedBudget.map((s) => s.targetTool ?? s.name).join(",")}]`);
       if (refSelection.skippedBudget.length > 0) parts.push(`skipped refs budget [${refSelection.skippedBudget.map((s) => s.name).join(",")}]`);
+      if (toolSelection.suppressedRecent.length > 0) parts.push(`suppressed recent [${toolSelection.suppressedRecent.map((s) => s.targetTool ?? s.name).join(",")}]`);
       if (researchTask) parts.push("+research-directive");
+      if (shouldWarnLong) parts.push("long session: consider /compact or a fresh session");
       ctx.ui.notify(`skill-inject: ${parts.join(" ")}`, "info");
     } catch {}
 

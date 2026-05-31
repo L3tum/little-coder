@@ -168,6 +168,11 @@ function isTrustedToolTempGlob(base: string, pattern: string): boolean {
   return /^pi-bash-.*\.log$/i.test(pattern) && !hasParentTraversal(pattern);
 }
 
+function isWithinUserSkillsRoot(target: string): boolean {
+  const root = process.env.LITTLE_CODER_USER_SKILLS_DIR || join(homedir(), ".pi", "skills");
+  return isWithinWorkspace(normalize(resolve(root)), normalize(resolve(target)));
+}
+
 export function getExternalWorkspaceAccess(
   toolName: string,
   input: Record<string, unknown> | undefined,
@@ -179,7 +184,7 @@ export function getExternalWorkspaceAccess(
     const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
     if (!path) return null;
     const resolved = resolveWorkspacePath(path, cwd);
-    if (isWithinDefaultAllowedTmp(resolved) || isTrustedToolTempFilePath(resolved)) return null;
+    if (isWithinDefaultAllowedTmp(resolved) || isTrustedToolTempFilePath(resolved) || isWithinUserSkillsRoot(resolved)) return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
@@ -187,7 +192,7 @@ export function getExternalWorkspaceAccess(
     const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
     if (!path) return null;
     const resolved = resolveWorkspacePath(path, cwd);
-    if (isWithinDefaultAllowedTmp(resolved)) return null;
+    if (isWithinDefaultAllowedTmp(resolved) || isWithinUserSkillsRoot(resolved)) return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
@@ -195,14 +200,14 @@ export function getExternalWorkspaceAccess(
     const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
     if (!path) return null;
     const resolved = normalizeWritePath(path, cwd).path;
-    if (isWithinDefaultAllowedTmp(resolved)) return null;
+    if (isWithinDefaultAllowedTmp(resolved) || isWithinUserSkillsRoot(resolved)) return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
   if (toolName === "grep") {
     const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
     const base = resolveWorkspacePath(baseInput, cwd);
-    if (isWithinDefaultAllowedTmp(base)) return null;
+    if (isWithinDefaultAllowedTmp(base) || isWithinUserSkillsRoot(base)) return null;
     return isWithinWorkspace(cwd, base) ? null : { summary: base };
   }
 
@@ -210,7 +215,7 @@ export function getExternalWorkspaceAccess(
     const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
     const base = resolveWorkspacePath(baseInput, cwd);
     const pattern = typeof input.pattern === "string" ? input.pattern : "";
-    if (isWithinDefaultAllowedTmp(base) || isTrustedToolTempGlob(base, pattern)) return null;
+    if (isWithinDefaultAllowedTmp(base) || isTrustedToolTempGlob(base, pattern) || isWithinUserSkillsRoot(base)) return null;
     if (!isWithinWorkspace(cwd, base)) return { summary: base };
     if (pattern && hasParentTraversal(pattern)) {
       return { summary: `${base} (pattern escapes base: ${pattern})` };

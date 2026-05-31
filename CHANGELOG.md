@@ -2,6 +2,28 @@
 
 All notable changes to little-coder are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and little-coder's public interface (CLI, providers, tools, skills) follows semver starting at `v0.0.1` post-rename.
 
+## [Unreleased]
+
+### Added
+- Reflection-generated user skills: `/reflect`, `/reflect-review`, `/reflect-accept`, `/reflect-deny`, `/reflect-history`, and `/reflect-doctor` draft, review, accept, deny, audit, and diagnose reusable skill proposals written to `~/.pi/skills`.
+- Session breadcrumbs: `/breadcrumbs`, `breadcrumbs_search`, and `breadcrumbs_read` search prior Pi session outlines with bounded transcript reads and tool-output guards.
+- User skill loading and promotion: `skill-inject` now loads repo `skills/` and user `~/.pi/skills`, lists origins/descriptions, and adds `/promote-user-skill` for duplicate-checked promotion into repo skills.
+- Vendored Pi Insights extension under `.pi/extensions/pi-insights/`, with AGPL license/NOTICE preservation.
+- `/web start|stop|restart|status|open` local dashboard bound to `127.0.0.1`, plus JSON APIs/UI sections for status, tools, skills, breadcrumbs, reflection queue/history, transcript snippets, and cost summaries.
+- Shared session/cost/skill catalog helpers for breadcrumbs, reflection, dashboard, and tests, including daily/project/model/tool/top-session cost breakdowns.
+- `improve-codebase-architecture` engineering skill.
+
+### Changed
+- Skill injection is frontmatter-keyword driven, has per-session cooldown notifications, warns on long sessions, and doubles the tool budget for the first injection turn.
+- `findRead` output now prefixes the effective invocation for matches, no matches, and errors.
+- `/plan` is no longer registered by `mode-commands`; Plannotator owns canonical planning mode and the old prompt helper is `/plan-prompt`.
+- `AGENTS.md` is compressed to core invariants/tool-selection guidance.
+- Browser enablement guidance now directs non-interactive retrieval to `webfetch`/`websearch` first.
+
+### Removed
+- Removed the `memory-context` extension and stale memory docs/references. Reflection skills and breadcrumbs replace that workflow.
+- Removed `@observal/pi-insights` from package dependencies and external package loading now that the extension is vendored.
+
 ## [v1.8.1] — 2026-05-23
 
 ### Fixed

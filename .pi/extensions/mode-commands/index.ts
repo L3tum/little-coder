@@ -18,41 +18,48 @@ function latestPlan(cwd: string): string | undefined {
   return newest ? readFileSync(newest.path, "utf-8") : undefined;
 }
 
-function appendPrompt(ctx: any, prompt: string): void {
-  ctx.ui?.notify?.(prompt, "info");
-  if (typeof ctx.sendUserMessage === "function") ctx.sendUserMessage(prompt);
+let activeModePrompt: string | undefined;
+
+function switchSystemPrompt(ctx: any, prompt: string): void {
+  activeModePrompt = prompt;
+  ctx.ui?.notify?.("Mode system prompt updated for subsequent turns.", "info");
 }
 
 export default function (pi: ExtensionAPI) {
-  pi.registerCommand("plan", {
-    description: "Toggle planning mode",
+  if (typeof (pi as any).on === "function") {
+    pi.on("before_agent_start", async () => {
+      if (activeModePrompt) return { systemPrompt: activeModePrompt };
+    });
+  }
+  pi.registerCommand("plan-prompt", {
+    description: "Show the legacy planning prompt without taking over /plan",
     handler: async (_args, ctx) => {
       if (process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH) {
-        ctx.ui?.notify?.("/plan is interactive-only and is disabled in subagent mode.", "warning");
+        ctx.ui?.notify?.("/plan-prompt is interactive-only and is disabled in subagent mode.", "warning");
         return;
       }
-      appendPrompt(ctx, planModePrompt("interactive"));
+      switchSystemPrompt(ctx, planModePrompt("interactive"));
     },
   });
 
   pi.registerCommand("execute", {
     description: "Enter execution mode for the latest plan",
     handler: async (_args, ctx) => {
-      appendPrompt(ctx, executionModePrompt(latestPlan(ctx.cwd ?? process.cwd())));
+      switchSystemPrompt(ctx, executionModePrompt(latestPlan(ctx.cwd ?? process.cwd())));
     },
   });
 
   pi.registerCommand("review", {
     description: "Enter read-only review mode",
     handler: async (_args, ctx) => {
-      appendPrompt(ctx, reviewModePrompt());
+      switchSystemPrompt(ctx, reviewModePrompt());
     },
   });
 
   pi.registerCommand("autoresearch", {
     description: "Enter autoresearch mode",
     handler: async (_args, ctx) => {
-      appendPrompt(ctx, autoresearchModePrompt());
+      switchSystemPrompt(ctx, autoresearchModePrompt());
     },
   });
 }

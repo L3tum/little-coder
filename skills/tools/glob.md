@@ -5,6 +5,8 @@ target_tool: glob
 priority: 8
 token_cost: 80
 user-invocable: false
+description: Guidance for finding file paths with glob patterns.
+keywords: [glob, find, files, path, pattern, recursive, list]
 ---
 ## Glob Tool
 Find files matching a glob pattern.

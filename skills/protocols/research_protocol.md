@@ -6,6 +6,8 @@ when_to_use: when the task requires gathering facts from the web and citing them
 context: inline
 token_cost: 180
 user_invocable: false
+description: Workflow for evidence-first web research with citations.
+keywords: [research, web, browser, evidence, citation, fact, source]
 ---
 ## Research Protocol (evidence-first)
 

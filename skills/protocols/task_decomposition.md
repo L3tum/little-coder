@@ -6,6 +6,8 @@ when_to_use: when the task has multiple unknowns or clearly requires multi-step 
 context: inline
 token_cost: 140
 user_invocable: false
+description: Workflow for decomposing multi-step tasks into knowns, unknowns, and tool steps.
+keywords: [decompose, plan, steps, unknown, task, multi-step, workflow]
 ---
 ## Task Decomposition
 

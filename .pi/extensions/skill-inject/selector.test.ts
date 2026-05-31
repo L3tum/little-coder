@@ -1,58 +1,53 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSkillFile } from "./frontmatter.ts";
+import { predictTools, type SkillEntry } from "./index.ts";
 
-// Re-implement the INTENT_MAP + predict helpers here (kept in sync with
-// index.ts). These are pure functions; extension integration tested via RPC.
-
-const INTENT_MAP: Record<string, string[]> = {
-  read: ["read"], show: ["read"], view: ["read"], cat: ["read"],
-  write: ["write"], create: ["write", "bash"],
-  implement: ["write", "read"], code: ["write", "read"],
-  function: ["write", "edit"], class: ["write", "edit"],
-  edit: ["edit"], change: ["edit"], modify: ["edit"],
-  fix: ["edit"], update: ["edit"], replace: ["edit"],
-  add: ["edit", "write"], refactor: ["edit", "read"],
-  run: ["bash"], execute: ["bash"], install: ["bash"],
-  build: ["bash"], test: ["bash"],
-  find: ["glob", "grep"], search: ["grep"],
-  grep: ["grep"], glob: ["glob"],
-  fetch: ["webfetch"], download: ["webfetch"], url: ["webfetch"],
-  web: ["websearch"],
-};
-
-function predictTools(userText: string): string[] {
-  const words = new Set(userText.toLowerCase().split(/\s+/).filter(Boolean));
-  const predicted: string[] = [];
-  for (const [kw, toolNames] of Object.entries(INTENT_MAP)) {
-    if (!words.has(kw)) continue;
-    for (const tn of toolNames) if (!predicted.includes(tn)) predicted.push(tn);
-  }
-  return predicted;
+function toolSkill(targetTool: string, keywords: string[]): SkillEntry {
+  return {
+    name: `${targetTool}-guidance`,
+    type: "tool-guidance",
+    sourceDir: "tools",
+    origin: "repo",
+    path: `/skills/tools/${targetTool}.md`,
+    body: "",
+    tokenCost: 100,
+    targetTool,
+    keywords,
+    requiresTools: [],
+  };
 }
 
-describe("intent prediction (INTENT_MAP)", () => {
+const toolSkills = [
+  toolSkill("read", ["read", "show", "view"]),
+  toolSkill("edit", ["edit", "fix", "change", "update"]),
+  toolSkill("bash", ["run", "test", "build", "install"]),
+  toolSkill("glob", ["find", "glob", "files", "pattern"]),
+  toolSkill("grep", ["find", "search", "grep", "regex"]),
+  toolSkill("webfetch", ["fetch", "download", "url"]),
+];
+
+describe("frontmatter-driven tool prediction", () => {
   it("predicts read for 'read config.py'", () => {
-    expect(predictTools("read config.py and show me the output")).toContain("read");
-    expect(predictTools("read config.py and show me the output")).toContain("read");
+    expect(predictTools("read config.py and show me the output", toolSkills)).toContain("read");
   });
   it("predicts edit for 'fix the bug'", () => {
-    const p = predictTools("please fix the bug in auth.py");
+    const p = predictTools("please fix the bug in auth.py", toolSkills);
     expect(p).toContain("edit");
   });
   it("predicts bash for 'run the tests'", () => {
-    const p = predictTools("run the tests and build the project");
+    const p = predictTools("run the tests and build the project", toolSkills);
     expect(p).toContain("bash");
   });
   it("predicts glob+grep for 'find all files'", () => {
-    const p = predictTools("find all files matching the pattern");
+    const p = predictTools("find all files matching the pattern", toolSkills);
     expect(p).toContain("glob");
     expect(p).toContain("grep");
   });
   it("empty predictions for neutral prompts", () => {
-    expect(predictTools("hello there")).toEqual([]);
+    expect(predictTools("hello there", toolSkills)).toEqual([]);
   });
 });
 

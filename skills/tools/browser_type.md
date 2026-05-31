@@ -5,6 +5,8 @@ target_tool: BrowserType
 priority: 6
 token_cost: 80
 user-invocable: false
+description: Guidance for typing text into interactive browser form inputs.
+keywords: [browser, type, form, input, search, submit, selector, interactive]
 ---
 ## BrowserType Tool
 Fill text into an input element.

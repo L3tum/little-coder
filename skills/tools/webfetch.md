@@ -5,6 +5,8 @@ target_tool: webfetch
 priority: 6
 token_cost: 80
 user-invocable: false
+description: Guidance for fetching non-interactive web pages by URL.
+keywords: [webfetch, fetch, url, web, http, documentation, page, non-interactive]
 ---
 ## WebFetch Tool
 Fetch and extract content from a URL.

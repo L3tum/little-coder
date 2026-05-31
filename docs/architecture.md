@@ -27,10 +27,10 @@ Extensions live under `.pi/extensions/<name>/index.ts` and export a pi setup fun
 
 Important extension groups:
 
-- **Prompt/context shaping**: `skill-inject`, `knowledge-inject`, `memory-context`, `thinking-budget`, `tool-gating`.
+- **Prompt/context shaping**: `skill-inject`, `knowledge-inject`, `thinking-budget`, `tool-gating`.
 - **Safety and permissions**: `write-guard`, `read-guard`, `permission-gate`, `security`, `filter-read`.
 - **Developer tools**: `extra-tools`, `lsp`, `codebase-memory-direct`, `evidence`, `evidence-compact`, `browser`, `browser-extract-retention`, `edit-custom`, `bash-cwd`.
-- **Agent workflows**: `issue-agent`, `subagent`, `plan-mode`, `mode-commands`, `clear-command`.
+- **Agent workflows**: `issue-agent`, `subagent`, `plan-mode`, `mode-commands`, `reflect-skills`, `breadcrumbs`, `clear-command`.
 - **UI/monitoring**: `powerline-footer-unified`, `usage-dashboard`, `quality-monitor`, `finalize-warn`, `inspect`, `branding`, `checkpoint`, `benchmark-profiles`, `llama-cpp-provider`.
 
 Shared utilities that are used by multiple extensions belong under `.pi/extensions/_shared` or a focused extension-local module.

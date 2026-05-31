@@ -5,6 +5,8 @@ target_tool: BrowserClick
 priority: 7
 token_cost: 90
 user-invocable: false
+description: Guidance for clicking elements in the interactive browser by role or selector.
+keywords: [browser, click, button, link, selector, aria, interactive, navigate]
 ---
 ## BrowserClick Tool
 Click an element by CSS selector OR by ARIA role+name.

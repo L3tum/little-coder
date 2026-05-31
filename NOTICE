@@ -32,3 +32,12 @@ reasoning reuse, the Write-vs-Edit tool invariant, a multi-language
 Aider Polyglot benchmark harness, per-model profiles for small local
 LLMs, and a complete UI refresh have been added. Many upstream features
 that did not fit the small-model focus have been removed.
+
+--------------------------------------------------------------------------
+Vendored @observal/pi-insights
+--------------------------------------------------------------------------
+
+.pi/extensions/pi-insights vendors @observal/pi-insights, Copyright 2026
+Hari Srinivasan <harisrini21@gmail.com>, licensed under AGPL-3.0-only.
+The vendored source preserves SPDX license headers. See
+.pi/extensions/pi-insights/LICENSE for the full AGPL-3.0-only license text.

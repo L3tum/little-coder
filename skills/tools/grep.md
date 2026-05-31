@@ -5,6 +5,8 @@ target_tool: grep
 priority: 8
 token_cost: 100
 user-invocable: false
+description: Guidance for searching file contents with ripgrep-compatible patterns.
+keywords: [grep, search, regex, pattern, contents, matches, files]
 ---
 ## Grep Tool
 Search file contents with regex. Uses ripgrep.
