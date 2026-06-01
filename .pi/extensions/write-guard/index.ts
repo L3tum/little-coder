@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { closeSync, existsSync, openSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { harnessIntervention } from "../_shared/intervention.ts";
 
@@ -40,16 +40,6 @@ function pathKey(input: Record<string, unknown>): "path" | "file_path" | undefin
   return undefined;
 }
 
-function reserveNewWritePath(resolved: string): boolean {
-  try {
-    closeSync(openSync(resolved, "wx"));
-    return true;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "EEXIST") return false;
-    return true;
-  }
-}
-
 function editRecipe(resolved: string): string {
   return (
     `Write refused — ${resolved} already exists.\n` +
@@ -83,7 +73,7 @@ export default function (pi: ExtensionAPI) {
     const { path: resolved } = normalizeWritePath(String(input[key]), ctx.cwd);
     input[key] = resolved;
 
-    if (!existsSync(resolved) && reserveNewWritePath(resolved)) return;
+    if (!existsSync(resolved)) return;
 
     harnessIntervention(
       ctx,

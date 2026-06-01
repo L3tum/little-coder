@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import setupWriteGuard, { normalizeWritePath } from "./index.ts";
@@ -99,7 +99,7 @@ describe("write-guard tool_call interceptor", () => {
     expect(ctx.notifies[0]).toMatch(/harness intervention:.*redirected the model to Edit/i);
   });
 
-  it("allows a write to a NEW file (no block) and normalizes the path in place", async () => {
+  it("allows a write to a NEW file without creating it and normalizes the path in place", async () => {
     const handler = getToolCallHandler();
     const ctx = makeCtx(dir);
     const input: any = { path: "fresh.md", content: "hi" };
@@ -107,6 +107,7 @@ describe("write-guard tool_call interceptor", () => {
     const result = await handler(event, ctx);
     expect(result).toBeUndefined();
     expect(input.path).toBe(join(dir, "fresh.md")); // normalized relative → cwd
+    expect(existsSync(input.path)).toBe(false);
     expect(ctx.notifies).toHaveLength(0);
   });
 
