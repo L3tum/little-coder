@@ -631,13 +631,16 @@ function parseVerdict(text: string): ReviewVerdict {
 
 async function runRequiredSubAgent(work: NonNullable<typeof activeWork>, prompt: string, model: string | undefined, thinkingLevel: ThinkingLevel | undefined, required: RequiredMarker, emit: (line: string, type?: "info" | "warning" | "error") => void): Promise<string> {
   let finalText = "";
+  let retryContext = "";
   for (let attempt = 1; attempt <= MAX_REQUIRED_TOOL_RETRIES; attempt++) {
     work.doneText = undefined;
     activeWork = work;
-    finalText = await runSubAgent(prompt, work.dir, work.cfg.workdir, model, thinkingLevel, emit);
+    const effectivePrompt = retryContext ? `${prompt}\n\n${retryContext}` : prompt;
+    finalText = await runSubAgent(effectivePrompt, work.dir, work.cfg.workdir, model, thinkingLevel, emit);
     if (work.askRequest) return finalText;
     if (validMarker(required, work.doneText)) return finalText;
     emit(`sub-agent finished without required ${required} tool marker (attempt ${attempt}/${MAX_REQUIRED_TOOL_RETRIES})`, "warning");
+    retryContext = `The previous attempt did not produce the required ${required} marker. When your work is complete, ensure you produce a clearly labeled ${required} section or verdict.`;
   }
   if (!work.cfg.dryRun) {
     await addLabels(work.repo, work.issue, [NO_TOOLCALL_LABEL], work.cfg.token).catch(() => undefined);

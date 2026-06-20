@@ -43,7 +43,7 @@ function repoSkillsRoot(): string {
 }
 
 function userSkillsRoot(): string {
-  return join(homedir(), ".pi", "skills");
+  return process.env.LITTLE_CODER_USER_SKILLS_DIR || join(homedir(), ".pi", "skills");
 }
 
 function settingsPath(): string { return join(homedir(), ".pi", "agent", "settings.json"); }
@@ -110,9 +110,11 @@ function loadSkills(): void {
       allSkills.push(entry);
       explicitSkills.set(`${origin}:${name}`, entry);
       explicitSkills.set(`${origin}:${name.toLowerCase()}`, entry);
+      explicitSkills.set(`${origin}:${normalizeSkillName(name)}`, entry);
       if (origin === "user" || !explicitSkills.has(name)) {
         explicitSkills.set(name, entry);
         explicitSkills.set(name.toLowerCase(), entry);
+        explicitSkills.set(normalizeSkillName(name), entry);
       }
       if (targetTool && (origin === "user" || !toolSkills.has(targetTool))) toolSkills.set(targetTool, entry);
     }
@@ -224,10 +226,23 @@ function explicitSkillPrompt(skill: SkillEntry): string {
   return [`The user explicitly loaded skill '${skill.name}' via /skill:${skill.name}.`, `Apply this skill guidance for the next response:`, ``, `## ${title}`, skill.body].join("\n");
 }
 
+/**
+ * Normalize skill names so underscores and hyphens are treated equivalently.
+ * A user typing /skill:code-review will match a skill named code_review.
+ */
+function normalizeSkillName(name: string): string {
+  return name.toLowerCase().replace(/[_]+/g, "-");
+}
+
 function findExplicitSkill(name: string): SkillEntry | undefined {
   loadSkills();
   const key = name.trim();
-  return explicitSkills.get(key) ?? explicitSkills.get(key.toLowerCase());
+  // Try exact match, lowercase, then normalized (underscore ↔ hyphen)
+  return (
+    explicitSkills.get(key) ??
+    explicitSkills.get(key.toLowerCase()) ??
+    explicitSkills.get(normalizeSkillName(key))
+  );
 }
 
 function copyDir(src: string, dest: string): void {
@@ -406,7 +421,15 @@ export default function (pi: ExtensionAPI) {
     const lc = opts.littleCoder ?? {};
     const basePrompt = event.systemPrompt ?? "";
     const contextLimit: number = lc.contextLimit ?? 8192;
-    if (estimateTokens(basePrompt) > contextLimit * 0.4) return;
+    if (estimateTokens(basePrompt) > contextLimit * 0.4) {
+      try {
+        ctx.ui?.notify?.(
+          `skill-inject: base prompt exceeds 40% context limit (${contextLimit}); skipping skill injection this turn`,
+          "info",
+        );
+      } catch {}
+      return;
+    }
 
     let allowedList: string[] | undefined = lc.allowedTools;
     if (!allowedList && process.env.LITTLE_CODER_ALLOWED_TOOLS) allowedList = process.env.LITTLE_CODER_ALLOWED_TOOLS.split(",").map((s) => s.trim()).filter(Boolean);

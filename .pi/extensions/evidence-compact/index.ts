@@ -21,12 +21,21 @@ const BRIDGE_TEMPLATE = (n: number): string =>
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_compact", async (_event, ctx) => {
-    const store = getSessionStore();
-    if (store.length === 0) return;
-    ctx.ui.notify(
-      `evidence-compact: ${store.length} evidence entries preserved across compaction`,
-      "info",
-    );
-    pi.sendUserMessage(BRIDGE_TEMPLATE(store.length), { deliverAs: "followUp" });
+    try {
+      const store = getSessionStore();
+      if (store.length === 0) return;
+      ctx.ui?.notify?.(
+        `evidence-compact: ${store.length} evidence entries preserved across compaction`,
+        "info",
+      );
+      await pi.sendUserMessage(BRIDGE_TEMPLATE(store.length), { deliverAs: "followUp" });
+    } catch (err) {
+      try {
+        ctx.ui?.notify?.(
+          `evidence-compact: bridge notification failed (${err instanceof Error ? err.message : String(err)}); evidence is still preserved`,
+          "warning",
+        );
+      } catch {}
+    }
   });
 }
