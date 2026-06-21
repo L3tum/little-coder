@@ -61,8 +61,10 @@
     "pi-inspect": "^0.5.0",
     "pi-powerline-footer": "^0.5.4",
     "playwright": "^1.59.1",
+    "qrcode": "^1.5.0",
     "typebox": "^1.1.38",
     "vscode-languageserver-protocol": "^3.17.5",
+    "ws": "^8.16.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

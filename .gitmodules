@@ -1,0 +1,3 @@
+[submodule ".pi/extensions/tau"]
+	path = .pi/extensions/tau
+	url = https://github.com/deflating/tau.git
