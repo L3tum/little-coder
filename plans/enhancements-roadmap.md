@@ -2,7 +2,7 @@
 
 ## Context
 
-The requested work spans little-coder's extension stack, bundled skills, prompt text, telemetry/dashboard UX, session search, reflection-driven skill creation, planning-command cleanup, browser/web UI tooling, and Python sandboxing.
+The requested work spans little-coder's extension stack, bundled skills, prompt text, telemetry/dashboard UX, session search, reflection-driven skill creation, planning-command cleanup, and Python sandboxing.
 
 Verified repository facts so far:
 - `package.json` already depends on `@observal/pi-insights`, `@plannotator/pi-extension`, `pi-ask-user`, and optional `@tobilu/qmd`.
@@ -27,9 +27,9 @@ Implement this as a set of small, testable extension changes rather than one mon
 
 1. **Stabilize existing UX and prompt behavior first**: fix duplicate `/plan`, compress prompts, improve tool descriptions/output, and update `/skills` display.
 2. **Rework skill injection around skill metadata and roots**: add missing `keywords`/`description` frontmatter, load both repo `skills/` and user `~/.pi/skills`, score tool/reference skills from frontmatter, and add per-session cooldown state so automatic injection does not repeat recent skills.
-3. **Add session intelligence as reusable infrastructure**: create a session-transcript parser/index shared by breadcrumbs, reflection, cost dashboards, and the web UI.
+3. **Add session intelligence as reusable infrastructure**: create a session-transcript parser/index shared by breadcrumbs, reflection, and cost dashboards.
 4. **Replace memory with reflection-generated skills**: remove automatic memory injection and `/memory-*`, then add `/reflect` commands that review bounded session history, propose user-level skill files, and require user yes/no/edit approval before writing to `~/.pi/skills`.
-5. **Vendor and unify dashboards**: vendor `pi-insights`, port useful cost-dashboard concepts from `agent-cost-dashboard`, and expose a richer `/web` UI that links or embeds cost, inspect, breadcrumbs, skills, reflection, commands, tools, and chat.
+5. **Vendor and unify dashboards**: vendor `pi-insights`, port useful cost-dashboard concepts from `agent-cost-dashboard`, and unify cost, inspect, breadcrumbs, skills, reflection, commands, and tools into the TUI.
 6. **Sandbox Python execution**: stop treating arbitrary Python as safe; route all Python execution through a sandbox path without prompting for approval, with tests that prove Python cannot trivially bypass `permission-gate`.
 
 ## Files to modify
@@ -56,7 +56,6 @@ Critical paths expected to change:
 - New breadcrumbs extension, likely `.pi/extensions/breadcrumbs/`
 - New reflection extension, likely `.pi/extensions/reflect-skills/`
 - New vendored insights/cost extension, likely `.pi/extensions/pi-insights/`
-- New web UI extension, likely `.pi/extensions/web/`
 - `skills/**/*.md` frontmatter updates
 - New skill files from `mattpocock/skills`, likely `skills/engineering/improve-codebase-architecture/`
 - `NOTICE` / license docs if vendored code is included
@@ -134,16 +133,12 @@ Existing code and external references to reuse:
 - [ ] Add a one-time migration/notice for existing `.pi/memory` users explaining that memory was superseded and is no longer injected. Do not auto-convert old memories into skills without approval.
 - [ ] Document the promotion flow: user-level skills are experimental/local; `/promote-user-skill` copies stable skills into repo `skills/` after duplicate checks so they can be packaged with little-coder.
 
-### Phase 5 — Vendor insights/cost dashboard and unified web UI
+### Phase 5 — Vendor insights/cost dashboard
 
 - [ ] Vendor `@observal/pi-insights` into `.pi/extensions/pi-insights/`, preserving its AGPL license headers and adding license/NOTICE entries as an explicit user-approved vendoring decision.
 - [ ] Remove the `@observal/pi-insights` package entry from `littleCoder.packages` and dependencies only after the vendored extension is active; remove obsolete postinstall patches against `node_modules/@observal/pi-insights`.
 - [ ] Port selected `agent-cost-dashboard` concepts into the vendored TypeScript extension rather than shelling out to Python: daily spending chart, model breakdown, tool usage, project/session browser, top costly sessions, subagent grouping, and transcript export links.
-- [ ] Reuse `usage-dashboard` parsing logic where possible; move shared cost/session aggregation to a helper so `/usage`, `/insights`, `/web`, and breadcrumbs do not each parse sessions differently.
-- [ ] Add `.pi/extensions/web/` with `/web` command, binding to `127.0.0.1` by default and printing SSH tunnel instructions for remote use.
-- [ ] Implement `/web start|stop|restart|status|open` using the safer server lifecycle pattern from `inspect`.
-- [ ] Web UI feature set should include: shared agent chat, streaming transcript, expandable tool/thinking blocks, abort/new session, command palette with command descriptions, tools registry, skills list/load with descriptions, breadcrumbs search/read, reflection review/approval, cost dashboard, inspect snapshot links, and permission prompts.
-- [ ] Prefer a no-build static frontend served from the extension if feasible; add a small dependency such as `ws` only if bidirectional streaming cannot be cleanly handled with built-in HTTP + SSE/POST.
+- [ ] Reuse `usage-dashboard` parsing logic where possible; move shared cost/session aggregation to a helper so `/usage`, `/insights`, and breadcrumbs do not each parse sessions differently.
 
 ### Phase 6 — Python sandbox first draft
 
@@ -177,7 +172,7 @@ Automated checks:
   - `permission-gate` Python allow/block tests
   - new `breadcrumbs` parser/search/read-guard tests
   - new `reflect-skills` proposal/path/frontmatter/approval tests
-  - cost aggregation tests shared by `/usage`, `/insights`, and `/web`
+  - cost aggregation tests shared by `/usage` and `/insights`
 
 Manual checks:
 - Start a local session and confirm `/plan` enters Plannotator planning mode, with no prompt-only `/plan:1` duplicate.
@@ -188,8 +183,7 @@ Manual checks:
 - Run `/reflect`; verify proposals require yes/no/edit approval and accepted skills land under `~/.pi/skills` with keywords.
 - Run `/promote-user-skill` with no args and with a selected skill; verify promotable listing, duplicate checks, and repo `skills/` output.
 - Confirm old `/memory-*` commands are gone or replaced by clear reflection equivalents and that `.pi/memory` is not injected.
-- Run `/usage`, `/insights`, and `/web`; compare aggregate costs/session counts against a small fixture or known session set.
-- Confirm `/web` binds to `127.0.0.1` and prints tunnel/open instructions.
+- Run `/usage` and `/insights`; compare aggregate costs/session counts against a small fixture or known session set.
 - Try Python bypass examples and verify they are sandboxed, or blocked if sandboxing is unavailable, without asking for approval.
 
 ## Resolved decisions

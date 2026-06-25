@@ -93,11 +93,6 @@ function buildHeader(theme: Theme): string[] {
     theme.fg("text", "/insights"),
     theme.fg("muted", " for the full report"),
   ].join("");
-  const extensionLine7 = [
-    theme.fg("muted", "Use "),
-    theme.fg("text", "/web start|status|open"),
-    theme.fg("muted", " for the local web dashboard"),
-  ].join("");
   const extensionLine8 = [
     theme.fg("muted", "Use "),
     theme.fg("text", "/workspace-permissions"),
@@ -222,7 +217,6 @@ function buildHeader(theme: Theme): string[] {
     extensionLine4,
     extensionLine5,
     extensionLine6,
-    extensionLine7,
     extensionLine8,
     extensionLine9,
     extensionLine10,
