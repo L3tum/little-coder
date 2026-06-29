@@ -15,7 +15,12 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "git cherry", "git bisect log", "git worktree list",
   "find ", "grep ", "rg ", "ag ", "fd ", "sed ",
   "python ", "python3 ", "node ", "ruby ", "perl ",
-  "pip show", "pip list", "npm list", "npx skills", "cargo metadata",
+  "pip show", "pip list", "npm list", "npx skills",
+  "cargo metadata", "cargo check", "cargo check ",
+  "cargo test", "cargo test ",
+  "cargo clippy", "cargo clippy ",
+  "cargo fmt --check", "cargo fmt --check ",
+  "cargo miri test", "cargo miri test ",
   "df ", "du ", "free ", "top -bn", "ps ",
   "curl -I", "curl --head",
   "cp ", "mv ", "mkdir ", "touch ",
@@ -100,10 +105,17 @@ function isSafeDiagnosticCommand(command: string): boolean {
   return parts.length > 1 && parts.every(isSafeSingleDiagnosticCommand);
 }
 
+function normalizeCargoCommand(c: string): string {
+  // Strip `+nightly` or other toolchain overrides from cargo commands before matching.
+  // e.g. "cargo +nightly check " -> "cargo check "
+  return c.replace(/\bcargo\s+\+\w+\s+/g, "cargo ");
+}
+
 export function isSafeBash(command: string, prefixes: readonly string[] = getSafePrefixes()): boolean {
   const c = command.trim();
   if (isSafeDiagnosticCommand(c)) return true;
-  return prefixes.some((p) => c.startsWith(p));
+  const normalized = normalizeCargoCommand(c);
+  return prefixes.some((p) => c.startsWith(p) || normalized.startsWith(p));
 }
 
 function getPermissionMode(): "auto" | "accept-all" | "manual" {

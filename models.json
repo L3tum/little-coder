@@ -2,7 +2,7 @@
   "providers": {
     "llamacpp": {
       "api": "openai-completions",
-      "baseUrl": "https://chat.mortimer.website/v1",
+      "baseUrl": "https://ollama.mortimer.website",
       "apiKey": "LLAMACPP_API_KEY",
       "models": [
         {
@@ -11,16 +11,16 @@
           "reasoning": true,
           "input": ["text", "image"],
           "contextWindow": 65536,
-          "maxTokens": 65536,
+          "maxTokens": 8192,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         },
         {
-          "id": "Qwen-Fast",
-          "name": "Qwen3.6-35B-A3B (MoE, local llama.cpp)",
+          "id": "Gemma-Fast",
+          "name": "Gemma 12B",
           "reasoning": true,
           "input": ["text", "image"],
           "contextWindow": 65536,
-          "maxTokens": 65536,
+          "maxTokens": 8192,
           "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 }
         },
         {
