@@ -28,12 +28,6 @@ export const PATCHES = [
     newText: `### Asking Good Questions\n\n- Never ask what you could find out by reading the code or researching relevant external sources.\n- Prefer ask_user for unresolved decisions when it is available; fallback to clear plain-text end-of-turn questions if not.\n- Batch related questions together and include enough context for the user to answer.\n- Focus on things only the user can answer: requirements, preferences, tradeoffs, edge-case priorities.\n- Scale depth to the task — a vague feature request needs many rounds; a focused bug fix may need one or none.`,
   },
   {
-    name: "plannotator browser URL notification",
-    path: ["node_modules", "@plannotator", "pi-extension", "plannotator-browser.ts"],
-    oldText: `function openBrowserForServer(serverUrl: string, ctx: ExtensionContext): void {\n\tconst browserResult = openBrowser(serverUrl);\n\tif (isRemoteSession()) {\n\t\tctx.ui.notify(\`[Plannotator] \${serverUrl}\`, "info");\n\t} else if (!browserResult.opened) {\n\t\tctx.ui.notify(\`Open this URL to review: \${serverUrl}\`, "info");\n\t}\n}`,
-    newText: `function openBrowserForServer(serverUrl: string, ctx: ExtensionContext): void {\n\tctx.ui.notify(\`Plannotator listening at: \${serverUrl}\`, "info");\n\tconst browserResult = openBrowser(serverUrl);\n\tif (!browserResult.opened) {\n\t\tctx.ui.notify(\`Open this URL to review: \${serverUrl}\`, "info");\n\t}\n}`,
-  },
-  {
     name: "pi-inspect clearer group labels",
     path: ["node_modules", "pi-inspect", "public", "app.js"],
     oldText: `const KIND_LABEL = { context: 'Context', tool: 'Tools', command: 'Commands', prompt: 'Prompts', skill: 'Skills' };`,

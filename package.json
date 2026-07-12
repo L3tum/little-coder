@@ -48,10 +48,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.74.1",
-    "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@earendil-works/pi-tui": "^0.74.1",
-    "@plannotator/pi-extension": "^0.19.20",
+    "@earendil-works/pi-ai": "^0.80.6",
+    "@earendil-works/pi-coding-agent": "^0.80.6",
+    "@earendil-works/pi-tui": "^0.80.6",
+    "@plannotator/pi-extension": "^0.23.0",
     "@sinclair/typebox": "^0.34.49",
     "chokidar": "^5.0.0",
     "glob": "^13.0.6",
