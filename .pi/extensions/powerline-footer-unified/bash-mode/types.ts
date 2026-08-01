@@ -26,12 +26,7 @@ export interface BashTranscriptSnapshot {
 
 export interface GhostSuggestion {
   value: string;
-  source:
-    | "project-history"
-    | "global-history"
-    | "git"
-    | "path"
-    | "executable";
+  source: "project-history" | "global-history" | "git" | "path" | "executable";
 }
 
 export interface ExtendedCompletionItem {
@@ -41,12 +36,7 @@ export interface ExtendedCompletionItem {
   replacement: string;
   startCol: number;
   endCol: number;
-  source:
-    | "project-history"
-    | "global-history"
-    | "git"
-    | "path"
-    | "executable";
+  source: "project-history" | "global-history" | "git" | "path" | "executable";
   score: number;
 }
 

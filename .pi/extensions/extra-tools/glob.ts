@@ -16,16 +16,41 @@ import { glob as fsGlob } from "node:fs/promises";
  *  what keeps a home-directory glob from exhausting memory. */
 export const DEFAULT_HEAVY_DIRS: ReadonlySet<string> = new Set([
   // version control
-  ".git", ".hg", ".svn",
+  ".git",
+  ".hg",
+  ".svn",
   // dependencies / language caches
-  "node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache",
-  ".pytest_cache", ".gradle", ".cargo", "vendor", "Pods",
+  "node_modules",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".tox",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".gradle",
+  ".cargo",
+  "vendor",
+  "Pods",
   // build output
-  "dist", "build", "out", "target", ".next", ".nuxt", ".output", ".svelte-kit",
+  "dist",
+  "build",
+  "out",
+  "target",
+  ".next",
+  ".nuxt",
+  ".output",
+  ".svelte-kit",
   // tool caches
-  ".cache", ".npm", ".pnpm-store", ".yarn", ".turbo",
+  ".cache",
+  ".npm",
+  ".pnpm-store",
+  ".yarn",
+  ".turbo",
   // macOS / system heavies that blow up a home-dir walk
-  "Library", "Applications", ".Trash", "Photos Library.photoslibrary",
+  "Library",
+  "Applications",
+  ".Trash",
+  "Photos Library.photoslibrary",
 ]);
 
 export interface GlobOptions {
@@ -47,7 +72,10 @@ export interface GlobOutcome {
 export const DEFAULT_MAX_SCAN = 200_000;
 export const DEFAULT_MAX_MATCHES = 500;
 
-export async function globFiles(pattern: string, opts: GlobOptions): Promise<GlobOutcome> {
+export async function globFiles(
+  pattern: string,
+  opts: GlobOptions,
+): Promise<GlobOutcome> {
   const maxScan = opts.maxScan ?? DEFAULT_MAX_SCAN;
   const maxMatches = opts.maxMatches ?? DEFAULT_MAX_MATCHES;
   const heavy = opts.heavyDirs ?? DEFAULT_HEAVY_DIRS;
@@ -66,13 +94,19 @@ export async function globFiles(pattern: string, opts: GlobOptions): Promise<Glo
       scanTruncated = true;
       return true;
     }
-    const name = typeof entry === "string" ? entry : String((entry as { name?: string })?.name ?? entry);
+    const name =
+      typeof entry === "string"
+        ? entry
+        : String((entry as { name?: string })?.name ?? entry);
     return name.split(/[\\/]/).some((seg) => heavy.has(seg));
   };
 
   // `exclude` as a predicate isn't in every @types/node version's fs.glob
   // signature, but it's supported at runtime (Node 22+); cast to pass it through.
-  for await (const m of fsGlob(pattern, { cwd: opts.base, exclude } as Parameters<typeof fsGlob>[1])) {
+  for await (const m of fsGlob(pattern, {
+    cwd: opts.base,
+    exclude,
+  } as Parameters<typeof fsGlob>[1])) {
     matches.push(`${opts.base}/${m}`);
     if (matches.length >= maxMatches) {
       matchTruncated = true;
@@ -86,7 +120,11 @@ export async function globFiles(pattern: string, opts: GlobOptions): Promise<Glo
 
 /** Render a globFiles outcome as the tool's text output, with a one-line note
  *  when results were cut short so the model knows to narrow its search. */
-export function renderGlobOutcome(o: GlobOutcome, maxScan = DEFAULT_MAX_SCAN, maxMatches = DEFAULT_MAX_MATCHES): string {
+export function renderGlobOutcome(
+  o: GlobOutcome,
+  maxScan = DEFAULT_MAX_SCAN,
+  maxMatches = DEFAULT_MAX_MATCHES,
+): string {
   if (o.matches.length === 0) {
     return o.scanTruncated
       ? `No files matched (search stopped after scanning ${maxScan} entries — narrow the base path; build/dependency/cache dirs are skipped automatically).`

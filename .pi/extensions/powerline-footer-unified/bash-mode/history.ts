@@ -30,12 +30,15 @@ function normalizePersistedEntries(value: unknown): PersistedHistoryEntry[] {
 
   const entries: PersistedHistoryEntry[] = [];
   for (const entry of value) {
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
-    const command = typeof entry.command === "string" ? entry.command.trim() : "";
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+      continue;
+    const command =
+      typeof entry.command === "string" ? entry.command.trim() : "";
     const cwd = typeof entry.cwd === "string" ? entry.cwd.trim() : "";
-    const timestamp = typeof entry.timestamp === "number" && Number.isFinite(entry.timestamp)
-      ? entry.timestamp
-      : 0;
+    const timestamp =
+      typeof entry.timestamp === "number" && Number.isFinite(entry.timestamp)
+        ? entry.timestamp
+        : 0;
     if (!command || !cwd || !timestamp) continue;
     entries.push({ command, cwd, timestamp });
   }
@@ -48,18 +51,27 @@ export function readProjectHistory(cwd: string): PersistedHistoryEntry[] {
 
   try {
     const parsed = JSON.parse(readFileSync(filePath, "utf8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return [];
-    return normalizePersistedEntries((parsed as { entries?: unknown }).entries)
-      .sort((a, b) => b.timestamp - a.timestamp);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return [];
+    return normalizePersistedEntries(
+      (parsed as { entries?: unknown }).entries,
+    ).sort((a, b) => b.timestamp - a.timestamp);
   } catch (error) {
     // Project history is a best-effort cache. If it is unreadable or malformed,
     // bash mode should keep working instead of failing command entry entirely.
-    console.debug(`[powerline-footer] Failed to read bash project history from ${filePath}:`, error);
+    console.debug(
+      `[powerline-footer] Failed to read bash project history from ${filePath}:`,
+      error,
+    );
     return [];
   }
 }
 
-export function appendProjectHistory(cwd: string, command: string, entryCwd: string): void {
+export function appendProjectHistory(
+  cwd: string,
+  command: string,
+  entryCwd: string,
+): void {
   const normalizedCommand = command.trim();
   if (!normalizedCommand) return;
 
@@ -72,10 +84,16 @@ export function appendProjectHistory(cwd: string, command: string, entryCwd: str
   const filePath = projectHistoryPath(cwd);
   try {
     mkdirSync(dirname(filePath), { recursive: true });
-    writeFileSync(filePath, JSON.stringify({ version: 1, entries: next }, null, 2) + "\n");
+    writeFileSync(
+      filePath,
+      JSON.stringify({ version: 1, entries: next }, null, 2) + "\n",
+    );
   } catch (error) {
     // History persistence should never block a successful shell command from completing.
-    console.debug(`[powerline-footer] Failed to persist bash project history to ${filePath}:`, error);
+    console.debug(
+      `[powerline-footer] Failed to persist bash project history to ${filePath}:`,
+      error,
+    );
   }
 }
 
@@ -125,16 +143,25 @@ export function readGlobalShellHistory(shellPath: string): string[] {
 
     const filePath = process.env.HISTFILE || join(home, ".bash_history");
     if (!existsSync(filePath)) return [];
-    return parseBashHistory(readFileSync(filePath, "utf8").split("\n")).reverse();
+    return parseBashHistory(
+      readFileSync(filePath, "utf8").split("\n"),
+    ).reverse();
   } catch (error) {
     // Global shell history is optional recall data. If it is unavailable, shell predictions
     // should degrade to other sources instead of failing the editor.
-    console.debug(`[powerline-footer] Failed to read global shell history for ${shellName}:`, error);
+    console.debug(
+      `[powerline-footer] Failed to read global shell history for ${shellName}:`,
+      error,
+    );
     return [];
   }
 }
 
-export function matchHistoryEntries(entries: string[], prefix: string, limit: number): string[] {
+export function matchHistoryEntries(
+  entries: string[],
+  prefix: string,
+  limit: number,
+): string[] {
   const trimmedPrefix = prefix.trim();
   const seen = new Set<string>();
   const matches: string[] = [];

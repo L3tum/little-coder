@@ -3,7 +3,9 @@
  */
 
 function getSeenMessageSignatures(result) {
-  if (!Object.prototype.hasOwnProperty.call(result, "__seenMessageSignatures")) {
+  if (
+    !Object.prototype.hasOwnProperty.call(result, "__seenMessageSignatures")
+  ) {
     Object.defineProperty(result, "__seenMessageSignatures", {
       value: new Set(),
       enumerable: false,
@@ -25,7 +27,10 @@ function stableStringify(value) {
 
   const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
   return `{${entries
-    .map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`)
+    .map(
+      ([key, entryValue]) =>
+        `${JSON.stringify(key)}:${stableStringify(entryValue)}`,
+    )
     .join(",")}}`;
 }
 
@@ -83,7 +88,6 @@ export function processPiEvent(event, result) {
       return addAssistantMessage(result, event.message);
 
     case "turn_end":
-      result.sawAgentEnd = true;
       return addAssistantMessage(result, event.message);
 
     case "agent_end":
@@ -113,12 +117,20 @@ export function getFinalAssistantText(messages) {
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
-    if (!message || message.role !== "assistant" || !Array.isArray(message.content)) {
+    if (
+      !message ||
+      message.role !== "assistant" ||
+      !Array.isArray(message.content)
+    ) {
       continue;
     }
 
     for (const part of message.content) {
-      if (part?.type === "text" && typeof part.text === "string" && part.text.length > 0) {
+      if (
+        part?.type === "text" &&
+        typeof part.text === "string" &&
+        part.text.length > 0
+      ) {
         return part.text;
       }
     }

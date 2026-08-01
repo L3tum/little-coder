@@ -3,9 +3,25 @@ name: improve-codebase-architecture
 description: Find deepening opportunities in a codebase and propose refactors that improve architecture, testability, and AI-navigability.
 type: workflow
 token_cost: 150
-keywords: [architecture, codebase architecture, refactor, refactoring, testability, module, interface, deep module, shallow module, seam, adapter, locality, leverage]
+keywords:
+  [
+    architecture,
+    codebase architecture,
+    refactor,
+    refactoring,
+    testability,
+    module,
+    interface,
+    deep module,
+    shallow module,
+    seam,
+    adapter,
+    locality,
+    leverage,
+  ]
 requires_tools: [code_search, lsp, read, write]
 ---
+
 # Improve Codebase Architecture
 
 Surface architectural friction and propose **deepening opportunities** — refactors that turn shallow modules into deep ones. The aim is testability and AI-navigability.

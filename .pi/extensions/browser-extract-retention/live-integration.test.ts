@@ -48,13 +48,22 @@ async function extractPageText(url: string): Promise<string> {
   }
 }
 
-function chunk(text: string, cursor = 0): { chunk: string; next: number | null; total: number; hasMore: boolean } {
+function chunk(
+  text: string,
+  cursor = 0,
+): { chunk: string; next: number | null; total: number; hasMore: boolean } {
   const end = Math.min(cursor + CHUNK_SIZE, text.length);
   const hasMore = end < text.length;
-  return { chunk: text.slice(cursor, end), next: hasMore ? end : null, total: text.length, hasMore };
+  return {
+    chunk: text.slice(cursor, end),
+    next: hasMore ? end : null,
+    total: text.length,
+    hasMore,
+  };
 }
 
-const describeLive = process.env.RUN_LIVE_TESTS === "1" ? describe : describe.skip;
+const describeLive =
+  process.env.RUN_LIVE_TESTS === "1" ? describe : describe.skip;
 
 describeLive("live integration — Wikipedia extraction + retention", () => {
   it("extracts Wikipedia Test page and produces reasonable chunks", async () => {
@@ -91,46 +100,127 @@ describeLive("live integration — Wikipedia extraction + retention", () => {
         role: "assistant",
         content: [
           { type: "text", text: "Let me fetch the Wikipedia article." },
-          { type: "toolCall", id: "c1", name: "BrowserNavigate", arguments: { url } },
+          {
+            type: "toolCall",
+            id: "c1",
+            name: "BrowserNavigate",
+            arguments: { url },
+          },
         ],
       },
-      { role: "toolResult", toolCallId: "c1", toolName: "BrowserNavigate",
-        content: [{ type: "text", text: `[status=200] ${url}` }], isError: false, timestamp: 1 },
+      {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "BrowserNavigate",
+        content: [{ type: "text", text: `[status=200] ${url}` }],
+        isError: false,
+        timestamp: 1,
+      },
       {
         role: "assistant",
-        content: [{ type: "toolCall", id: "c2", name: "BrowserExtract", arguments: { cursor: "0" } }],
+        content: [
+          {
+            type: "toolCall",
+            id: "c2",
+            name: "BrowserExtract",
+            arguments: { cursor: "0" },
+          },
+        ],
       },
-      { role: "toolResult", toolCallId: "c2", toolName: "BrowserExtract",
-        content: [{ type: "text", text: `${c0}\n[cursor=0 next=2048 total=${full.length} has_more=true]` }], isError: false, timestamp: 2 },
+      {
+        role: "toolResult",
+        toolCallId: "c2",
+        toolName: "BrowserExtract",
+        content: [
+          {
+            type: "text",
+            text: `${c0}\n[cursor=0 next=2048 total=${full.length} has_more=true]`,
+          },
+        ],
+        isError: false,
+        timestamp: 2,
+      },
       {
         role: "assistant",
-        content: [{ type: "toolCall", id: "c3", name: "BrowserExtract", arguments: { cursor: "2048" } }],
+        content: [
+          {
+            type: "toolCall",
+            id: "c3",
+            name: "BrowserExtract",
+            arguments: { cursor: "2048" },
+          },
+        ],
       },
-      { role: "toolResult", toolCallId: "c3", toolName: "BrowserExtract",
-        content: [{ type: "text", text: `${c1}\n[cursor=2048 next=4096 total=${full.length} has_more=true]` }], isError: false, timestamp: 3 },
+      {
+        role: "toolResult",
+        toolCallId: "c3",
+        toolName: "BrowserExtract",
+        content: [
+          {
+            type: "text",
+            text: `${c1}\n[cursor=2048 next=4096 total=${full.length} has_more=true]`,
+          },
+        ],
+        isError: false,
+        timestamp: 3,
+      },
       {
         role: "assistant",
-        content: [{ type: "toolCall", id: "c4", name: "BrowserExtract", arguments: { cursor: "4096" } }],
+        content: [
+          {
+            type: "toolCall",
+            id: "c4",
+            name: "BrowserExtract",
+            arguments: { cursor: "4096" },
+          },
+        ],
       },
-      { role: "toolResult", toolCallId: "c4", toolName: "BrowserExtract",
-        content: [{ type: "text", text: `${c2}\n[cursor=4096 next=6144 total=${full.length} has_more=true]` }], isError: false, timestamp: 4 },
+      {
+        role: "toolResult",
+        toolCallId: "c4",
+        toolName: "BrowserExtract",
+        content: [
+          {
+            type: "text",
+            text: `${c2}\n[cursor=4096 next=6144 total=${full.length} has_more=true]`,
+          },
+        ],
+        isError: false,
+        timestamp: 4,
+      },
     ];
 
     // Two evidence entries saved from this URL
     const evidence = [
-      { id: "e1", source: url, note: "landing date: July 20, 1969", snippet: "On July 20, 1969, Apollo 11 became the first crewed mission to land on the Moon." },
-      { id: "e2", source: url, note: "commander: Neil Armstrong",   snippet: "Commander Neil Armstrong and pilot Buzz Aldrin landed the lunar module Eagle..." },
+      {
+        id: "e1",
+        source: url,
+        note: "landing date: July 20, 1969",
+        snippet:
+          "On July 20, 1969, Apollo 11 became the first crewed mission to land on the Moon.",
+      },
+      {
+        id: "e2",
+        source: url,
+        note: "commander: Neil Armstrong",
+        snippet:
+          "Commander Neil Armstrong and pilot Buzz Aldrin landed the lunar module Eagle...",
+      },
     ];
 
     const { messages: out, prunedCount } = pruneMessages(messages, 2, evidence);
 
     // Oldest of 3 extracts should be pruned; the last 2 stay raw.
     expect(prunedCount).toBe(1);
-    const prunedMsg = out[4];   // the first BrowserExtract result
+    const prunedMsg = out[4]; // the first BrowserExtract result
     expect(prunedMsg.content[0].text).toContain("pruned");
     expect(prunedMsg.content[0].text).toContain(`URL: ${url}`);
-    expect(prunedMsg.content[0].text).toContain("e1 (landing date: July 20, 1969)");
-    expect(prunedMsg.content[0].text).toContain("e2 (commander: Neil Armstrong)");
+    expect(prunedMsg.content[0].text).toContain(
+      "e1 (landing date: July 20, 1969)",
+    );
+    expect(prunedMsg.content[0].text).toContain(
+      "e2 (commander: Neil Armstrong)",
+    );
     // Verify the chars-original count is reported and matches c0 + footer
     expect(prunedMsg.content[0].text).toMatch(/\d+ chars originally extracted/);
 
@@ -147,19 +237,57 @@ describeLive("live integration — Wikipedia extraction + retention", () => {
       return;
     }
 
-    const chunks = [full.slice(0, 2048), full.slice(2048, 4096), full.slice(4096, 6144)];
+    const chunks = [
+      full.slice(0, 2048),
+      full.slice(2048, 4096),
+      full.slice(4096, 6144),
+    ];
     const messages: any[] = [
       { role: "user", content: "What is GAIA?" },
-      { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "BrowserNavigate", arguments: { url } }] },
-      { role: "toolResult", toolCallId: "c1", toolName: "BrowserNavigate",
-        content: [{ type: "text", text: `[status=200] ${url}` }], isError: false, timestamp: 1 },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "c1",
+            name: "BrowserNavigate",
+            arguments: { url },
+          },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "BrowserNavigate",
+        content: [{ type: "text", text: `[status=200] ${url}` }],
+        isError: false,
+        timestamp: 1,
+      },
     ];
     for (let i = 0; i < 3; i++) {
-      messages.push({ role: "assistant", content: [{ type: "toolCall", id: `e${i}`, name: "BrowserExtract", arguments: { cursor: String(i * 2048) } }] });
       messages.push({
-        role: "toolResult", toolCallId: `e${i}`, toolName: "BrowserExtract",
-        content: [{ type: "text", text: `${chunks[i]}\n[cursor=${i*2048} next=${(i+1)*2048} total=${full.length} has_more=true]` }],
-        isError: false, timestamp: 2 + i,
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: `e${i}`,
+            name: "BrowserExtract",
+            arguments: { cursor: String(i * 2048) },
+          },
+        ],
+      });
+      messages.push({
+        role: "toolResult",
+        toolCallId: `e${i}`,
+        toolName: "BrowserExtract",
+        content: [
+          {
+            type: "text",
+            text: `${chunks[i]}\n[cursor=${i * 2048} next=${(i + 1) * 2048} total=${full.length} has_more=true]`,
+          },
+        ],
+        isError: false,
+        timestamp: 2 + i,
       });
     }
 
@@ -170,7 +298,9 @@ describeLive("live integration — Wikipedia extraction + retention", () => {
     expect(prunedCount).toBe(1);
     expect(sizeAfter).toBeLessThan(sizeBefore);
     const savedChars = sizeBefore - sizeAfter;
-    console.log(`    context savings: ${savedChars} chars (${((1 - sizeAfter / sizeBefore) * 100).toFixed(1)}% reduction from pruning 1 of 3 extracts)`);
+    console.log(
+      `    context savings: ${savedChars} chars (${((1 - sizeAfter / sizeBefore) * 100).toFixed(1)}% reduction from pruning 1 of 3 extracts)`,
+    );
     // At retention=2 with 3 extracts, we prune 1/3 of the raw text. Savings
     // should be close to 2048 chars minus the placeholder overhead (~200 chars).
     expect(savedChars).toBeGreaterThan(1000);

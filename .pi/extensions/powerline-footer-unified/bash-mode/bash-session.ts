@@ -21,7 +21,10 @@ function quoteShellArg(value: string): string {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
-function getCloseExitCode(code: number | null, signal: NodeJS.Signals | null): number {
+function getCloseExitCode(
+  code: number | null,
+  signal: NodeJS.Signals | null,
+): number {
   if (typeof code === "number") {
     return code;
   }
@@ -92,7 +95,9 @@ export class ManagedBashSession {
   private readonly onStateChange: () => void;
   private readonly onCommandSuccess: (command: string, cwd: string) => void;
   private process: ChildProcessWithoutNullStreams | null = null;
-  private readonly tempDir = mkdtempSync(join(tmpdir(), "powerline-bash-mode-"));
+  private readonly tempDir = mkdtempSync(
+    join(tmpdir(), "powerline-bash-mode-"),
+  );
   private buffer = "";
   private commandCounter = 0;
   private currentCommandId: string | null = null;
@@ -150,13 +155,17 @@ export class ManagedBashSession {
     this.process.stderr.on("data", (chunk) => this.handleChunk(String(chunk)));
     this.process.on("error", (error) => {
       if (!this.state.ready) {
-        this.readyReject?.(error instanceof Error ? error : new Error(String(error)));
+        this.readyReject?.(
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     });
     this.process.on("close", (code, signal) => {
       const exitCode = getCloseExitCode(code, signal);
       if (!this.disposed && !this.state.ready) {
-        this.readyReject?.(new Error(`Shell failed to start (exit ${exitCode})`));
+        this.readyReject?.(
+          new Error(`Shell failed to start (exit ${exitCode})`),
+        );
       }
 
       if (this.currentCommandId) {
@@ -191,7 +200,11 @@ export class ManagedBashSession {
     const id = `cmd-${++this.commandCounter}`;
     const extension = this.state.shellName.includes("fish") ? "fish" : "sh";
     const filePath = join(this.tempDir, `${id}.${extension}`);
-    writeFileSync(filePath, command.endsWith("\n") ? command : `${command}\n`, "utf8");
+    writeFileSync(
+      filePath,
+      command.endsWith("\n") ? command : `${command}\n`,
+      "utf8",
+    );
 
     this.currentCommandId = id;
     this.state.running = true;
@@ -243,7 +256,8 @@ export class ManagedBashSession {
       if (!this.state.ready) {
         if (line.startsWith(`${READY_SENTINEL}:`)) {
           this.state.ready = true;
-          this.state.cwd = line.slice(READY_SENTINEL.length + 1) || this.state.cwd;
+          this.state.cwd =
+            line.slice(READY_SENTINEL.length + 1) || this.state.cwd;
           this.readyResolve?.();
           this.readyResolve = null;
           this.readyReject = null;

@@ -50,7 +50,8 @@ export type BuiltinStatusLineSegmentId =
   | "extension_statuses";
 
 // Segment identifiers (built-in + dynamically registered custom items)
-export type StatusLineSegmentId = BuiltinStatusLineSegmentId | `custom:${string}`;
+export type StatusLineSegmentId =
+  BuiltinStatusLineSegmentId | `custom:${string}`;
 
 // Separator styles
 export type StatusLineSeparatorStyle =
@@ -67,22 +68,21 @@ export type StatusLineSeparatorStyle =
 
 // Preset names
 export type StatusLinePreset =
-  | "default"
-  | "minimal"
-  | "compact"
-  | "full"
-  | "nerd"
-  | "ascii"
-  | "custom";
+  "default" | "minimal" | "compact" | "full" | "nerd" | "ascii" | "custom";
 
 // Per-segment options
 export interface StatusLineSegmentOptions {
   model?: { showThinkingLevel?: boolean };
-  path?: { 
+  path?: {
     mode?: "basename" | "abbreviated" | "full";
     maxLength?: number;
   };
-  git?: { showBranch?: boolean; showStaged?: boolean; showUnstaged?: boolean; showUntracked?: boolean };
+  git?: {
+    showBranch?: boolean;
+    showStaged?: boolean;
+    showUnstaged?: boolean;
+    showUntracked?: boolean;
+  };
   time?: { format?: "12h" | "24h"; showSeconds?: boolean };
 }
 
@@ -141,11 +141,13 @@ export interface UsageStats {
 // Context passed to segment render functions
 export interface SegmentContext {
   // From pi-mono
-  model: { id: string; name?: string; reasoning?: boolean; contextWindow?: number } | undefined;
+  model:
+    | { id: string; name?: string; reasoning?: boolean; contextWindow?: number }
+    | undefined;
   thinkingLevel: string;
   sessionId: string | undefined;
   cwd?: string;
-  
+
   // Computed
   usageStats: UsageStats;
   contextPercent: number;
@@ -165,18 +167,18 @@ export interface SegmentContext {
   shellRunning: boolean;
   shellName: string | null;
   shellCwd: string | null;
-  
+
   // Git
   git: GitStatus;
-  
+
   // Extension statuses
   extensionStatuses: ReadonlyMap<string, string>;
   hiddenExtensionStatusKeys: ReadonlySet<string>;
   customItemsById: ReadonlyMap<string, CustomStatusItem>;
-  
+
   // Options
   options: StatusLineSegmentOptions;
-  
+
   // Theming
   theme: ThemeLike;
   colors: ColorScheme;

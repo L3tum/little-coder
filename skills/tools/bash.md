@@ -6,15 +6,19 @@ priority: 10
 token_cost: 120
 user-invocable: false
 description: Guidance for running shell commands safely with bounded timeouts and cwd handling.
-keywords: [shell, command, bash, run, execute, test, build, install, cwd, timeout]
+keywords:
+  [shell, command, bash, run, execute, test, build, install, cwd, timeout]
 ---
+
 ## Bash Tool
+
 Execute a shell command and return stdout+stderr.
 
 REQUIRED: command (shell command string)
 OPTIONAL: timeout (seconds, default 30 - use 120-300 for installs/builds), cwd (working directory under current workspace; defaults to current working directory)
 
 RULES:
+
 - Stateless: each call starts fresh
 - Prefer `cwd` over `cd /path && ...`
 - Prefer `glob` / `read` / `findRead` over bash for simple file listing and file reads
@@ -22,11 +26,13 @@ RULES:
 - Returns combined stdout and stderr
 
 EXAMPLE:
+
 ```tool
 {"name": "bash", "input": {"command": "ls -la", "cwd": "/path/to/project"}}
 ```
 
 EXAMPLE with timeout:
+
 ```tool
 {"name": "bash", "input": {"command": "pip install requests", "timeout": 120}}
 ```

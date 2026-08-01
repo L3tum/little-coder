@@ -22,7 +22,8 @@ export function createWelcomeDismissScheduler<Context>(
       const generation = options.getGeneration();
       timer = setTimeout(() => {
         timer = null;
-        if (!options.isEnabled() || generation !== options.getGeneration()) return;
+        if (!options.isEnabled() || generation !== options.getGeneration())
+          return;
         options.dismiss(ctx);
       }, 0);
     },

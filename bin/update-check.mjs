@@ -10,9 +10,10 @@ import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
 
-const VERSION_SOURCE = "https://raw.githubusercontent.com/L3tum/little-coder/main/package.json";
+const VERSION_SOURCE =
+  "https://raw.githubusercontent.com/L3tum/little-coder/main/package.json";
 const INSTALL_TARGET = "github:L3tum/little-coder";
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000;   // 12 h
+const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 h
 const FETCH_TIMEOUT_MS = 2000;
 
 export function cachePath() {
@@ -26,7 +27,8 @@ export function readCache(now = Date.now()) {
     const path = cachePath();
     if (!existsSync(path)) return null;
     const data = JSON.parse(readFileSync(path, "utf-8"));
-    if (typeof data.checkedAt !== "number" || typeof data.latest !== "string") return null;
+    if (typeof data.checkedAt !== "number" || typeof data.latest !== "string")
+      return null;
     if (now - data.checkedAt > CACHE_TTL_MS) return null;
     return data;
   } catch {
@@ -50,7 +52,8 @@ export function compareSemver(a, b) {
   const parse = (v) => {
     const withoutBuild = String(v).trim().replace(/^v/i, "").split("+", 1)[0];
     const prereleaseAt = withoutBuild.indexOf("-");
-    const core = prereleaseAt === -1 ? withoutBuild : withoutBuild.slice(0, prereleaseAt);
+    const core =
+      prereleaseAt === -1 ? withoutBuild : withoutBuild.slice(0, prereleaseAt);
     const pre = prereleaseAt === -1 ? "" : withoutBuild.slice(prereleaseAt + 1);
     const parts = core.split(".").map((n) => parseInt(n, 10));
     return {
@@ -88,7 +91,7 @@ export function compareSemver(a, b) {
   return core || comparePrerelease(pa.pre, pb.pre);
 }
 
-async function fetchLatest() {
+export async function fetchLatest() {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -105,7 +108,11 @@ async function fetchLatest() {
 
 // Decide whether to skip the check entirely. Errs toward NOT prompting in
 // any context that smells programmatic.
-export function shouldSkip(argv = process.argv.slice(2), env = process.env, stdout = process.stdout) {
+export function shouldSkip(
+  argv = process.argv.slice(2),
+  env = process.env,
+  stdout = process.stdout,
+) {
   if (env.LITTLE_CODER_NO_UPDATE_CHECK === "1") return true;
   if (env.CI === "true" || env.CI === "1") return true;
   for (let i = 0; i < argv.length; i++) {
@@ -125,13 +132,16 @@ export function shouldSkip(argv = process.argv.slice(2), env = process.env, stdo
   return false;
 }
 
-function promptYesNo(question) {
+export function promptYesNo(question) {
   return new Promise((resolve) => {
     if (!process.stdin.isTTY) {
       resolve(false);
       return;
     }
-    const rl = createInterface({ input: process.stdin, output: process.stderr });
+    const rl = createInterface({
+      input: process.stdin,
+      output: process.stderr,
+    });
     rl.question(question, (answer) => {
       rl.close();
       const a = (answer ?? "").trim().toLowerCase();
@@ -155,11 +165,12 @@ export async function checkForUpdate(currentVersion, opts = {}) {
   if (!latest) return false;
   if (compareSemver(latest, currentVersion) <= 0) return false;
 
-  const headline =
-    `\n📦 little-coder v${latest} is available (you have v${currentVersion}).`;
+  const headline = `\n📦 little-coder v${latest} is available (you have v${currentVersion}).`;
 
   if (skip === "notice-only") {
-    process.stderr.write(`${headline}\n   Update with: npm install -g ${INSTALL_TARGET}\n\n`);
+    process.stderr.write(
+      `${headline}\n   Update with: npm install -g ${INSTALL_TARGET}\n\n`,
+    );
     return false;
   }
 

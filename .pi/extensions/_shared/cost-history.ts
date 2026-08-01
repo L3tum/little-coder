@@ -9,7 +9,12 @@ export interface CostSummary {
   tools: Record<string, { calls: number }>;
   projects: Record<string, { sessions: number; cost: number }>;
   daily: Array<{ date: string; cost: number; messages: number }>;
-  topSessions: Array<{ id: string; cost: number; project?: string; transcript?: string }>;
+  topSessions: Array<{
+    id: string;
+    cost: number;
+    project?: string;
+    transcript?: string;
+  }>;
 }
 
 function numeric(value: unknown): number {
@@ -17,7 +22,12 @@ function numeric(value: unknown): number {
 }
 
 function costFromTurn(turn: any): number {
-  return numeric(turn.cost) || numeric(turn.usage?.cost) || numeric(turn.message?.cost) || 0;
+  return (
+    numeric(turn.cost) ||
+    numeric(turn.usage?.cost) ||
+    numeric(turn.message?.cost) ||
+    0
+  );
 }
 
 export function summarizeCosts(): CostSummary {
@@ -45,7 +55,10 @@ export function summarizeCosts(): CostSummary {
       const cost = costFromTurn(turn);
       sessionCost += cost;
       totalCost += cost;
-      const day = String(turn.timestamp || session.date || "unknown").slice(0, 10);
+      const day = String(turn.timestamp || session.date || "unknown").slice(
+        0,
+        10,
+      );
       dailyMap[day] ??= { cost: 0, messages: 0 };
       dailyMap[day].cost += cost;
       dailyMap[day].messages += 1;
@@ -59,10 +72,27 @@ export function summarizeCosts(): CostSummary {
       models[model].cost += cost;
     }
     projects[project].cost += sessionCost;
-    topSessions.push({ id: session.id, cost: sessionCost, project: session.project, transcript: session.path });
+    topSessions.push({
+      id: session.id,
+      cost: sessionCost,
+      project: session.project,
+      transcript: session.path,
+    });
   }
 
   topSessions.sort((a, b) => b.cost - a.cost);
-  const daily = Object.entries(dailyMap).map(([date, v]) => ({ date, ...v })).sort((a, b) => a.date.localeCompare(b.date));
-  return { sessions: topSessions.length, messages, totalCost, providers, models, tools, projects, daily, topSessions: topSessions.slice(0, 10) };
+  const daily = Object.entries(dailyMap)
+    .map(([date, v]) => ({ date, ...v }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    sessions: topSessions.length,
+    messages,
+    totalCost,
+    providers,
+    models,
+    tools,
+    projects,
+    daily,
+    topSessions: topSessions.slice(0, 10),
+  };
 }

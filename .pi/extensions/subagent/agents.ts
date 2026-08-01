@@ -14,43 +14,300 @@ import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { modePrompt } from "../mode-commands/mode-prompts.js";
+import {
+  modePrompt,
+  themedReviewPrompts,
+} from "../mode-commands/mode-prompts.js";
 
 export type AgentScope = "user" | "project" | "both";
 
 export interface AgentConfig {
-	name: string;
-	description: string;
-	tools?: string[];
-	model?: string;
-	thinking?: string;
-	systemPrompt: string;
-	source: "user" | "project";
-	filePath: string;
+  name: string;
+  description: string;
+  tools?: string[];
+  model?: string;
+  thinking?: string;
+  systemPrompt: string;
+  source: "user" | "project";
+  filePath: string;
 }
 
 export interface AgentDiscoveryResult {
-	agents: AgentConfig[];
-	projectAgentsDir: string | null;
+  agents: AgentConfig[];
+  projectAgentsDir: string | null;
 }
 
 export interface StarterAgentDiscoveryResult {
-	discovery: AgentDiscoveryResult;
-	createdAgentPath: string | null;
-	error?: string;
+  discovery: AgentDiscoveryResult;
+  createdAgentPath: string | null;
+  error?: string;
 }
 
 export const STARTER_AGENT_NAME = "explorer";
 export const STARTER_AGENT_FILE_NAME = "explorer.md";
 
 export function builtInLittleCoderAgents(): AgentConfig[] {
-	const filePath = "little-coder:programmatic";
-	return [
-		{ name: "PLAN", description: "Planning specialist that produces evidence-backed executable plans.", tools: ["read", "findRead", "glob", "grep", "code_search", "lsp", "websearch", "webfetch", "EvidenceAdd", "EvidenceList"], thinking: "high", systemPrompt: modePrompt("PLAN"), source: "user", filePath },
-		{ name: "EXECUTION", description: "Implementation specialist for executing approved plans and running checks.", thinking: "medium", systemPrompt: modePrompt("EXECUTION"), source: "user", filePath },
-		{ name: "REVIEW", description: "Read-only reviewer that inspects diffs and returns a verdict.", tools: ["read", "findRead", "glob", "grep", "code_search", "lsp", "bash", "EvidenceAdd", "EvidenceList"], thinking: "medium", systemPrompt: modePrompt("REVIEW"), source: "user", filePath },
-		{ name: "EXPLORE", description: "Read-only codebase exploration specialist for evidence-backed handoffs.", tools: ["read", "findRead", "glob", "grep", "code_search", "lsp", "EvidenceAdd", "EvidenceList"], thinking: "low", systemPrompt: modePrompt("EXPLORE"), source: "user", filePath },
-	];
+  const filePath = "little-coder:programmatic";
+  const REVIEW_TOOLS = [
+    "read",
+    "findRead",
+    "glob",
+    "grep",
+    "code_search",
+    "lsp",
+    "bash",
+    "EvidenceAdd",
+    "EvidenceList",
+  ];
+  return [
+    {
+      name: "PLAN",
+      description:
+        "Planning specialist that produces evidence-backed executable plans.",
+      tools: [
+        "read",
+        "findRead",
+        "glob",
+        "grep",
+        "code_search",
+        "lsp",
+        "websearch",
+        "webfetch",
+        "EvidenceAdd",
+        "EvidenceList",
+      ],
+      thinking: "high",
+      systemPrompt: modePrompt("PLAN"),
+      source: "user",
+      filePath,
+    },
+    {
+      name: "EXECUTION",
+      description:
+        "Implementation specialist for executing approved plans and running checks.",
+      thinking: "medium",
+      systemPrompt: modePrompt("EXECUTION"),
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW",
+      description:
+        "Read-only reviewer that inspects diffs and returns a verdict.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: modePrompt("REVIEW"),
+      source: "user",
+      filePath,
+    },
+    {
+      name: "EXPLORE",
+      description:
+        "Read-only codebase exploration specialist for evidence-backed handoffs.",
+      tools: [
+        "read",
+        "findRead",
+        "glob",
+        "grep",
+        "code_search",
+        "lsp",
+        "EvidenceAdd",
+        "EvidenceList",
+      ],
+      thinking: "low",
+      systemPrompt: modePrompt("EXPLORE"),
+      source: "user",
+      filePath,
+    },
+    // Deep Plan phase agents — specialized for the refine → research → compose pipeline.
+    {
+      name: "REFINE",
+      description:
+        "Clarifies requests and produces structured requirements documents.",
+      tools: ["read", "findRead", "glob", "grep", "code_search", "lsp"],
+      thinking: "medium",
+      systemPrompt: `## Deep Plan — Refine Phase
+
+Clarify the user's request and produce a structured requirements document.
+
+### Your job
+1. Restate the problem in 1-2 clear sentences
+2. Extract and enumerate key requirements
+3. Identify ambiguities that need resolution
+4. Define scope boundaries (what's in scope vs out of scope)
+
+### Rules
+- Be concise but precise
+- Do not implement anything — this is analysis only
+- Use tools (read, grep, code_search) only if needed to understand context`,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "RESEARCH",
+      description:
+        "Explores codebases and gathers concrete evidence for plans.",
+      tools: [
+        "read",
+        "findRead",
+        "glob",
+        "grep",
+        "code_search",
+        "lsp",
+        "websearch",
+        "webfetch",
+        "EvidenceAdd",
+        "EvidenceList",
+      ],
+      thinking: "medium",
+      systemPrompt: `## Deep Plan — Research Phase
+
+Explore the codebase to gather concrete evidence for the plan.
+
+### Your job
+1. Use code_search to find relevant symbols, functions, and patterns
+2. Use lsp for definitions and references
+3. Use findRead for targeted file inspection
+4. Use websearch/webfetch for external APIs or packages if needed
+5. Record all factual claims with EvidenceAdd
+
+### Output
+- Architecture summary: relevant files and their roles
+- Existing patterns to follow or avoid
+- External dependencies needed (with versions)
+- Key integration points
+- Potential conflicts or blockers
+
+### Rules
+- Read actual code, do not guess
+- Be specific: file paths, function names, line numbers
+- Stay read-only`,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "COMPOSE",
+      description:
+        "Produces complete specifications from requirements and research findings.",
+      tools: ["read", "findRead", "glob", "grep", "code_search", "lsp"],
+      thinking: "medium",
+      systemPrompt: `## Deep Plan — Compose Phase
+
+You are a specification writer. Produce a complete, detailed specification from the refined requirements and research findings provided in the task.
+
+### Workflow
+1. **Explore** — Use your tools (read, code_search, findRead, grep) to inspect the codebase.
+   Look at relevant files, understand architecture, identify integration points.
+2. **Write** — Once you have enough information, produce the specification as your
+   FINAL response. Do NOT make any more tool calls after you start writing.
+
+### Critical Rules
+- Your FINAL message MUST be the complete markdown specification below.
+- Do NOT end your turn with a tool call. Always end with the spec text.
+- Do NOT write files. Stay read-only.
+- Be specific: file paths, function names, line numbers.
+
+### Output Format — produce this exact structure
+
+# Deep Plan: [Title]
+
+## Problem Statement
+[1-2 sentences]
+
+## Context
+[Relevant existing code, architecture, patterns found]
+
+## Design
+[Proposed approach, alternatives considered, rationale]
+
+## Implementation Steps
+[Ordered, specific, with file paths and function names]
+1. [Step 1] — file: \`path/to/file.ts\`, function: \`foo()\`
+2. [Step 2] — ...
+
+## Dependencies
+[Any new packages with versions, or "None"]
+
+## Risks & Mitigations
+- [Risk] — [Mitigation]
+
+## Tests Needed
+[Unit tests, integration tests, edge cases]`,
+      source: "user",
+      filePath,
+    },
+    // Themed review agents — specialized subagents for focused code review.
+    {
+      name: "REVIEW-SECURITY",
+      description:
+        "Security-focused code review: vulnerabilities, injection, auth, data exposure, secrets.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedReviewPrompts.security,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-ARCHITECTURE",
+      description:
+        "Architecture review: patterns, coupling, separation of concerns, scalability.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedReviewPrompts.architecture,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-TESTS",
+      description:
+        "Test review: coverage gaps, flaky tests, test quality, missing scenarios.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedReviewPrompts.tests,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-BUGS",
+      description:
+        "Bug hunting: logic errors, edge cases, race conditions, null handling.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedReviewPrompts.bugs,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PERFORMANCE",
+      description:
+        "Performance review: bottlenecks, inefficient algorithms, memory usage.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedReviewPrompts.performance,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-LINTING",
+      description:
+        "Linting & style review: code quality, formatting, type safety, documentation.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedReviewPrompts.linting,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PONYTAIL",
+      description:
+        "Lazy engineering review: over-engineering, boilerplate, unnecessary complexity, simpler alternatives.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedReviewPrompts.ponytail,
+      source: "user",
+      filePath,
+    },
+  ];
 }
 
 const STARTER_AGENT_MARKDOWN = `---
@@ -93,127 +350,157 @@ Keep the response concise, structured, and optimized for agent handoff.
 // ---------------------------------------------------------------------------
 
 function isDirectory(p: string): boolean {
-	try { return fs.statSync(p).isDirectory(); } catch { return false; }
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export function getUserAgentsDir(): string {
-	const configDir = process.env["PI_CODING_AGENT_DIR"]?.trim() || path.join(os.homedir(), ".pi", "agent");
-	return path.join(configDir, "agents");
+  const configDir =
+    process.env["PI_CODING_AGENT_DIR"]?.trim() ||
+    path.join(os.homedir(), ".pi", "agent");
+  return path.join(configDir, "agents");
 }
 
 /** Walk up from `cwd` looking for a `.pi/agents` directory. */
 function findNearestProjectAgentsDir(cwd: string): string | null {
-	let dir = cwd;
-	while (true) {
-		const candidate = path.join(dir, ".pi", "agents");
-		if (isDirectory(candidate)) return candidate;
-		const parent = path.dirname(dir);
-		if (parent === dir) return null;
-		dir = parent;
-	}
+  let dir = cwd;
+  while (true) {
+    const candidate = path.join(dir, ".pi", "agents");
+    if (isDirectory(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }
 
 /** Parse a single agent markdown file into an AgentConfig. Returns null on skip. */
-function parseAgentFile(filePath: string, source: "user" | "project"): AgentConfig | null {
-	let content: string;
-	try { content = fs.readFileSync(filePath, "utf-8"); } catch { return null; }
+function parseAgentFile(
+  filePath: string,
+  source: "user" | "project",
+): AgentConfig | null {
+  let content: string;
+  try {
+    content = fs.readFileSync(filePath, "utf-8");
+  } catch {
+    return null;
+  }
 
-	let parsed: { frontmatter: Record<string, unknown>; body: string };
-	try {
-		parsed = parseFrontmatter<Record<string, unknown>>(content);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		console.warn(`[pi-subagent] Skipping invalid agent file "${filePath}": ${message}`);
-		return null;
-	}
+  let parsed: { frontmatter: Record<string, unknown>; body: string };
+  try {
+    parsed = parseFrontmatter<Record<string, unknown>>(content);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[pi-subagent] Skipping invalid agent file "${filePath}": ${message}`,
+    );
+    return null;
+  }
 
-	const frontmatter = parsed.frontmatter ?? {};
-	const body = parsed.body ?? "";
+  const frontmatter = parsed.frontmatter ?? {};
+  const body = parsed.body ?? "";
 
-	const name = typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
-	const description = typeof frontmatter.description === "string" ? frontmatter.description.trim() : "";
-	if (!name || !description) return null;
+  const name =
+    typeof frontmatter.name === "string" ? frontmatter.name.trim() : "";
+  const description =
+    typeof frontmatter.description === "string"
+      ? frontmatter.description.trim()
+      : "";
+  if (!name || !description) return null;
 
-	let tools: string[] | undefined;
-	if (typeof frontmatter.tools === "string") {
-		const parsedTools = frontmatter.tools
-			.split(",")
-			.map((t) => t.trim())
-			.filter(Boolean);
-		if (parsedTools.length > 0) tools = parsedTools;
-	} else if (Array.isArray(frontmatter.tools)) {
-		const parsedTools = frontmatter.tools
-			.filter((t): t is string => typeof t === "string")
-			.map((t) => t.trim())
-			.filter(Boolean);
-		if (parsedTools.length > 0) tools = parsedTools;
-	} else if (frontmatter.tools !== undefined) {
-		console.warn(
-			`[pi-subagent] Ignoring invalid tools field in "${filePath}". Expected a comma-separated string or string array.`,
-		);
-	}
+  let tools: string[] | undefined;
+  if (typeof frontmatter.tools === "string") {
+    const parsedTools = frontmatter.tools
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (parsedTools.length > 0) tools = parsedTools;
+  } else if (Array.isArray(frontmatter.tools)) {
+    const parsedTools = frontmatter.tools
+      .filter((t): t is string => typeof t === "string")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (parsedTools.length > 0) tools = parsedTools;
+  } else if (frontmatter.tools !== undefined) {
+    console.warn(
+      `[pi-subagent] Ignoring invalid tools field in "${filePath}". Expected a comma-separated string or string array.`,
+    );
+  }
 
-	return {
-		name,
-		description,
-		tools,
-		model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
-		thinking: typeof frontmatter.thinking === "string" ? frontmatter.thinking : undefined,
-		systemPrompt: body,
-		source,
-		filePath,
-	};
+  return {
+    name,
+    description,
+    tools,
+    model:
+      typeof frontmatter.model === "string" ? frontmatter.model : undefined,
+    thinking:
+      typeof frontmatter.thinking === "string"
+        ? frontmatter.thinking
+        : undefined,
+    systemPrompt: body,
+    source,
+    filePath,
+  };
 }
 
 /** Load all agent definitions from a directory. */
-function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
-	if (!fs.existsSync(dir)) return [];
+function loadAgentsFromDir(
+  dir: string,
+  source: "user" | "project",
+): AgentConfig[] {
+  if (!fs.existsSync(dir)) return [];
 
-	let entries: fs.Dirent[];
-	try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
-	entries.sort((a, b) => a.name.localeCompare(b.name));
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
 
-	const agents: AgentConfig[] = [];
-	for (const entry of entries) {
-		if (!entry.name.endsWith(".md")) continue;
-		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
+  const agents: AgentConfig[] = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith(".md")) continue;
+    if (!entry.isFile() && !entry.isSymbolicLink()) continue;
 
-		const agent = parseAgentFile(path.join(dir, entry.name), source);
-		if (agent) agents.push(agent);
-	}
-	return agents;
+    const agent = parseAgentFile(path.join(dir, entry.name), source);
+    if (agent) agents.push(agent);
+  }
+  return agents;
 }
 
 function mergeAgents(...groups: AgentConfig[][]): AgentConfig[] {
-	const agentMap = new Map<string, AgentConfig>();
-	for (const group of groups) {
-		for (const agent of group) agentMap.set(agent.name, agent);
-	}
-	return Array.from(agentMap.values());
+  const agentMap = new Map<string, AgentConfig>();
+  for (const group of groups) {
+    for (const agent of group) agentMap.set(agent.name, agent);
+  }
+  return Array.from(agentMap.values());
 }
 
 function getStarterAgentFileName(attempt: number): string {
-	if (attempt === 0) return STARTER_AGENT_FILE_NAME;
-	if (attempt === 1) return "explorer-starter.md";
-	return `explorer-starter-${attempt}.md`;
+  if (attempt === 0) return STARTER_AGENT_FILE_NAME;
+  if (attempt === 1) return "explorer-starter.md";
+  return `explorer-starter-${attempt}.md`;
 }
 
 function isFileExistsError(err: unknown): boolean {
-	return (
-		typeof err === "object" &&
-		err !== null &&
-		"code" in err &&
-		(err as { code?: unknown }).code === "EEXIST"
-	);
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "EEXIST"
+  );
 }
 
 function writeStarterAgentFile(filePath: string): void {
-	const fd = fs.openSync(filePath, "wx", 0o600);
-	try {
-		fs.writeFileSync(fd, STARTER_AGENT_MARKDOWN, { encoding: "utf-8" });
-	} finally {
-		fs.closeSync(fd);
-	}
+  const fd = fs.openSync(filePath, "wx", 0o600);
+  try {
+    fs.writeFileSync(fd, STARTER_AGENT_MARKDOWN, { encoding: "utf-8" });
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -225,24 +512,31 @@ function writeStarterAgentFile(filePath: string): void {
  *
  * Precedence is: user < project.
  */
-export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
-	const userAgentsDir = getUserAgentsDir();
-	const projectAgentsDir = findNearestProjectAgentsDir(cwd);
+export function discoverAgents(
+  cwd: string,
+  scope: AgentScope,
+): AgentDiscoveryResult {
+  const userAgentsDir = getUserAgentsDir();
+  const projectAgentsDir = findNearestProjectAgentsDir(cwd);
 
-	const userAgents = scope === "project" ? [] : loadAgentsFromDir(userAgentsDir, "user");
-	const projectAgents = scope === "user" || !projectAgentsDir ? [] : loadAgentsFromDir(projectAgentsDir, "project");
+  const userAgents =
+    scope === "project" ? [] : loadAgentsFromDir(userAgentsDir, "user");
+  const projectAgents =
+    scope === "user" || !projectAgentsDir
+      ? []
+      : loadAgentsFromDir(projectAgentsDir, "project");
 
-	const builtIns = builtInLittleCoderAgents();
-	if (scope === "user") {
-		return { agents: mergeAgents(builtIns, userAgents), projectAgentsDir };
-	}
-	if (scope === "project") {
-		return { agents: mergeAgents(builtIns, projectAgents), projectAgentsDir };
-	}
-	return {
-		agents: mergeAgents(builtIns, userAgents, projectAgents),
-		projectAgentsDir,
-	};
+  const builtIns = builtInLittleCoderAgents();
+  if (scope === "user") {
+    return { agents: mergeAgents(builtIns, userAgents), projectAgentsDir };
+  }
+  if (scope === "project") {
+    return { agents: mergeAgents(builtIns, projectAgents), projectAgentsDir };
+  }
+  return {
+    agents: mergeAgents(builtIns, userAgents, projectAgents),
+    projectAgentsDir,
+  };
 }
 
 /**
@@ -252,47 +546,71 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
  * starter will be recreated on the next discovery that needs runnable agents.
  * Existing files are never overwritten.
  */
-export function discoverAgentsWithStarter(cwd: string): StarterAgentDiscoveryResult {
-	const initial = discoverAgents(cwd, "both");
-	if (initial.agents.length > 0) {
-		return { discovery: initial, createdAgentPath: null };
-	}
+export function discoverAgentsWithStarter(
+  cwd: string,
+): StarterAgentDiscoveryResult {
+  const initial = discoverAgents(cwd, "both");
+  if (initial.agents.length > 0) {
+    return { discovery: initial, createdAgentPath: null };
+  }
 
-	const userAgentsDir = getUserAgentsDir();
+  const userAgentsDir = getUserAgentsDir();
 
-	try {
-		fs.mkdirSync(userAgentsDir, { recursive: true });
+  try {
+    fs.mkdirSync(userAgentsDir, { recursive: true });
 
-		for (let attempt = 0; attempt < 100; attempt++) {
-			const latest = attempt === 0 ? initial : discoverAgents(cwd, "both");
-			if (latest.agents.length > 0) {
-				return { discovery: latest, createdAgentPath: null };
-			}
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const latest = attempt === 0 ? initial : discoverAgents(cwd, "both");
+      if (latest.agents.length > 0) {
+        return { discovery: latest, createdAgentPath: null };
+      }
 
-			const filePath = path.join(userAgentsDir, getStarterAgentFileName(attempt));
-			try {
-				writeStarterAgentFile(filePath);
-				return {
-					discovery: discoverAgents(cwd, "both"),
-					createdAgentPath: filePath,
-				};
-			} catch (err) {
-				if (isFileExistsError(err)) continue;
-				throw err;
-			}
-		}
+      const filePath = path.join(
+        userAgentsDir,
+        getStarterAgentFileName(attempt),
+      );
+      try {
+        writeStarterAgentFile(filePath);
+        return {
+          discovery: discoverAgents(cwd, "both"),
+          createdAgentPath: filePath,
+        };
+      } catch (err) {
+        if (isFileExistsError(err)) continue;
+        throw err;
+      }
+    }
 
-		return {
-			discovery: initial,
-			createdAgentPath: null,
-			error: `Could not find an unused starter agent filename in ${userAgentsDir}.`,
-		};
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		return {
-			discovery: initial,
-			createdAgentPath: null,
-			error: `Could not create starter agent in ${userAgentsDir}: ${message}`,
-		};
-	}
+    return {
+      discovery: initial,
+      createdAgentPath: null,
+      error: `Could not find an unused starter agent filename in ${userAgentsDir}.`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      discovery: initial,
+      createdAgentPath: null,
+      error: `Could not create starter agent in ${userAgentsDir}: ${message}`,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Validation — check that all built-in agents have required fields
+// ---------------------------------------------------------------------------
+
+export function validateBuiltInAgents(): void {
+  const agents = builtInLittleCoderAgents();
+  for (const agent of agents) {
+    if (!agent.name) throw new Error("Built-in agent missing name");
+    if (!agent.description)
+      throw new Error(`Built-in agent "${agent.name}" missing description`);
+    if (!agent.systemPrompt)
+      throw new Error(`Built-in agent "${agent.name}" missing systemPrompt`);
+    if (agent.source !== "user")
+      throw new Error(
+        `Built-in agent "${agent.name}" has unexpected source: ${agent.source}`,
+      );
+  }
 }

@@ -9,6 +9,7 @@ user_invocable: false
 description: Workflow for evidence-first web research with citations.
 keywords: [research, web, browser, evidence, citation, fact, source]
 ---
+
 ## Research Protocol (evidence-first)
 
 1. Decompose the question into one or two unknowns. Write them down in your first reply.
@@ -18,5 +19,6 @@ keywords: [research, web, browser, evidence, citation, fact, source]
 5. If EvidenceList is empty, you are not ready to answer — go back to step 2.
 
 Stop conditions:
+
 - You have an evidence id for every claim in your answer → ANSWER.
 - You have tried 3+ search refinements with no usable evidence → say "insufficient evidence" instead of guessing.

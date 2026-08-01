@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,8 @@ import {
   writeCache,
   compareSemver,
   shouldSkip,
+  fetchLatest,
+  checkForUpdate,
 } from "./update-check.mjs";
 
 describe("compareSemver", () => {
@@ -124,8 +126,12 @@ describe("read/writeCache", () => {
 });
 
 describe("shouldSkip", () => {
-  function ttyStdout() { return { isTTY: true }; }
-  function pipeStdout() { return { isTTY: false }; }
+  function ttyStdout() {
+    return { isTTY: true };
+  }
+  function pipeStdout() {
+    return { isTTY: false };
+  }
   const noEnv = {};
 
   it("returns false in plain TTY interactive mode", () => {
@@ -133,7 +139,9 @@ describe("shouldSkip", () => {
   });
 
   it("skips when LITTLE_CODER_NO_UPDATE_CHECK=1", () => {
-    expect(shouldSkip([], { LITTLE_CODER_NO_UPDATE_CHECK: "1" }, ttyStdout())).toBe(true);
+    expect(
+      shouldSkip([], { LITTLE_CODER_NO_UPDATE_CHECK: "1" }, ttyStdout()),
+    ).toBe(true);
   });
 
   it("skips on --no-update-check flag", () => {
@@ -152,7 +160,9 @@ describe("shouldSkip", () => {
 
   it("skips on --list-models and --export", () => {
     expect(shouldSkip(["--list-models"], noEnv, ttyStdout())).toBe(true);
-    expect(shouldSkip(["--export", "session.jsonl"], noEnv, ttyStdout())).toBe(true);
+    expect(shouldSkip(["--export", "session.jsonl"], noEnv, ttyStdout())).toBe(
+      true,
+    );
   });
 
   it("skips for --mode rpc / --mode json", () => {
@@ -171,5 +181,172 @@ describe("shouldSkip", () => {
 
   it("returns notice-only on non-TTY pipelines", () => {
     expect(shouldSkip([], noEnv, pipeStdout())).toBe("notice-only");
+  });
+});
+
+describe("fetchLatest", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("returns version on 200 response", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ version: "2.0.0" }),
+    });
+    const latest = await fetchLatest();
+    expect(latest).toBe("2.0.0");
+  });
+
+  it("returns null on non-200 response", async () => {
+    global.fetch.mockResolvedValue({ ok: false });
+    expect(await fetchLatest()).toBeNull();
+  });
+
+  it("returns null when response has no version field", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    });
+    expect(await fetchLatest()).toBeNull();
+  });
+
+  it("returns null on network error", async () => {
+    global.fetch.mockRejectedValue(new Error("network error"));
+    expect(await fetchLatest()).toBeNull();
+  });
+
+  it("aborts when fetch times out (simulated via AbortError)", async () => {
+    global.fetch.mockRejectedValue(
+      new DOMException("The operation was aborted", "AbortError"),
+    );
+    expect(await fetchLatest()).toBeNull();
+  });
+});
+
+describe("promptYesNo", () => {
+  let mockRl;
+  let questionCallback;
+
+  beforeEach(() => {
+    vi.resetModules();
+    questionCallback = null;
+    mockRl = {
+      question: vi.fn((q, cb) => {
+        questionCallback = cb;
+      }),
+      close: vi.fn(),
+    };
+    vi.doMock("node:readline", () => ({
+      createInterface: vi.fn(() => mockRl),
+    }));
+    // Ensure stdin.isTTY is true
+    Object.defineProperty(process.stdin, "isTTY", {
+      value: true,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    vi.doUnmock("node:readline");
+    vi.restoreAllMocks();
+  });
+
+  it("defaults to yes on empty input", async () => {
+    const { promptYesNo: pyn } = await import("./update-check.mjs");
+    const promise = pyn("Test? ");
+    questionCallback("");
+    expect(await promise).toBe(true);
+  });
+
+  it("returns true for 'y' and 'yes'", async () => {
+    const { promptYesNo: pyn } = await import("./update-check.mjs");
+    const promise = pyn("Test? ");
+    questionCallback("y");
+    expect(await promise).toBe(true);
+  });
+
+  it("returns true for 'yes'", async () => {
+    const { promptYesNo: pyn } = await import("./update-check.mjs");
+    const promise = pyn("Test? ");
+    questionCallback("yes");
+    expect(await promise).toBe(true);
+  });
+
+  it("returns false for 'n' and 'no'", async () => {
+    const { promptYesNo: pyn } = await import("./update-check.mjs");
+    const promise = pyn("Test? ");
+    questionCallback("n");
+    expect(await promise).toBe(false);
+  });
+
+  it("returns false for 'no'", async () => {
+    const { promptYesNo: pyn } = await import("./update-check.mjs");
+    const promise = pyn("Test? ");
+    questionCallback("no");
+    expect(await promise).toBe(false);
+  });
+});
+
+describe("checkForUpdate", () => {
+  let tmp, origXdg;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "lc-uc-check-test-"));
+    origXdg = process.env.XDG_CACHE_HOME;
+    process.env.XDG_CACHE_HOME = tmp;
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    if (origXdg !== undefined) process.env.XDG_CACHE_HOME = origXdg;
+    else delete process.env.XDG_CACHE_HOME;
+    rmSync(tmp, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
+
+  it("returns false when skip=true", async () => {
+    const result = await checkForUpdate("1.0.0", { skip: true });
+    expect(result).toBe(false);
+  });
+
+  it("returns false when current version >= latest", async () => {
+    writeCache("1.0.0", Date.now());
+    const result = await checkForUpdate("1.0.0");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when current version > latest", async () => {
+    writeCache("0.9.0", Date.now());
+    const result = await checkForUpdate("1.0.0");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when no version found (cache empty, fetch returns null)", async () => {
+    global.fetch.mockRejectedValue(new Error("no network"));
+    const result = await checkForUpdate("1.0.0", { skip: false });
+    expect(result).toBe(false);
+  });
+
+  it("prints notice in notice-only mode without prompting", async () => {
+    writeCache("2.0.0", Date.now());
+    const stderrLog = [];
+    const origStderr = process.stderr.write;
+    process.stderr.write = vi.fn((msg) => {
+      stderrLog.push(msg);
+      return true;
+    });
+    try {
+      const result = await checkForUpdate("1.0.0", { skip: "notice-only" });
+      expect(result).toBe(false);
+      expect(stderrLog.join("").includes("available")).toBe(true);
+      expect(stderrLog.join("").includes("npm install -g")).toBe(true);
+    } finally {
+      process.stderr.write = origStderr;
+    }
   });
 });

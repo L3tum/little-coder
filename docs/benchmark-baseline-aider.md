@@ -10,10 +10,10 @@ The primary little-coder polyglot result (`docs/benchmark-reproduction.md`, `doc
 
 A scaffold+model comparison does not decompose into scaffold-only and model-only components without a third cell:
 
-| | Aider scaffold | Little-coder scaffold |
-|---|---|---|
-| GPT-4o | reported elsewhere | — |
-| Qwen3.5 | **this run** | 46.22% (run 1) / 44.89% (run 2) |
+|         | Aider scaffold     | Little-coder scaffold           |
+| ------- | ------------------ | ------------------------------- |
+| GPT-4o  | reported elsewhere | —                               |
+| Qwen3.5 | **this run**       | 46.22% (run 1) / 44.89% (run 2) |
 
 This document fills the missing cell. Same model weights, same test protocol, same test suites, same context budget — the only remaining variable is the scaffold. Whatever gap appears between **vanilla Aider + Qwen3.5** and **little-coder + Qwen3.5** is directly attributable to scaffold architecture.
 
@@ -21,11 +21,11 @@ This document fills the missing cell. Same model weights, same test protocol, sa
 
 On the same 225-exercise polyglot suite and the same Qwen3.5 9.7B Q4_K_M weights at 32,768-token context:
 
-| System | Pass rate | Wall time |
-|---|---|---|
-| **little-coder + Qwen3.5** (run 1 / run 2 mean) | **45.6%** | 21.75h mean |
-| **vanilla Aider + Qwen3.5** (this run) | **19.11%** | 15.65h |
-| **Scaffold gap** | **−26.5 pp** | −28% wall time |
+| System                                          | Pass rate    | Wall time      |
+| ----------------------------------------------- | ------------ | -------------- |
+| **little-coder + Qwen3.5** (run 1 / run 2 mean) | **45.6%**    | 21.75h mean    |
+| **vanilla Aider + Qwen3.5** (this run)          | **19.11%**   | 15.65h         |
+| **Scaffold gap**                                | **−26.5 pp** | −28% wall time |
 
 Vanilla Aider solves **43/225** exercises. Little-coder solves **102.5/225** (run 1 / run 2 mean). The scaffold is producing **2.4× more passes** on the same model weights.
 
@@ -42,15 +42,15 @@ Aider performs better on the easier slice of the distribution, but it's still lo
 
 ### Model under test
 
-| Component | Value |
-|---|---|
-| Model | `ollama/qwen3.5` — 9.7B params, Q4_K_M, 6.6 GB weights |
-| Ollama | 0.20.5, Docker |
-| `num_ctx` | 32,768 (matched to little-coder's profile) |
-| `num_predict` | 8,192 (added mid-run after observing runaway generation — see § Runaway generation case study) |
+| Component           | Value                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| Model               | `ollama/qwen3.5` — 9.7B params, Q4_K_M, 6.6 GB weights                                               |
+| Ollama              | 0.20.5, Docker                                                                                       |
+| `num_ctx`           | 32,768 (matched to little-coder's profile)                                                           |
+| `num_predict`       | 8,192 (added mid-run after observing runaway generation — see § Runaway generation case study)       |
 | `timeout` (litellm) | 1,800s (raised from Aider default of 600s to accommodate long generations on CPU-offloaded KV cache) |
-| temperature | 0 (Aider's default for this model) |
-| edit format | `whole` (Aider's default for unrecognized models) |
+| temperature         | 0 (Aider's default for this model)                                                                   |
+| edit format         | `whole` (Aider's default for unrecognized models)                                                    |
 
 All inference identical to little-coder's runs: same Ollama daemon, same model weights, same context window. The model is not the variable.
 
@@ -81,17 +81,17 @@ Where a direct comparison is made against little-coder, **run 2** is used as the
 
 This table is the foundation for every analysis below. Read it as: "these are the architectural interventions that separate the two scaffolds."
 
-| Intervention | Vanilla Aider | Little-coder |
-|---|---|---|
-| Edit format | Whole-file rewrite on every turn (`whole`) | Surgical tool-call model (Read, Edit, Bash, Glob, Write) |
-| Tool-use guidance | None | Per-tool skill cards injected at turn time |
-| Write-guard | None | Write tool refuses on existing files with a structured error pointing at Edit |
-| Workspace discovery | None | Conditional-injection knowledge entry for `.docs/instructions.md`, `README.md`, etc. |
-| Thinking budget | None (model runs free) | 2,048-token cap with reasoning reuse |
-| Retry mechanism | `--tries 2` (replay with test output as feedback) | `--tries 2` — **same** |
-| Quality monitor | None | Detects empty/hallucinated/looping output and mitigates |
-| Algorithm cheat-sheets | None | Keyword-gated knowledge entries (BFS state-space, tree rerooting, rule-string transform, etc.) |
-| Output length cap | None by default (unlimited `num_predict`) | Implicit via agent-loop structure + context budget |
+| Intervention           | Vanilla Aider                                     | Little-coder                                                                                   |
+| ---------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Edit format            | Whole-file rewrite on every turn (`whole`)        | Surgical tool-call model (Read, Edit, Bash, Glob, Write)                                       |
+| Tool-use guidance      | None                                              | Per-tool skill cards injected at turn time                                                     |
+| Write-guard            | None                                              | Write tool refuses on existing files with a structured error pointing at Edit                  |
+| Workspace discovery    | None                                              | Conditional-injection knowledge entry for `.docs/instructions.md`, `README.md`, etc.           |
+| Thinking budget        | None (model runs free)                            | 2,048-token cap with reasoning reuse                                                           |
+| Retry mechanism        | `--tries 2` (replay with test output as feedback) | `--tries 2` — **same**                                                                         |
+| Quality monitor        | None                                              | Detects empty/hallucinated/looping output and mitigates                                        |
+| Algorithm cheat-sheets | None                                              | Keyword-gated knowledge entries (BFS state-space, tree rerooting, rule-string transform, etc.) |
+| Output length cap      | None by default (unlimited `num_predict`)         | Implicit via agent-loop structure + context budget                                             |
 
 The only shared element is the 2-attempt protocol. Everything else in the architecture column is different.
 
@@ -99,18 +99,18 @@ The only shared element is the 2-attempt protocol. Everything else in the archit
 
 ## Headline
 
-| Metric | Little-coder run 2 | Little-coder run 1 | Vanilla Aider | Aider gap vs LC mean |
-|---|---:|---:|---:|---:|
-| Total passes | 101 / 225 | 104 / 225 | **43 / 225** | — |
-| Pass rate | 44.89% | 46.22% | **19.11%** | **−26.5 pp** |
-| 1st-attempt passes | 84 | 85 | 12 | — |
-| 2nd-attempt passes | 17 | 19 | 31 | — |
-| Wall time | 23.3h | 20.2h | **15.65h** | −28% |
-| Passes per hour | 4.33 | 5.15 | 2.75 | **−42%** |
-| Mean time on passing | 183s | 170s | 141s | — |
-| Mean time on failing | 528s | 455s | 224s | — |
-| Fail/pass time ratio | 2.9× | 2.7× | 1.6× | — |
-| Capped exercises | 0 | 0 | 3 | — |
+| Metric               | Little-coder run 2 | Little-coder run 1 | Vanilla Aider | Aider gap vs LC mean |
+| -------------------- | -----------------: | -----------------: | ------------: | -------------------: |
+| Total passes         |          101 / 225 |          104 / 225 |  **43 / 225** |                    — |
+| Pass rate            |             44.89% |             46.22% |    **19.11%** |         **−26.5 pp** |
+| 1st-attempt passes   |                 84 |                 85 |            12 |                    — |
+| 2nd-attempt passes   |                 17 |                 19 |            31 |                    — |
+| Wall time            |              23.3h |              20.2h |    **15.65h** |                 −28% |
+| Passes per hour      |               4.33 |               5.15 |          2.75 |             **−42%** |
+| Mean time on passing |               183s |               170s |          141s |                    — |
+| Mean time on failing |               528s |               455s |          224s |                    — |
+| Fail/pass time ratio |               2.9× |               2.7× |          1.6× |                    — |
+| Capped exercises     |                  0 |                  0 |             3 |                    — |
 
 **Two competing framings**:
 
@@ -125,41 +125,41 @@ Vanilla Aider fails faster than little-coder (224s vs 528s mean on failures) —
 
 ### Per-language pass rates
 
-| Language | Aider pass | Total | Aider % | LC run 2 % | LC run 1 % | Gap vs LC run 2 |
-|---|---:|---:|---:|---:|---:|---:|
-| cpp | 7 | 26 | **26.9%** | 50.0% | 50.0% | −23 pp |
-| java | 11 | 47 | 23.4% | 51.1% | 53.2% | −28 pp |
-| javascript | 9 | 49 | 18.4% | 44.9% | 49.0% | −27 pp |
-| python | 6 | 34 | **17.6%** | 52.9% | 52.9% | **−35 pp** |
-| rust | 5 | 30 | 16.7% | 30.0% | 30.0% | **−13 pp** |
-| go | 5 | 39 | **12.8%** | 38.5% | 38.5% | −26 pp |
-| **TOTAL** | **43** | **225** | **19.11%** | **44.89%** | **46.22%** | **−25.8 pp** |
+| Language   | Aider pass |   Total |    Aider % | LC run 2 % | LC run 1 % | Gap vs LC run 2 |
+| ---------- | ---------: | ------: | ---------: | ---------: | ---------: | --------------: |
+| cpp        |          7 |      26 |  **26.9%** |      50.0% |      50.0% |          −23 pp |
+| java       |         11 |      47 |      23.4% |      51.1% |      53.2% |          −28 pp |
+| javascript |          9 |      49 |      18.4% |      44.9% |      49.0% |          −27 pp |
+| python     |          6 |      34 |  **17.6%** |      52.9% |      52.9% |      **−35 pp** |
+| rust       |          5 |      30 |      16.7% |      30.0% |      30.0% |      **−13 pp** |
+| go         |          5 |      39 |  **12.8%** |      38.5% |      38.5% |          −26 pp |
+| **TOTAL**  |     **43** | **225** | **19.11%** | **44.89%** | **46.22%** |    **−25.8 pp** |
 
 ### Full detail (attempt splits + caps)
 
 **Phase 1 (104 exercises — little-coder run-1 passes)**
 
-| lang | done | p1 | p2 | fail | cap | pass rate |
-|---|---:|---:|---:|---:|---:|---:|
-| python | 18 | 3 | 3 | 11 | 1 | 33.3% |
-| java | 25 | 2 | 6 | 17 | 0 | 32.0% |
-| cpp | 13 | 1 | 3 | 7 | 2 | 30.8% |
-| javascript | 24 | 1 | 6 | 17 | 0 | 29.2% |
-| rust | 9 | 1 | 1 | 7 | 0 | 22.2% |
-| go | 15 | 0 | 2 | 13 | 0 | 13.3% |
-| **total** | **104** | **8** | **21** | **72** | **3** | **27.9%** |
+| lang       |    done |    p1 |     p2 |   fail |   cap | pass rate |
+| ---------- | ------: | ----: | -----: | -----: | ----: | --------: |
+| python     |      18 |     3 |      3 |     11 |     1 |     33.3% |
+| java       |      25 |     2 |      6 |     17 |     0 |     32.0% |
+| cpp        |      13 |     1 |      3 |      7 |     2 |     30.8% |
+| javascript |      24 |     1 |      6 |     17 |     0 |     29.2% |
+| rust       |       9 |     1 |      1 |      7 |     0 |     22.2% |
+| go         |      15 |     0 |      2 |     13 |     0 |     13.3% |
+| **total**  | **104** | **8** | **21** | **72** | **3** | **27.9%** |
 
 **Phase 2 (121 exercises — little-coder run-1 fails)**
 
-| lang | done | p1 | p2 | fail | cap | pass rate |
-|---|---:|---:|---:|---:|---:|---:|
-| cpp | 13 | 0 | 3 | 10 | 0 | 23.1% |
-| rust | 21 | 2 | 1 | 18 | 0 | 14.3% |
-| java | 22 | 0 | 3 | 19 | 0 | 13.6% |
-| go | 24 | 0 | 3 | 21 | 0 | 12.5% |
-| javascript | 25 | 2 | 0 | 23 | 0 | 8.0% |
-| python | 16 | 0 | 0 | 16 | 0 | **0.0%** |
-| **total** | **121** | **4** | **10** | **107** | **0** | **11.6%** |
+| lang       |    done |    p1 |     p2 |    fail |   cap | pass rate |
+| ---------- | ------: | ----: | -----: | ------: | ----: | --------: |
+| cpp        |      13 |     0 |      3 |      10 |     0 |     23.1% |
+| rust       |      21 |     2 |      1 |      18 |     0 |     14.3% |
+| java       |      22 |     0 |      3 |      19 |     0 |     13.6% |
+| go         |      24 |     0 |      3 |      21 |     0 |     12.5% |
+| javascript |      25 |     2 |      0 |      23 |     0 |      8.0% |
+| python     |      16 |     0 |      0 |      16 |     0 |  **0.0%** |
+| **total**  | **121** | **4** | **10** | **107** | **0** | **11.6%** |
 
 ### Language-level observations
 
@@ -178,9 +178,9 @@ Phase 1 = exercises little-coder **passed** in run 1. Phase 2 = exercises little
 
 If scaffold were irrelevant and the gap between little-coder and Aider were purely about model capability, Aider's pass rate would be roughly flat across phases (the model is the same; the exercise difficulty distribution is the only variable). If scaffold matters, Aider's rate should be **higher** in phase 1 (easier exercises — the model can solve them) and **lower** in phase 2 (harder exercises — the model can't solve them regardless of scaffold).
 
-| Phase | Aider pass rate | Meaning |
-|---|---:|---|
-| Phase 1 (LC run-1 passes) | **27.9%** (29/104) | On exercises LC solved, Aider passes ~1 in 4 |
+| Phase                     |    Aider pass rate | Meaning                                                       |
+| ------------------------- | -----------------: | ------------------------------------------------------------- |
+| Phase 1 (LC run-1 passes) | **27.9%** (29/104) | On exercises LC solved, Aider passes ~1 in 4                  |
 | Phase 2 (LC run-1 fails)  | **11.6%** (14/121) | On exercises LC also couldn't solve, Aider is near one in ten |
 
 The 2.4× ratio between phases is the scaffold signal:
@@ -196,19 +196,19 @@ Each cell is a count of exercises where little-coder (run 2) and Aider produced 
 
 **vs LC run 2:**
 
-|                          | **LC pass** | **LC fail** | row total |
-|--------------------------|------------:|------------:|----------:|
-| **Aider pass**           | 32          | 11          | 43        |
-| **Aider fail**           | **69**      | 113         | 182       |
-| **column total**         | 101         | 124         | 225       |
+|                  | **LC pass** | **LC fail** | row total |
+| ---------------- | ----------: | ----------: | --------: |
+| **Aider pass**   |          32 |          11 |        43 |
+| **Aider fail**   |      **69** |         113 |       182 |
+| **column total** |         101 |         124 |       225 |
 
 **vs LC run 1:**
 
-|                          | **LC pass** | **LC fail** | row total |
-|--------------------------|------------:|------------:|----------:|
-| **Aider pass**           | 29          | 14          | 43        |
-| **Aider fail**           | **75**      | 107         | 182       |
-| **column total**         | 104         | 121         | 225       |
+|                  | **LC pass** | **LC fail** | row total |
+| ---------------- | ----------: | ----------: | --------: |
+| **Aider pass**   |          29 |          14 |        43 |
+| **Aider fail**   |      **75** |         107 |       182 |
+| **column total** |         104 |         121 |       225 |
 
 Read the diagonals directly:
 
@@ -221,15 +221,15 @@ Read the diagonals directly:
 
 ### Scaffold-delta breakdown by language (vs LC run 2)
 
-| lang | scaffold-delta count |
-|---|---:|
-| java | 14 |
-| javascript | 14 |
-| go | 14 |
-| python | 13 |
-| cpp | 8 |
-| rust | 6 |
-| **total** | **69** |
+| lang       | scaffold-delta count |
+| ---------- | -------------------: |
+| java       |                   14 |
+| javascript |                   14 |
+| go         |                   14 |
+| python     |                   13 |
+| cpp        |                    8 |
+| rust       |                    6 |
+| **total**  |               **69** |
 
 Java, JavaScript, Go, and Python each contribute 13-14 exercises to the scaffold-delta set — broadly uniform. C++ and Rust contribute fewer, again consistent with the observation that those languages are model-capability-limited (not scaffold-limited).
 
@@ -239,15 +239,15 @@ Java, JavaScript, Go, and Python each contribute 13-14 exercises to the scaffold
 
 ### Time per exercise (seconds)
 
-| Metric | LC run 1 | LC run 2 | Vanilla Aider |
-|---|---:|---:|---:|
-| Mean on passing | 170 | 183 | **141** |
-| Median on passing | 138 | 160 | **85** |
-| Max on passing | — | — | 660 |
-| Mean on failing | 455 | 528 | **224** |
-| Median on failing | 360 | 476 | **147** |
-| Max on failing | — | — | 1,061 |
-| Fail/pass ratio | 2.7× | 2.9× | 1.6× |
+| Metric            | LC run 1 | LC run 2 | Vanilla Aider |
+| ----------------- | -------: | -------: | ------------: |
+| Mean on passing   |      170 |      183 |       **141** |
+| Median on passing |      138 |      160 |        **85** |
+| Max on passing    |        — |        — |           660 |
+| Mean on failing   |      455 |      528 |       **224** |
+| Median on failing |      360 |      476 |       **147** |
+| Max on failing    |        — |        — |         1,061 |
+| Fail/pass ratio   |     2.7× |     2.9× |          1.6× |
 
 Vanilla Aider **fails faster** than little-coder by a substantial margin. On failing exercises, Aider mean = 224s vs LC = 528s — Aider gives up ~2.4× faster.
 
@@ -255,6 +255,7 @@ Vanilla Aider **fails faster** than little-coder by a substantial margin. On fai
 2. **Little-coder's agent loop explores longer on hard exercises**: up to 20 turns of Read / Edit / Bash / test-run / retry. The model burns wall-clock cycling through hypotheses. Some of those cycles turn into eventual passes (the pass_2 path); most don't.
 
 **Net throughput** (passes per wall-clock hour):
+
 - LC run 1: 5.15 pass/h
 - LC run 2: 4.33 pass/h
 - Aider: **2.75 pass/h**
@@ -263,12 +264,12 @@ LC mean throughput is **1.72× Aider's** — meaningfully higher even after acco
 
 ### Tokens per exercise
 
-| Metric | Aider (all 225) |
-|---|---:|
-| Mean total tokens | 15,635 |
-| Mean completion tokens | 4,759 |
-| Max completion tokens (single exercise) | **21,321** (java/pov, pre-cap) |
-| Max prompt tokens (single exercise) | 91,596 (cpp/binary-search-tree) |
+| Metric                                  |                 Aider (all 225) |
+| --------------------------------------- | ------------------------------: |
+| Mean total tokens                       |                          15,635 |
+| Mean completion tokens                  |                           4,759 |
+| Max completion tokens (single exercise) |  **21,321** (java/pov, pre-cap) |
+| Max prompt tokens (single exercise)     | 91,596 (cpp/binary-search-tree) |
 
 Little-coder's per-exercise token totals aren't directly extracted in the result files; a per-exercise token comparison is unavailable. Aider's pattern is clear: whole-file-rewrite format generates tokens proportional to file size × retry count, and failing exercises consume slightly more (both attempts trigger).
 
@@ -286,26 +287,26 @@ For these three exercises, the generation was ultimately terminated by an emerge
 
 **java/pov** is the single largest generation in the run, providing a clean view of the pre-cap upper bound:
 
-| Metric | Value |
-|---|---|
-| Completion tokens | **21,321** |
-| Prompt tokens | 31,134 |
-| Total tokens | 52,455 |
-| Duration | 763s (12.7 min) |
-| Outcome | fail (tests failed after 2 attempts) |
+| Metric            | Value                                |
+| ----------------- | ------------------------------------ |
+| Completion tokens | **21,321**                           |
+| Prompt tokens     | 31,134                               |
+| Total tokens      | 52,455                               |
+| Duration          | 763s (12.7 min)                      |
+| Outcome           | fail (tests failed after 2 attempts) |
 
 21,321 completion tokens is roughly **~500–800 lines of emitted code** (via the rust/grade-school conversion ratio in our run: 22 tokens/line for Aider's fence-wrapped output). The java/pov problem's reference solution is ~80 lines. The model produced **~8–10× more output than a correct solution would require**, without ever converging to one.
 
 This is not an isolated case. **40 of 225 exercises had pre-cap completion_tokens > 8,192** (half of the 16,384 theoretical ceiling with 2 attempts). The runaway pattern was widespread across languages:
 
-| lang | # exercises with >8,192 completion tokens pre-cap |
-|---|---:|
-| cpp | 11 |
-| go | 8 |
-| java | 6 |
-| javascript | 7 |
-| python | 4 |
-| rust | 4 |
+| lang       | # exercises with >8,192 completion tokens pre-cap |
+| ---------- | ------------------------------------------------: |
+| cpp        |                                                11 |
+| go         |                                                 8 |
+| java       |                                                 6 |
+| javascript |                                                 7 |
+| python     |                                                 4 |
+| rust       |                                                 4 |
 
 ### The mitigation
 
@@ -331,10 +332,12 @@ This is an orthogonal but important contribution of the scaffold architecture: *
 Exercises that fail in both LC (run 2) and Aider across multiple languages are the algorithmic-depth-limited set — exercises the 9.7B model can't solve regardless of scaffold. Consistent with `docs/benchmark-reproduction.md` § "Cross-language hardness":
 
 **Universally hard (fail in both systems, most/all languages)**:
+
 - `book-store`, `bowling`, `forth`, `react`, `zebra-puzzle` — combinatorial optimization, state machines, interpreters, constraint satisfaction
 - `alphametics`, `pov`, `variable-length-quantity`, `poker`, `scale-generator` — mostly fail under both systems
 
 **Universally easy (pass in both, most languages)**:
+
 - `grade-school`, `phone-number`, `list-ops` — the LC docs-injection stars carry through
 - `beer-song`, `bottle-song`, `robot-name`, `queen-attack`, `resistor-color-trio`
 - `gigasecond` — the narrow date/time exercise that still works for both
@@ -345,7 +348,7 @@ The "both fail" cell (113 exercises vs run 2) is dominated by algorithmic-depth-
 
 ## What's not reproducible from Aider's data
 
-Several sections of `docs/benchmark-reproduction.md` describe *mechanisms* that do not exist in vanilla Aider. Their absence is the point — if vanilla Aider had them, it would be little-coder. For completeness:
+Several sections of `docs/benchmark-reproduction.md` describe _mechanisms_ that do not exist in vanilla Aider. Their absence is the point — if vanilla Aider had them, it would be little-coder. For completeness:
 
 - **Write-guard refusals** — Aider's `whole` edit format has no Write vs Edit distinction
 - **Edit-to-Write ratio** — no Edit tool
@@ -401,22 +404,22 @@ Added `num_predict: 8192` to the model-settings extra_params after observing thr
 
 ## Appendix B — Run configuration
 
-| Setting | Value |
-|---|---|
-| Aider version | 0.86.2 (pip) + benchmark harness from `Aider-AI/aider` source |
-| Python | 3.12 (isolated venv under `benchmarks/baseline_aider/venv/`) |
-| Model | `ollama_chat/qwen3.5` |
-| `num_ctx` | 32,768 |
-| `num_predict` | 8,192 (added mid-run; see § Runaway generation) |
-| `timeout` (litellm) | 1,800s |
-| `--tries` | 2 |
-| `--threads` | 1 |
-| `--edit-format` | whole |
-| Per-exercise wall cap | 3,600s (`AIDER_PER_EXERCISE_CAP_SECONDS`) |
-| Hardware | RTX 5070 Laptop 8GB VRAM, Intel i9-14900HX, 32 GiB RAM, Linux 6.17 (same machine as the LC runs) |
-| Start | 2026-04-18 19:18:37 |
-| End | 2026-04-19 10:57:35 |
-| Wall time | 15h 38m 58s |
+| Setting               | Value                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------ |
+| Aider version         | 0.86.2 (pip) + benchmark harness from `Aider-AI/aider` source                                    |
+| Python                | 3.12 (isolated venv under `benchmarks/baseline_aider/venv/`)                                     |
+| Model                 | `ollama_chat/qwen3.5`                                                                            |
+| `num_ctx`             | 32,768                                                                                           |
+| `num_predict`         | 8,192 (added mid-run; see § Runaway generation)                                                  |
+| `timeout` (litellm)   | 1,800s                                                                                           |
+| `--tries`             | 2                                                                                                |
+| `--threads`           | 1                                                                                                |
+| `--edit-format`       | whole                                                                                            |
+| Per-exercise wall cap | 3,600s (`AIDER_PER_EXERCISE_CAP_SECONDS`)                                                        |
+| Hardware              | RTX 5070 Laptop 8GB VRAM, Intel i9-14900HX, 32 GiB RAM, Linux 6.17 (same machine as the LC runs) |
+| Start                 | 2026-04-18 19:18:37                                                                              |
+| End                   | 2026-04-19 10:57:35                                                                              |
+| Wall time             | 15h 38m 58s                                                                                      |
 
 ---
 

@@ -18,8 +18,9 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { type AgentConfig, discoverAgents, discoverAgentsWithStarter } from "./agents.js";
-import { renderCall, renderResult } from "./render.js";
+import { z } from "zod";
+import { type AgentConfig, discoverAgentsWithStarter } from "./agents.js";
+import { type RenderTheme, renderCall, renderResult } from "./render.js";
 import { getResultSummaryText } from "./runner-events.js";
 import { mapConcurrent, runAgent } from "./runner.js";
 import {
@@ -45,22 +46,146 @@ const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
 const SUBAGENT_MAX_DEPTH_ENV = "PI_SUBAGENT_MAX_DEPTH";
 const SUBAGENT_STACK_ENV = "PI_SUBAGENT_STACK";
 const SUBAGENT_PREVENT_CYCLES_ENV = "PI_SUBAGENT_PREVENT_CYCLES";
-type SubagentLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-const LEVELS: SubagentLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
+type SubagentLevel =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+const LEVELS: SubagentLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
 
-function settingsPath(): string { return path.join(os.homedir(), ".pi", "agent", "settings.json"); }
-function readSettings(): any { try { return JSON.parse(fs.readFileSync(settingsPath(), "utf-8")); } catch { return {}; } }
-function writeSettings(settings: any): void { fs.mkdirSync(path.dirname(settingsPath()), { recursive: true }); fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2) + "\n"); }
-function littleCoderSettings(): any { const s = readSettings(); s.little_coder ??= {}; return s; }
-function getSubagentLevel(): SubagentLevel { const raw = readSettings()?.little_coder?.subagent_level; return LEVELS.includes(raw) ? raw : "medium"; }
-function setSubagentLevel(level: SubagentLevel): void { const s = littleCoderSettings(); s.little_coder.subagent_level = level; writeSettings(s); }
-function setSubagentModel(agent: string, model: string): void { const s = littleCoderSettings(); s.little_coder.subagent_models ??= {}; s.little_coder.subagent_models[agent] = model; writeSettings(s); }
-function getSubagentModels(): Record<string, string> { const raw = readSettings()?.little_coder?.subagent_models; return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}; }
-function subagentModel(agent: string): string | undefined { const models = getSubagentModels(); return models[agent] ?? models.all; }
-function setSubagentThinking(agent: string, thinking: SubagentLevel): void { const s = littleCoderSettings(); s.little_coder.subagent_thinking ??= {}; s.little_coder.subagent_thinking[agent] = thinking; writeSettings(s); }
-function getSubagentThinkingSettings(): Record<string, SubagentLevel> { const raw = readSettings()?.little_coder?.subagent_thinking; if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {}; return Object.fromEntries(Object.entries(raw).filter((entry): entry is [string, SubagentLevel] => typeof entry[1] === "string" && LEVELS.includes(entry[1] as SubagentLevel))); }
-function subagentThinking(agent: string): SubagentLevel | undefined { const settings = getSubagentThinkingSettings(); return settings[agent] ?? settings.all; }
-function steeringForLevel(level: SubagentLevel): string { return level === "off" ? "" : `\n\n## Delegation guidance\n\nSubagent level is ${level}. Use the subagent tool for well-scoped independent work when it improves reliability. Higher levels should delegate more proactively; minimal/low levels should delegate only when clearly useful.`; }
+function settingsPath(): string {
+  return path.join(os.homedir(), ".pi", "agent", "settings.json");
+}
+
+/** Cached settings payload keyed by file mtime to avoid redundant disk reads. */
+let settingsCache: { data: unknown; mtimeMs: number } | null = null;
+
+const SubagentLevelSchema = z.enum(LEVELS);
+const LittleCoderSettingsSchema = z
+  .object({
+    little_coder: z
+      .object({
+        subagent_thinking: z.record(z.string(), SubagentLevelSchema).optional(),
+        subagent_models: z.record(z.string(), z.string()).optional(),
+        subagent_level: SubagentLevelSchema.optional(),
+      })
+      .optional(),
+  })
+  .passthrough();
+
+type PiSettings = z.infer<typeof LittleCoderSettingsSchema> & {
+  little_coder?: {
+    subagent_thinking?: Record<string, SubagentLevel>;
+    subagent_models?: Record<string, string>;
+    subagent_level?: SubagentLevel;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+function readSettings(): PiSettings {
+  const sp = settingsPath();
+  try {
+    const st = fs.statSync(sp);
+    if (settingsCache && st.mtimeMs === settingsCache.mtimeMs) {
+      return settingsCache.data as PiSettings;
+    }
+    const raw = JSON.parse(fs.readFileSync(sp, "utf-8"));
+    try {
+      const parsed = LittleCoderSettingsSchema.parse(raw);
+      settingsCache = { data: parsed, mtimeMs: st.mtimeMs };
+      return parsed as PiSettings;
+    } catch {
+      // Validation failed — return raw data but log a warning.
+      settingsCache = { data: raw, mtimeMs: st.mtimeMs };
+      return raw as PiSettings;
+    }
+  } catch {
+    return {};
+  }
+}
+
+function writeSettings(settings: PiSettings): void {
+  const sp = settingsPath();
+  fs.mkdirSync(path.dirname(sp), { recursive: true });
+  // Invalidate cache so the next read picks up fresh data
+  settingsCache = null;
+  // Atomic write: write to temp file then rename, so a crash mid-write
+  // doesn't corrupt the settings file.
+  const tmp = sp + ".tmp";
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");
+    fs.renameSync(tmp, sp);
+  } catch (err) {
+    // Clean up temp file if rename failed
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+}
+function littleCoderSettings(): any {
+  const s = readSettings();
+  s.little_coder ??= {};
+  return s;
+}
+function getSubagentLevel(): SubagentLevel {
+  const raw = readSettings()?.little_coder?.subagent_level;
+  return raw && LEVELS.includes(raw) ? raw : "medium";
+}
+function setSubagentLevel(level: SubagentLevel): void {
+  const s = littleCoderSettings();
+  s.little_coder.subagent_level = level;
+  writeSettings(s);
+}
+function setSubagentModel(agent: string, model: string): void {
+  const s = littleCoderSettings();
+  s.little_coder.subagent_models ??= {};
+  s.little_coder.subagent_models[agent] = model;
+  writeSettings(s);
+}
+function getSubagentModels(): Record<string, string> {
+  const raw = readSettings()?.little_coder?.subagent_models;
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+function subagentModel(agent: string): string | undefined {
+  const models = getSubagentModels();
+  if (typeof models.all === "string" && models.all.trim()) return models.all;
+  return models[agent];
+}
+function setSubagentThinking(agent: string, thinking: SubagentLevel): void {
+  const s = littleCoderSettings();
+  s.little_coder.subagent_thinking ??= {};
+  s.little_coder.subagent_thinking[agent] = thinking;
+  writeSettings(s);
+}
+function getSubagentThinkingSettings(): Record<string, SubagentLevel> {
+  const raw = readSettings()?.little_coder?.subagent_thinking;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      (entry): entry is [string, SubagentLevel] =>
+        typeof entry[1] === "string" &&
+        LEVELS.includes(entry[1] as SubagentLevel),
+    ),
+  );
+}
+function subagentThinking(agent: string): SubagentLevel | undefined {
+  const settings = getSubagentThinkingSettings();
+  return settings[agent] ?? settings.all;
+}
+function steeringForLevel(level: SubagentLevel): string {
+  return level === "off"
+    ? ""
+    : `\n\n## Delegation guidance\n\nSubagent level is ${level}. Use the subagent tool for well-scoped independent work when it improves reliability. Higher levels should delegate more proactively; minimal/low levels should delegate only when clearly useful.`;
+}
 
 // ---------------------------------------------------------------------------
 // Tool parameter schema
@@ -143,12 +268,20 @@ function trustedProjectAgentsKey(projectAgentsDir: string): string {
 export function getTrustedProjectAgentDirs(settings: any): string[] {
   const raw = settings?.little_coder?.trusted_project_agent_dirs;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  return raw.filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0,
+  );
 }
 
-export function areProjectAgentsTrusted(settings: any, projectAgentsDir: string | null): boolean {
+export function areProjectAgentsTrusted(
+  settings: any,
+  projectAgentsDir: string | null,
+): boolean {
   if (!projectAgentsDir) return false;
-  return getTrustedProjectAgentDirs(settings).includes(trustedProjectAgentsKey(projectAgentsDir));
+  return getTrustedProjectAgentDirs(settings).includes(
+    trustedProjectAgentsKey(projectAgentsDir),
+  );
 }
 
 function trustProjectAgents(projectAgentsDir: string): void {
@@ -159,11 +292,18 @@ function trustProjectAgents(projectAgentsDir: string): void {
   writeSettings(s);
 }
 
-export function agentsForPrompt(agents: AgentConfig[], projectAgentsTrusted: boolean): AgentConfig[] {
+export function agentsForPrompt(
+  agents: AgentConfig[],
+  projectAgentsTrusted: boolean,
+): AgentConfig[] {
   if (projectAgentsTrusted) return agents;
   return agents.map((agent) =>
     agent.source === "project"
-      ? { ...agent, description: "Project-local agent (trust this repository to reveal its description)." }
+      ? {
+          ...agent,
+          description:
+            "Project-local agent (trust this repository to reveal its description).",
+        }
       : agent,
   );
 }
@@ -239,9 +379,7 @@ function getMaxDepthFlagFromArgv(argv: string[]): string | null {
   return null;
 }
 
-function getPreventCyclesFlagFromArgv(
-  argv: string[],
-): string | boolean | null {
+function getPreventCyclesFlagFromArgv(argv: string[]): string | boolean | null {
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--subagent-prevent-cycles") {
@@ -322,10 +460,7 @@ function resolveDelegationDepthConfig(pi: ExtensionAPI): DelegationDepthConfig {
     typeof argvPreventCyclesRaw === "boolean"
       ? argvPreventCyclesRaw
       : parseBoolean(argvPreventCyclesRaw);
-  if (
-    typeof argvPreventCyclesRaw === "string" &&
-    argvPreventCycles === null
-  ) {
+  if (typeof argvPreventCyclesRaw === "string" && argvPreventCycles === null) {
     console.warn(
       `[pi-subagent] Ignoring invalid --subagent-prevent-cycles value "${argvPreventCyclesRaw}". Expected true/false.`,
     );
@@ -405,8 +540,9 @@ export function buildParallelToolResult(
   makeDetails: ReturnType<typeof makeDetailsFactory>,
 ) {
   const successCount = results.filter((r) => isResultSuccess(r)).length;
-  const summaries = results.map((r) =>
-    `[${r.agent}] ${isResultError(r) ? "failed" : "completed"}: ${getResultSummaryText(r)}`,
+  const summaries = results.map(
+    (r) =>
+      `[${r.agent}] ${isResultError(r) ? "failed" : "completed"}: ${getResultSummaryText(r)}`,
   );
   const hasFailures = results.some((r) => isResultError(r));
   return {
@@ -455,7 +591,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("subagent-level", {
-    description: "Show or set subagent steering level: /subagent-level [off|minimal|low|medium|high|xhigh]",
+    description:
+      "Show or set subagent steering level: /subagent-level [off|minimal|low|medium|high|xhigh]",
     handler: async (args, ctx) => {
       const level = String(args ?? "").trim() as SubagentLevel;
       if (!level) {
@@ -463,29 +600,42 @@ export default function (pi: ExtensionAPI) {
         return;
       }
       if (!LEVELS.includes(level)) {
-        ctx.ui?.notify?.(`Usage: /subagent-level ${LEVELS.join("|")}`,
-          "warning");
+        ctx.ui?.notify?.(
+          `Usage: /subagent-level ${LEVELS.join("|")}`,
+          "warning",
+        );
         return;
       }
       setSubagentLevel(level);
-      ctx.ui?.notify?.(`Subagent level set to ${level}. Restart the session for tool registration changes to apply.`, "info");
+      ctx.ui?.notify?.(
+        `Subagent level set to ${level}. Restart the session for tool registration changes to apply.`,
+        "info",
+      );
     },
   });
   pi.registerCommand("subagent-model", {
-    description: "Show or set model for one subagent: /subagent-model [agent [model]]",
+    description:
+      "Show or set model for one subagent: /subagent-model [agent [model]]",
     handler: async (args, ctx) => {
-      const [agent, ...rest] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
+      const [agent, ...rest] = String(args ?? "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
       const model = rest.join(" ");
       if (!agent) {
         const entries = Object.entries(getSubagentModels());
-        const summary = entries.length > 0
-          ? entries.map(([name, value]) => `${name}: ${value}`).join("\n")
-          : "No subagent models configured.";
+        const summary =
+          entries.length > 0
+            ? entries.map(([name, value]) => `${name}: ${value}`).join("\n")
+            : "No subagent models configured.";
         ctx.ui?.notify?.(summary, "info");
         return;
       }
       if (!model) {
-        ctx.ui?.notify?.(`Subagent model for ${agent} is ${subagentModel(agent) ?? "not configured"}.`, "info");
+        ctx.ui?.notify?.(
+          `Subagent model for ${agent} is ${subagentModel(agent) ?? "not configured"}.`,
+          "info",
+        );
         return;
       }
       setSubagentModel(agent, model);
@@ -496,49 +646,81 @@ export default function (pi: ExtensionAPI) {
     description: "Set model for all subagents: /subagent-model-all <model>",
     handler: async (args, ctx) => {
       const model = String(args ?? "").trim();
-      if (!model) { ctx.ui?.notify?.("Usage: /subagent-model-all <model>", "warning"); return; }
+      if (!model) {
+        ctx.ui?.notify?.("Usage: /subagent-model-all <model>", "warning");
+        return;
+      }
       setSubagentModel("all", model);
-      ctx.ui?.notify?.(`Subagent model for all agents set to ${model}.`, "info");
+      ctx.ui?.notify?.(
+        `Subagent model for all agents set to ${model}.`,
+        "info",
+      );
     },
   });
   pi.registerCommand("subagent-thinking", {
-    description: "Show or set thinking level for one subagent: /subagent-thinking [agent [off|minimal|low|medium|high|xhigh]]",
+    description:
+      "Show or set thinking level for one subagent: /subagent-thinking [agent [off|minimal|low|medium|high|xhigh]]",
     handler: async (args, ctx) => {
-      const [agent, thinking] = String(args ?? "").trim().split(/\s+/).filter(Boolean);
+      const [agent, thinking] = String(args ?? "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
       if (!agent) {
         const entries = Object.entries(getSubagentThinkingSettings());
-        const summary = entries.length > 0
-          ? entries.map(([name, value]) => `${name}: ${value}`).join("\n")
-          : "No subagent thinking levels configured.";
+        const summary =
+          entries.length > 0
+            ? entries.map(([name, value]) => `${name}: ${value}`).join("\n")
+            : "No subagent thinking levels configured.";
         ctx.ui?.notify?.(summary, "info");
         return;
       }
       if (!thinking) {
-        ctx.ui?.notify?.(`Subagent thinking level for ${agent} is ${subagentThinking(agent) ?? "not configured"}.`, "info");
+        ctx.ui?.notify?.(
+          `Subagent thinking level for ${agent} is ${subagentThinking(agent) ?? "not configured"}.`,
+          "info",
+        );
         return;
       }
       if (!LEVELS.includes(thinking as SubagentLevel)) {
-        ctx.ui?.notify?.(`Usage: /subagent-thinking <agent> ${LEVELS.join("|")}`, "warning");
+        ctx.ui?.notify?.(
+          `Usage: /subagent-thinking <agent> ${LEVELS.join("|")}`,
+          "warning",
+        );
         return;
       }
       setSubagentThinking(agent, thinking as SubagentLevel);
-      ctx.ui?.notify?.(`Subagent thinking level for ${agent} set to ${thinking}.`, "info");
+      ctx.ui?.notify?.(
+        `Subagent thinking level for ${agent} set to ${thinking}.`,
+        "info",
+      );
     },
   });
   pi.registerCommand("subagent-thinking-all", {
-    description: "Set thinking level for all subagents: /subagent-thinking-all <off|minimal|low|medium|high|xhigh>",
+    description:
+      "Set thinking level for all subagents: /subagent-thinking-all <off|minimal|low|medium|high|xhigh>",
     handler: async (args, ctx) => {
       const thinking = String(args ?? "").trim();
-      if (!LEVELS.includes(thinking as SubagentLevel)) { ctx.ui?.notify?.(`Usage: /subagent-thinking-all ${LEVELS.join("|")}`, "warning"); return; }
+      if (!LEVELS.includes(thinking as SubagentLevel)) {
+        ctx.ui?.notify?.(
+          `Usage: /subagent-thinking-all ${LEVELS.join("|")}`,
+          "warning",
+        );
+        return;
+      }
       setSubagentThinking("all", thinking as SubagentLevel);
-      ctx.ui?.notify?.(`Subagent thinking level for all agents set to ${thinking}.`, "info");
+      ctx.ui?.notify?.(
+        `Subagent thinking level for all agents set to ${thinking}.`,
+        "info",
+      );
     },
   });
 
   const depthConfig = resolveDelegationDepthConfig(pi);
   const configuredLevel = getSubagentLevel();
-  const canUseSubagentTool = configuredLevel !== "off" && depthConfig.canUseSubagentTool;
-  const { currentDepth, maxDepth, ancestorAgentStack, preventCycles } = depthConfig;
+  const canUseSubagentTool =
+    configuredLevel !== "off" && depthConfig.canUseSubagentTool;
+  const { currentDepth, maxDepth, ancestorAgentStack, preventCycles } =
+    depthConfig;
 
   let discoveredAgents: AgentConfig[] = [];
   let discoveredProjectAgentsDir: string | null = null;
@@ -551,17 +733,28 @@ export default function (pi: ExtensionAPI) {
     const starterDiscovery = discoverAgentsWithStarter(ctx.cwd);
     const discovery = starterDiscovery.discovery;
     discoveredProjectAgentsDir = discovery.projectAgentsDir;
-    const hasProjectAgents = discovery.agents.some((agent) => agent.source === "project");
-    projectAgentsTrustedForPrompt = areProjectAgentsTrusted(readSettings(), discoveredProjectAgentsDir);
+    const hasProjectAgents = discovery.agents.some(
+      (agent) => agent.source === "project",
+    );
+    projectAgentsTrustedForPrompt = areProjectAgentsTrusted(
+      readSettings(),
+      discoveredProjectAgentsDir,
+    );
     if (hasProjectAgents && !projectAgentsTrustedForPrompt && ctx.hasUI) {
-      const projectAgents = discovery.agents.filter((agent) => agent.source === "project");
+      const projectAgents = discovery.agents.filter(
+        (agent) => agent.source === "project",
+      );
       projectAgentsTrustedForPrompt = await confirmProjectAgentsIfNeeded(
         projectAgents,
         discoveredProjectAgentsDir,
         ctx,
       );
     }
-    discoveredAgents = discovery.agents.map((agent) => ({ ...agent, model: subagentModel(agent.name) ?? agent.model, thinking: subagentThinking(agent.name) ?? agent.thinking }));
+    discoveredAgents = discovery.agents.map((agent) => ({
+      ...agent,
+      model: subagentModel(agent.name) ?? agent.model,
+      thinking: subagentThinking(agent.name) ?? agent.thinking,
+    }));
 
     if (ctx.hasUI) {
       if (starterDiscovery.createdAgentPath) {
@@ -570,10 +763,7 @@ export default function (pi: ExtensionAPI) {
           "info",
         );
       } else if (starterDiscovery.error && discoveredAgents.length === 0) {
-        ctx.ui.notify(
-          `No subagents found. ${starterDiscovery.error}`,
-          "info",
-        );
+        ctx.ui.notify(`No subagents found. ${starterDiscovery.error}`, "info");
       } else if (discoveredAgents.length > 0) {
         const list = discoveredAgents
           .map((a) => `  - ${a.name} (${a.source})`)
@@ -591,8 +781,14 @@ export default function (pi: ExtensionAPI) {
     if (!canUseSubagentTool) return;
     if (discoveredAgents.length === 0) return;
 
-    projectAgentsTrustedForPrompt = areProjectAgentsTrusted(readSettings(), discoveredProjectAgentsDir);
-    const agentList = agentsForPrompt(discoveredAgents, projectAgentsTrustedForPrompt)
+    projectAgentsTrustedForPrompt = areProjectAgentsTrusted(
+      readSettings(),
+      discoveredProjectAgentsDir,
+    );
+    const agentList = agentsForPrompt(
+      discoveredAgents,
+      projectAgentsTrustedForPrompt,
+    )
       .map((a) => `- **${a.name}**: ${a.description}`)
       .join("\n");
     return {
@@ -647,9 +843,9 @@ ${steeringForLevel(configuredLevel)}
         "  Parallel mode: set `tasks` array (do NOT also set `agent`/`task`).",
         "",
         "Optional context mode switch:",
-        "  mode: \"spawn\" (default) -> child gets only your task prompt.",
+        '  mode: "spawn" (default) -> child gets only your task prompt.',
         "                             Best for isolated/reproducible work; lower token/cost and less context leakage.",
-        "  mode: \"fork\"            -> child gets current session context + your task prompt.",
+        '  mode: "fork"            -> child gets current session context + your task prompt.',
         "                             Best for follow-up work that depends on prior context; higher token/cost and may include sensitive context.",
         "",
         'Example single:   { agent: "writer", task: "Rewrite README.md", mode: "spawn" }',
@@ -660,7 +856,11 @@ ${steeringForLevel(configuredLevel)}
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
         const starterDiscovery = discoverAgentsWithStarter(ctx.cwd);
         const discovery = starterDiscovery.discovery;
-        const agents = discovery.agents.map((agent) => ({ ...agent, model: subagentModel(agent.name) ?? agent.model, thinking: subagentThinking(agent.name) ?? agent.thinking }));
+        const agents = discovery.agents.map((agent) => ({
+          ...agent,
+          model: subagentModel(agent.name) ?? agent.model,
+          thinking: subagentThinking(agent.name) ?? agent.thinking,
+        }));
 
         const delegationMode = parseDelegationMode(params.mode);
         if (!delegationMode) {
@@ -687,15 +887,14 @@ ${steeringForLevel(configuredLevel)}
 
         let forkSessionSnapshotJsonl: string | undefined;
         if (delegationMode === "fork") {
-          forkSessionSnapshotJsonl = buildForkSessionSnapshotJsonl(
-            ctx.sessionManager,
-          ) ?? undefined;
+          forkSessionSnapshotJsonl =
+            buildForkSessionSnapshotJsonl(ctx.sessionManager) ?? undefined;
           if (!forkSessionSnapshotJsonl) {
             return {
               content: [
                 {
                   type: "text",
-                  text: "Cannot use mode=\"fork\": failed to snapshot current session context.",
+                  text: 'Cannot use mode="fork": failed to snapshot current session context.',
                 },
               ],
               details: makeDetails("single")([]),
@@ -754,8 +953,12 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
           agents,
           requested,
         );
-        const projectAgentsTrusted = areProjectAgentsTrusted(readSettings(), discovery.projectAgentsDir);
-        const shouldConfirmProjectAgents = !projectAgentsTrusted && (params.confirmProjectAgents ?? true);
+        const projectAgentsTrusted = areProjectAgentsTrusted(
+          readSettings(),
+          discovery.projectAgentsDir,
+        );
+        const shouldConfirmProjectAgents =
+          !projectAgentsTrusted && (params.confirmProjectAgents ?? true);
         if (requestedProjectAgents.length > 0 && shouldConfirmProjectAgents) {
           if (ctx.hasUI) {
             const approved = await confirmProjectAgentsIfNeeded(
@@ -831,20 +1034,22 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
         };
       },
 
-      renderCall: (args, theme) => renderCall(args, theme as any),
-      renderResult: (result, { expanded }, theme) =>
-        renderResult(result, expanded, theme as any),
+      renderCall: (args, theme, renderContext) =>
+        renderCall(args, theme as RenderTheme, renderContext),
+      renderResult: (result, options, theme, renderContext) =>
+        renderResult(
+          result,
+          options.expanded,
+          theme as RenderTheme,
+          renderContext,
+        ),
     });
   }
-
-  // -----------------------------------------------------------------------
-  // Mode implementations
-  // -----------------------------------------------------------------------
 
   async function executeSingle(
     agentName: string,
     task: string,
-    cwd: string | undefined,
+    taskCwd: string | undefined,
     delegationMode: DelegationMode,
     forkSessionSnapshotJsonl: string | undefined,
     agents: AgentConfig[],
@@ -858,7 +1063,7 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
       agents,
       agentName,
       task,
-      taskCwd: cwd,
+      taskCwd: taskCwd,
       delegationMode,
       forkSessionSnapshotJsonl,
       parentDepth: currentDepth,
@@ -989,6 +1194,10 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
   }
 }
 
+function __resetSettingsCache(): void {
+  settingsCache = null;
+}
+
 export const __subagentTest = {
   parseDelegationMode,
   buildForkSessionSnapshotJsonl,
@@ -998,4 +1207,7 @@ export const __subagentTest = {
   getMaxDepthFlagFromArgv,
   getPreventCyclesFlagFromArgv,
   getCycleViolations,
+  readSettings,
+  writeSettings,
+  __resetSettingsCache,
 };

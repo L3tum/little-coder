@@ -1,29 +1,96 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve, normalize, relative, isAbsolute, join, basename } from "node:path";
+import {
+  resolve,
+  normalize,
+  relative,
+  isAbsolute,
+  join,
+  basename,
+} from "node:path";
 import { homedir, tmpdir } from "node:os";
 import { normalizeWritePath } from "../write-guard/index.ts";
 
 const BUILTIN_SAFE_PREFIXES: readonly string[] = [
-  "ls", "cat", "head", "tail", "wc", "pwd", "echo", "printf", "date",
-  "which", "type", "env", "printenv", "uname", "whoami", "id",
-  "git log", "git status", "git diff", "git show", "git branch",
-  "git remote", "git stash list", "git tag", "git blame",
-  "git reflog", "git shortlog", "git describe", "git ls-files",
-  "git ls-tree", "git cat-file", "git rev-parse", "git config --get",
-  "git config --list", "git for-each-ref", "git name-rev",
-  "git cherry", "git bisect log", "git worktree list",
-  "find ", "grep ", "rg ", "ag ", "fd ", "sed ",
-  "python ", "python3 ", "node ", "ruby ", "perl ",
-  "pip show", "pip list", "npm list", "npx skills",
-  "cargo metadata", "cargo check", "cargo check ",
-  "cargo test", "cargo test ",
-  "cargo clippy", "cargo clippy ",
-  "cargo fmt --check", "cargo fmt --check ",
-  "cargo miri test", "cargo miri test ",
-  "df ", "du ", "free ", "top -bn", "ps ",
-  "curl -I", "curl --head",
-  "cp ", "mv ", "mkdir ", "touch ",
+  "ls",
+  "cat",
+  "head",
+  "tail",
+  "wc",
+  "pwd",
+  "echo",
+  "printf",
+  "date",
+  "which",
+  "type",
+  "env",
+  "printenv",
+  "uname",
+  "whoami",
+  "id",
+  "git log",
+  "git status",
+  "git diff",
+  "git show",
+  "git branch",
+  "git remote",
+  "git stash list",
+  "git tag",
+  "git blame",
+  "git reflog",
+  "git shortlog",
+  "git describe",
+  "git ls-files",
+  "git ls-tree",
+  "git cat-file",
+  "git rev-parse",
+  "git config --get",
+  "git config --list",
+  "git for-each-ref",
+  "git name-rev",
+  "git cherry",
+  "git bisect log",
+  "git worktree list",
+  "find ",
+  "grep ",
+  "rg ",
+  "ag ",
+  "fd ",
+  "sed ",
+  "python ",
+  "python3 ",
+  "node ",
+  "ruby ",
+  "perl ",
+  "pip show",
+  "pip list",
+  "npm list",
+  "npx skills",
+  "cargo metadata",
+  "cargo check",
+  "cargo check ",
+  "cargo test",
+  "cargo test ",
+  "cargo clippy",
+  "cargo clippy ",
+  "cargo fmt --check",
+  "cargo fmt --check ",
+  "cargo miri test",
+  "cargo miri test ",
+  "df ",
+  "du ",
+  "free ",
+  "top -bn",
+  "ps ",
+  "curl -I",
+  "curl --head",
+  "cp ",
+  "mv ",
+  "mkdir ",
+  "touch ",
 ];
 
 export type ExternalFilePolicy = "deny" | "ask" | "accept";
@@ -36,7 +103,12 @@ interface ExternalAccessRequest {
   summary: string;
 }
 
-const CONFIG_PATH = join(homedir(), ".pi", "agent", "little-coder-workspace-boundary.json");
+const CONFIG_PATH = join(
+  homedir(),
+  ".pi",
+  "agent",
+  "little-coder-workspace-boundary.json",
+);
 const DEFAULT_CONFIG: WorkspaceBoundaryConfig = { externalFilePolicy: "ask" };
 const POLICY_OPTIONS: ExternalFilePolicy[] = ["deny", "ask", "accept"];
 
@@ -74,7 +146,10 @@ export function parseExtraPrefixes(raw: string | undefined): string[] {
 }
 
 export function getSafePrefixes(): string[] {
-  return [...BUILTIN_SAFE_PREFIXES, ...parseExtraPrefixes(process.env.LITTLE_CODER_BASH_ALLOW)];
+  return [
+    ...BUILTIN_SAFE_PREFIXES,
+    ...parseExtraPrefixes(process.env.LITTLE_CODER_BASH_ALLOW),
+  ];
 }
 
 function hasShellControlOperator(command: string): boolean {
@@ -111,7 +186,10 @@ function normalizeCargoCommand(c: string): string {
   return c.replace(/\bcargo\s+\+\w+\s+/g, "cargo ");
 }
 
-export function isSafeBash(command: string, prefixes: readonly string[] = getSafePrefixes()): boolean {
+export function isSafeBash(
+  command: string,
+  prefixes: readonly string[] = getSafePrefixes(),
+): boolean {
   const c = command.trim();
   if (isSafeDiagnosticCommand(c)) return true;
   const normalized = normalizeCargoCommand(c);
@@ -134,7 +212,10 @@ export function isNoopCd(command: string, cwd: string): boolean {
   const target = expandCdPath(arg, cwd);
   const normalizedTarget = normalize(resolve(target));
   const normalizedCwd = normalize(resolve(cwd));
-  return normalizedTarget === normalizedCwd || normalizedTarget.startsWith(normalizedCwd + "/");
+  return (
+    normalizedTarget === normalizedCwd ||
+    normalizedTarget.startsWith(normalizedCwd + "/")
+  );
 }
 
 function expandCdPath(arg: string, cwd: string): string {
@@ -147,7 +228,8 @@ function expandCdPath(arg: string, cwd: string): string {
 
 export function resolveWorkspacePath(inputPath: string, cwd: string): string {
   if (inputPath === "~") return homedir();
-  if (inputPath.startsWith("~/")) return resolve(homedir(), "." + inputPath.slice(1));
+  if (inputPath.startsWith("~/"))
+    return resolve(homedir(), "." + inputPath.slice(1));
   if (isAbsolute(inputPath)) return resolve(inputPath);
   return resolve(cwd, inputPath);
 }
@@ -162,7 +244,10 @@ export function hasParentTraversal(value: string): boolean {
 }
 
 function isWithinDefaultAllowedTmp(target: string): boolean {
-  return isWithinWorkspace(normalize(resolve(tmpdir())), normalize(resolve(target)));
+  return isWithinWorkspace(
+    normalize(resolve(tmpdir())),
+    normalize(resolve(target)),
+  );
 }
 
 function isTrustedToolTempFilePath(target: string): boolean {
@@ -181,8 +266,13 @@ function isTrustedToolTempGlob(base: string, pattern: string): boolean {
 }
 
 function isWithinUserSkillsRoot(target: string): boolean {
-  const root = process.env.LITTLE_CODER_USER_SKILLS_DIR || join(homedir(), ".pi", "skills");
-  return isWithinWorkspace(normalize(resolve(root)), normalize(resolve(target)));
+  const root =
+    process.env.LITTLE_CODER_USER_SKILLS_DIR ||
+    join(homedir(), ".pi", "skills");
+  return isWithinWorkspace(
+    normalize(resolve(root)),
+    normalize(resolve(target)),
+  );
 }
 
 export function getExternalWorkspaceAccess(
@@ -193,41 +283,79 @@ export function getExternalWorkspaceAccess(
   if (!input || typeof input !== "object") return null;
 
   if (toolName === "read") {
-    const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
+    const path =
+      typeof input.path === "string"
+        ? input.path
+        : typeof input.file_path === "string"
+          ? input.file_path
+          : undefined;
     if (!path) return null;
     const resolved = resolveWorkspacePath(path, cwd);
-    if (isWithinDefaultAllowedTmp(resolved) || isTrustedToolTempFilePath(resolved) || isWithinUserSkillsRoot(resolved)) return null;
+    if (
+      isWithinDefaultAllowedTmp(resolved) ||
+      isTrustedToolTempFilePath(resolved) ||
+      isWithinUserSkillsRoot(resolved)
+    )
+      return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
   if (toolName === "edit") {
-    const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
+    const path =
+      typeof input.path === "string"
+        ? input.path
+        : typeof input.file_path === "string"
+          ? input.file_path
+          : undefined;
     if (!path) return null;
     const resolved = resolveWorkspacePath(path, cwd);
-    if (isWithinDefaultAllowedTmp(resolved) || isWithinUserSkillsRoot(resolved)) return null;
+    if (isWithinDefaultAllowedTmp(resolved) || isWithinUserSkillsRoot(resolved))
+      return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
   if (toolName === "write") {
-    const path = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : undefined;
+    const path =
+      typeof input.path === "string"
+        ? input.path
+        : typeof input.file_path === "string"
+          ? input.file_path
+          : undefined;
     if (!path) return null;
     const resolved = normalizeWritePath(path, cwd).path;
-    if (isWithinDefaultAllowedTmp(resolved) || isWithinUserSkillsRoot(resolved)) return null;
+    if (isWithinDefaultAllowedTmp(resolved) || isWithinUserSkillsRoot(resolved))
+      return null;
     return isWithinWorkspace(cwd, resolved) ? null : { summary: resolved };
   }
 
   if (toolName === "grep") {
-    const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
+    const baseInput =
+      typeof input.path === "string"
+        ? input.path
+        : typeof input.file_path === "string"
+          ? input.file_path
+          : ".";
     const base = resolveWorkspacePath(baseInput, cwd);
-    if (isWithinDefaultAllowedTmp(base) || isWithinUserSkillsRoot(base)) return null;
+    if (isWithinDefaultAllowedTmp(base) || isWithinUserSkillsRoot(base))
+      return null;
     return isWithinWorkspace(cwd, base) ? null : { summary: base };
   }
 
   if (toolName === "findRead") {
-    const baseInput = typeof input.path === "string" ? input.path : typeof input.file_path === "string" ? input.file_path : ".";
+    const baseInput =
+      typeof input.path === "string"
+        ? input.path
+        : typeof input.file_path === "string"
+          ? input.file_path
+          : ".";
     const base = resolveWorkspacePath(baseInput, cwd);
     const pattern = typeof input.pattern === "string" ? input.pattern : "";
-    if (isWithinDefaultAllowedTmp(base) || isTrustedToolTempGlob(base, pattern) || isWithinUserSkillsRoot(base)) return null;
+    if (
+      isWithinDefaultAllowedTmp(base) ||
+      isTrustedToolTempGlob(base, pattern) ||
+      isWithinUserSkillsRoot(base)
+    )
+      return null;
     if (!isWithinWorkspace(cwd, base)) return { summary: base };
     if (pattern && hasParentTraversal(pattern)) {
       return { summary: `${base} (pattern escapes base: ${pattern})` };
@@ -262,18 +390,24 @@ export default function (pi: ExtensionAPI) {
       const arg = args[0]?.toLowerCase();
       if (arg === "deny" || arg === "ask" || arg === "accept") {
         await setExternalFilePolicy(arg);
-        if (ctx.hasUI) ctx.ui.notify(`External file access policy set to '${arg}'.`, "info");
+        if (ctx.hasUI)
+          ctx.ui.notify(`External file access policy set to '${arg}'.`, "info");
         return;
       }
       if (!ctx.hasUI) return;
       const choice = await ctx.ui.select(
         "External file access policy",
-        POLICY_OPTIONS.map((p) => `${p}${p === config.externalFilePolicy ? " (current)" : ""}`),
+        POLICY_OPTIONS.map(
+          (p) => `${p}${p === config.externalFilePolicy ? " (current)" : ""}`,
+        ),
       );
       if (!choice) return;
       const selected = choice.split(" ")[0] as ExternalFilePolicy;
       await setExternalFilePolicy(selected);
-      ctx.ui.notify(`External file access policy set to '${selected}'.`, "info");
+      ctx.ui.notify(
+        `External file access policy set to '${selected}'.`,
+        "info",
+      );
     },
   });
 
@@ -297,9 +431,15 @@ export default function (pi: ExtensionAPI) {
           }
           if (!isSafeBash(cmd)) {
             if (mode === "manual") {
-              return { block: true, reason: "manual permission mode: bash command not pre-approved" };
+              return {
+                block: true,
+                reason: "manual permission mode: bash command not pre-approved",
+              };
             }
-            return { block: true, reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES` };
+            return {
+              block: true,
+              reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES`,
+            };
           }
         }
       }
@@ -315,7 +455,10 @@ export default function (pi: ExtensionAPI) {
       return { block: true, reason: reasonBase };
     }
     if (!ctx.hasUI) {
-      return { block: true, reason: `${reasonBase} (policy=ask but no UI available)` };
+      return {
+        block: true,
+        reason: `${reasonBase} (policy=ask but no UI available)`,
+      };
     }
 
     const allowed = await ctx.ui.confirm(
@@ -330,7 +473,10 @@ export default function (pi: ExtensionAPI) {
       ].join("\n"),
     );
     if (!allowed) {
-      return { block: true, reason: `external file access denied by user: ${external.summary}` };
+      return {
+        block: true,
+        reason: `external file access denied by user: ${external.summary}`,
+      };
     }
   });
 }

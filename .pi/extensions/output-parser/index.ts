@@ -14,7 +14,10 @@ function extractAssistantText(message: any): string {
   const content = message.content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
-    return content.filter((c) => c?.type === "text").map((c) => c.text).join("\n");
+    return content
+      .filter((c) => c?.type === "text")
+      .map((c) => c.text)
+      .join("\n");
   }
   return "";
 }
@@ -48,9 +51,9 @@ export default function (pi: ExtensionAPI) {
     // rather than emitting fenced blocks in text.
     pi.sendUserMessage(
       "Your previous response embedded tool calls inside text (e.g. fenced ```tool blocks or <tool_call> tags). " +
-      "Please re-issue them as NATIVE tool calls. If the intended calls were: " +
-      calls.map((c) => `${c.name}(${JSON.stringify(c.input)})`).join("; ") +
-      " — please execute them now using your tool-call channel, not text.",
+        "Please re-issue them as NATIVE tool calls. If the intended calls were: " +
+        calls.map((c) => `${c.name}(${JSON.stringify(c.input)})`).join("; ") +
+        " — please execute them now using your tool-call channel, not text.",
       { deliverAs: "followUp" },
     );
   });

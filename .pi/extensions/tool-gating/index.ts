@@ -8,7 +8,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 function getAllowedTools(): Set<string> | null {
   const env = process.env.LITTLE_CODER_ALLOWED_TOOLS;
   if (!env) return null;
-  const names = env.split(",").map((s) => s.trim()).filter(Boolean);
+  const names = env
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
   return names.length === 0 ? null : new Set(names);
 }
 

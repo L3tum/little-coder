@@ -24,22 +24,33 @@ describe("resolveWorkspaceCwd", () => {
   });
 
   it("accepts relative subdirectories", () => {
-    expect(resolveWorkspaceCwd("src", cwd)).toEqual({ ok: true, path: "/home/me/proj/src" });
-    expect(resolveWorkspaceCwd("./src/lib", cwd)).toEqual({ ok: true, path: "/home/me/proj/src/lib" });
+    expect(resolveWorkspaceCwd("src", cwd)).toEqual({
+      ok: true,
+      path: "/home/me/proj/src",
+    });
+    expect(resolveWorkspaceCwd("./src/lib", cwd)).toEqual({
+      ok: true,
+      path: "/home/me/proj/src/lib",
+    });
   });
 
   it("accepts absolute paths inside workspace", () => {
-    expect(resolveWorkspaceCwd("/home/me/proj/src", cwd)).toEqual({ ok: true, path: "/home/me/proj/src" });
+    expect(resolveWorkspaceCwd("/home/me/proj/src", cwd)).toEqual({
+      ok: true,
+      path: "/home/me/proj/src",
+    });
   });
 
   it("rejects parent traversal and external paths", () => {
     expect(resolveWorkspaceCwd("..", cwd)).toEqual({
       ok: false,
-      reason: "Error: bash.cwd must be the current working directory or one of its subdirectories. Rejected: /home/me",
+      reason:
+        "Error: bash.cwd must be the current working directory or one of its subdirectories. Rejected: /home/me",
     });
     expect(resolveWorkspaceCwd("/tmp", cwd)).toEqual({
       ok: false,
-      reason: "Error: bash.cwd must be the current working directory or one of its subdirectories. Rejected: /tmp",
+      reason:
+        "Error: bash.cwd must be the current working directory or one of its subdirectories. Rejected: /tmp",
     });
   });
 });

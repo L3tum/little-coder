@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { planningModePrompt, SHARED_PLANNING_GUIDANCE } from "./planning-prompt.js";
-import { applyTextPatch, PATCHES } from "../../../scripts/patch-extension-notifications.mjs";
+import {
+  planningModePrompt,
+  SHARED_PLANNING_GUIDANCE,
+} from "./planning-prompt.js";
+import {
+  applyTextPatch,
+  PATCHES,
+} from "../../../scripts/patch-extension-notifications.mjs";
 
 describe("plan mode integration", () => {
   it("adds pi-ask-user to package directives and dependencies", () => {
@@ -30,7 +36,9 @@ describe("plan mode integration", () => {
   });
 
   it("postinstall patch makes /plan canonical and /plannotator a compat alias", () => {
-    const patch = PATCHES.find((p) => p.name === "plannotator /plan canonical command shim");
+    const patch = PATCHES.find(
+      (p) => p.name === "plannotator /plan canonical command shim",
+    );
     expect(patch).toBeDefined();
     const patched = applyTextPatch(patch!.oldText, patch!);
     expect(patched).toContain('registerCommand("plan"');

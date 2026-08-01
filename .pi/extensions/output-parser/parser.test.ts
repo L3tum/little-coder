@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { repairJson, parseTextToolCalls, escapeNewlinesInJsonStrings } from "./parser.ts";
+import {
+  repairJson,
+  parseTextToolCalls,
+  escapeNewlinesInJsonStrings,
+} from "./parser.ts";
 
 describe("repairJson", () => {
   it("direct parse on valid JSON", () => {
@@ -7,7 +11,7 @@ describe("repairJson", () => {
   });
   it("trailing commas", () => {
     expect(repairJson('{"a":1,}')).toEqual({ a: 1 });
-    expect(repairJson('[1,2,]')).toEqual([1, 2]);
+    expect(repairJson("[1,2,]")).toEqual([1, 2]);
   });
   it("single quotes", () => {
     expect(repairJson("{'a':1}")).toEqual({ a: 1 });
@@ -23,7 +27,9 @@ describe("repairJson", () => {
     expect(repairJson(input)).toEqual({ text: "line1\nline2" });
   });
   it("escapeNewlinesInJsonStrings leaves non-string content alone", () => {
-    expect(escapeNewlinesInJsonStrings('{"a":1,\n"b":2}')).toBe('{"a":1,\n"b":2}');
+    expect(escapeNewlinesInJsonStrings('{"a":1,\n"b":2}')).toBe(
+      '{"a":1,\n"b":2}',
+    );
   });
   it("truncated / garbage returns _raw sentinel", () => {
     const result = repairJson("not json at all");
@@ -33,7 +39,8 @@ describe("repairJson", () => {
 
 describe("parseTextToolCalls", () => {
   it("extracts fenced ```tool block", () => {
-    const text = 'reasoning first\n```tool\n{"name":"Read","input":{"file_path":"/x.py"}}\n```';
+    const text =
+      'reasoning first\n```tool\n{"name":"Read","input":{"file_path":"/x.py"}}\n```';
     const calls = parseTextToolCalls(text);
     expect(calls.length).toBe(1);
     expect(calls[0].name).toBe("Read");
@@ -45,7 +52,8 @@ describe("parseTextToolCalls", () => {
     expect(calls[0].name).toBe("Bash");
   });
   it("extracts <tool_call> tag", () => {
-    const text = '<tool_call>\n{"name":"Edit","input":{"file_path":"/a","old_string":"x","new_string":"y"}}\n</tool_call>';
+    const text =
+      '<tool_call>\n{"name":"Edit","input":{"file_path":"/a","old_string":"x","new_string":"y"}}\n</tool_call>';
     const calls = parseTextToolCalls(text);
     expect(calls[0].name).toBe("Edit");
     expect(calls[0].input).toHaveProperty("new_string", "y");
@@ -69,7 +77,8 @@ describe("parseTextToolCalls", () => {
     expect(calls[0].name).toBe("Glob");
   });
   it("does not extract from nested-object bare JSON (matches Python behavior)", () => {
-    const text = 'the model said: {"name":"Glob","input":{"pattern":"**/*.py"}}';
+    const text =
+      'the model said: {"name":"Glob","input":{"pattern":"**/*.py"}}';
     const calls = parseTextToolCalls(text);
     // Inner object doesn't have "name", outer doesn't match the flat regex
     expect(calls).toEqual([]);
@@ -80,7 +89,8 @@ describe("parseTextToolCalls", () => {
     expect(calls[0].name).toBe("Read");
   });
   it("accepts parameters/args alias for input", () => {
-    const text = '```tool\n{"name":"Read","parameters":{"file_path":"/x"}}\n```';
+    const text =
+      '```tool\n{"name":"Read","parameters":{"file_path":"/x"}}\n```';
     const calls = parseTextToolCalls(text);
     expect(calls[0].input.file_path).toBe("/x");
   });

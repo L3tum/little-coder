@@ -48,15 +48,18 @@ export function repairJson(raw: string): Record<string, unknown> {
   // 2. trailing commas
   fixed = fixed.replace(/,\s*}/g, "}").replace(/,\s*]/g, "]");
   // 3. single quotes → double, only if no doubles present
-  if (!fixed.includes('"') && fixed.includes("'")) fixed = fixed.replace(/'/g, '"');
+  if (!fixed.includes('"') && fixed.includes("'"))
+    fixed = fixed.replace(/'/g, '"');
   // 4. unquoted keys — skip if content already has quoted string keys
   if (!fixed.includes('": ') && !fixed.includes('":"')) {
     fixed = fixed.replace(/(?<=[{,\s])(\w+)\s*:/g, '"$1":');
   }
   // 5. missing closing braces / brackets
-  const openB = (fixed.match(/\{/g) || []).length - (fixed.match(/\}/g) || []).length;
+  const openB =
+    (fixed.match(/\{/g) || []).length - (fixed.match(/\}/g) || []).length;
   if (openB > 0) fixed += "}".repeat(openB);
-  const openS = (fixed.match(/\[/g) || []).length - (fixed.match(/\]/g) || []).length;
+  const openS =
+    (fixed.match(/\[/g) || []).length - (fixed.match(/\]/g) || []).length;
   if (openS > 0) fixed += "]".repeat(openS);
   try {
     return JSON.parse(fixed);
@@ -89,7 +92,10 @@ export function parseTextToolCalls(text: string): ExtractedCall[] {
       calls.push({
         id: `call_text_${calls.length}`,
         name: data.name,
-        input: (data.input ?? data.parameters ?? data.args ?? {}) as Record<string, unknown>,
+        input: (data.input ?? data.parameters ?? data.args ?? {}) as Record<
+          string,
+          unknown
+        >,
       });
     }
   }
@@ -102,7 +108,10 @@ export function parseTextToolCalls(text: string): ExtractedCall[] {
       calls.push({
         id: `call_text_${calls.length}`,
         name: data.name,
-        input: (data.input ?? data.parameters ?? data.args ?? {}) as Record<string, unknown>,
+        input: (data.input ?? data.parameters ?? data.args ?? {}) as Record<
+          string,
+          unknown
+        >,
       });
     }
   }
@@ -116,7 +125,10 @@ export function parseTextToolCalls(text: string): ExtractedCall[] {
         calls.push({
           id: `call_text_${calls.length}`,
           name: data.name,
-          input: (data.input ?? data.parameters ?? {}) as Record<string, unknown>,
+          input: (data.input ?? data.parameters ?? {}) as Record<
+            string,
+            unknown
+          >,
         });
       }
     }

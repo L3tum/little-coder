@@ -31,26 +31,27 @@ Each message should end with "..."
 Be creative, varied, and thematic. No duplicates.
 Output one message per line, nothing else. No numbering, no bullets.`;
 
-const VIBE_SYSTEM_PROMPT = "You generate short themed loading messages and reply with the requested text only.";
+const VIBE_SYSTEM_PROMPT =
+  "You generate short themed loading messages and reply with the requested text only.";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface VibeConfig {
-  theme: string | null;        // null = disabled
-  mode: VibeMode;              // "generate" (on-demand) or "file" (pre-generated)
-  modelSpec: string;           // default: "openai-codex/gpt-5.4-mini"
-  fallback: string;            // default: "Working"
-  timeout: number;             // default: 3000ms
-  refreshInterval: number;     // default: 30000ms (30s)
-  promptTemplate: string;      // template with {theme}, {task}, {exclude} placeholders
-  maxLength: number;           // default: 65 chars
+  theme: string | null; // null = disabled
+  mode: VibeMode; // "generate" (on-demand) or "file" (pre-generated)
+  modelSpec: string; // default: "openai-codex/gpt-5.4-mini"
+  fallback: string; // default: "Working"
+  timeout: number; // default: 3000ms
+  refreshInterval: number; // default: 30000ms (30s)
+  promptTemplate: string; // template with {theme}, {task}, {exclude} placeholders
+  maxLength: number; // default: 65 chars
 }
 
 interface VibeGenContext {
   theme: string;
-  userPrompt: string;          // from event.prompt in before_agent_start
+  userPrompt: string; // from event.prompt in before_agent_start
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -64,10 +65,10 @@ let isStreaming = false;
 let lastVibeTime = 0;
 
 // File-based mode state
-let vibeCache: string[] = [];        // Cached vibes from file
-let vibeCacheTheme: string | null = null;  // Theme the cache is for
-let vibeSeed = Date.now();           // Seed for deterministic shuffle
-let vibeIndex = 0;                   // Current position in shuffled list
+let vibeCache: string[] = []; // Cached vibes from file
+let vibeCacheTheme: string | null = null; // Theme the cache is for
+let vibeSeed = Date.now(); // Seed for deterministic shuffle
+let vibeIndex = 0; // Current position in shuffled list
 
 // Recent vibes tracking (to avoid repetition in generate mode)
 const MAX_RECENT_VIBES = 5;
@@ -96,13 +97,18 @@ function readSettingsForLoad(): Record<string, unknown> {
 
     const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
     if (!isRecord(parsed)) {
-      console.debug(`[working-vibes] Ignoring non-object settings at ${settingsPath}`);
+      console.debug(
+        `[working-vibes] Ignoring non-object settings at ${settingsPath}`,
+      );
       return {};
     }
 
     return parsed;
   } catch (error) {
-    console.debug(`[working-vibes] Failed to load settings from ${settingsPath}:`, error);
+    console.debug(
+      `[working-vibes] Failed to load settings from ${settingsPath}:`,
+      error,
+    );
     return {};
   }
 }
@@ -117,18 +123,26 @@ function readSettingsForWrite(scope: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(readFileSync(settingsPath, "utf-8"));
     if (!isRecord(parsed)) {
-      console.debug(`[working-vibes] Refusing to write ${scope}: settings at ${settingsPath} is not an object`);
+      console.debug(
+        `[working-vibes] Refusing to write ${scope}: settings at ${settingsPath} is not an object`,
+      );
       return null;
     }
 
     return parsed;
   } catch (error) {
-    console.debug(`[working-vibes] Failed to parse settings while writing ${scope} at ${settingsPath}:`, error);
+    console.debug(
+      `[working-vibes] Failed to parse settings while writing ${scope} at ${settingsPath}:`,
+      error,
+    );
     return null;
   }
 }
 
-function persistSettings(settings: Record<string, unknown>, scope: string): boolean {
+function persistSettings(
+  settings: Record<string, unknown>,
+  scope: string,
+): boolean {
   const settingsPath = getSettingsPath();
 
   try {
@@ -136,7 +150,10 @@ function persistSettings(settings: Record<string, unknown>, scope: string): bool
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
     return true;
   } catch (error) {
-    console.debug(`[working-vibes] Failed to persist ${scope} to ${settingsPath}:`, error);
+    console.debug(
+      `[working-vibes] Failed to persist ${scope} to ${settingsPath}:`,
+      error,
+    );
     return false;
   }
 }
@@ -145,31 +162,44 @@ function loadConfig(): VibeConfig {
   const settings = readSettingsForLoad();
 
   // Handle "off" in settings.json (same as null/disabled)
-  const rawTheme = typeof settings.workingVibe === "string" ? settings.workingVibe : null;
+  const rawTheme =
+    typeof settings.workingVibe === "string" ? settings.workingVibe : null;
   const theme = rawTheme?.toLowerCase() === "off" ? null : rawTheme;
 
   // Validate mode setting
   const rawMode = settings.workingVibeMode;
-  const mode: VibeMode = rawMode === "file" || rawMode === "generate" ? rawMode : "generate";
+  const mode: VibeMode =
+    rawMode === "file" || rawMode === "generate" ? rawMode : "generate";
 
   const refreshSeconds =
-    typeof settings.workingVibeRefreshInterval === "number" && Number.isFinite(settings.workingVibeRefreshInterval)
+    typeof settings.workingVibeRefreshInterval === "number" &&
+    Number.isFinite(settings.workingVibeRefreshInterval)
       ? Math.max(0, settings.workingVibeRefreshInterval)
       : 30;
 
   const maxLength =
-    typeof settings.workingVibeMaxLength === "number" && Number.isFinite(settings.workingVibeMaxLength)
+    typeof settings.workingVibeMaxLength === "number" &&
+    Number.isFinite(settings.workingVibeMaxLength)
       ? Math.max(4, Math.floor(settings.workingVibeMaxLength))
       : 65;
 
   return {
     theme,
     mode,
-    modelSpec: typeof settings.workingVibeModel === "string" ? settings.workingVibeModel : DEFAULT_MODEL,
-    fallback: typeof settings.workingVibeFallback === "string" ? settings.workingVibeFallback : "Working",
+    modelSpec:
+      typeof settings.workingVibeModel === "string"
+        ? settings.workingVibeModel
+        : DEFAULT_MODEL,
+    fallback:
+      typeof settings.workingVibeFallback === "string"
+        ? settings.workingVibeFallback
+        : "Working",
     timeout: 3000,
     refreshInterval: refreshSeconds * 1000,
-    promptTemplate: typeof settings.workingVibePrompt === "string" ? settings.workingVibePrompt : DEFAULT_PROMPT,
+    promptTemplate:
+      typeof settings.workingVibePrompt === "string"
+        ? settings.workingVibePrompt
+        : DEFAULT_PROMPT,
     maxLength,
   };
 }
@@ -232,15 +262,18 @@ function getVibeFilePath(theme: string): string {
 function loadVibesFromFile(theme: string): string[] {
   const filePath = getVibeFilePath(theme);
   if (!existsSync(filePath)) return [];
-  
+
   try {
     const content = readFileSync(filePath, "utf-8");
     return content
       .split("\n")
-      .map(line => line.trim())
-      .filter(line => line.length > 0 && line.endsWith("..."));
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && line.endsWith("..."));
   } catch (error) {
-    console.debug(`[working-vibes] Failed to load vibe file ${filePath}:`, error);
+    console.debug(
+      `[working-vibes] Failed to load vibe file ${filePath}:`,
+      error,
+    );
     return [];
   }
 }
@@ -248,60 +281,60 @@ function loadVibesFromFile(theme: string): string[] {
 function saveVibesToFile(theme: string, vibes: string[]): void {
   const vibesDir = getVibesDir();
   const filePath = getVibeFilePath(theme);
-  
+
   // Ensure directory exists
   if (!existsSync(vibesDir)) {
     mkdirSync(vibesDir, { recursive: true });
   }
-  
+
   writeFileSync(filePath, vibes.join("\n"));
 }
 
 // Mulberry32 PRNG - fast, deterministic, good distribution
 function mulberry32(seed: number): () => number {
-  return function() {
-    let t = seed += 0x6D2B79F5;
-    t = Math.imul(t ^ t >>> 15, t | 1);
-    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
 // Get vibe at index using seeded shuffle (no-repeat until all used)
 function getVibeAtIndex(vibes: string[], index: number, seed: number): string {
   if (vibes.length === 0) return `${config.fallback}...`;
-  
+
   // For small lists or when we've cycled through, just use modulo
   const effectiveIndex = index % vibes.length;
-  
+
   // Create deterministic shuffle using seed
   const rng = mulberry32(seed);
   const indices = Array.from({ length: vibes.length }, (_, i) => i);
-  
+
   // Fisher-Yates shuffle with seeded RNG
   for (let i = indices.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [indices[i], indices[j]] = [indices[j], indices[i]];
   }
-  
+
   return vibes[indices[effectiveIndex]];
 }
 
 function getNextVibeFromFile(): string {
   if (!config.theme) return `${config.fallback}...`;
-  
+
   // Load/reload cache if theme changed
   if (vibeCacheTheme !== config.theme) {
     vibeCache = loadVibesFromFile(config.theme);
     vibeCacheTheme = config.theme;
-    vibeSeed = Date.now();  // New seed for new theme
+    vibeSeed = Date.now(); // New seed for new theme
     vibeIndex = 0;
   }
-  
+
   if (vibeCache.length === 0) {
     return `${config.fallback}...`;
   }
-  
+
   const vibe = getVibeAtIndex(vibeCache, vibeIndex, vibeSeed);
   vibeIndex++;
   return vibe;
@@ -314,12 +347,11 @@ function getNextVibeFromFile(): string {
 function buildVibePrompt(ctx: VibeGenContext): string {
   // Truncate user prompt to save tokens (most context in first 100 chars)
   const task = ctx.userPrompt.slice(0, 100);
-  
+
   // Build exclusion list from recent vibes
-  const exclude = recentVibes.length > 0 
-    ? `Don't use: ${recentVibes.join(", ")}`
-    : "";
-  
+  const exclude =
+    recentVibes.length > 0 ? `Don't use: ${recentVibes.join(", ")}` : "";
+
   // Use configured template with variable substitution
   return config.promptTemplate
     .replace(/\{theme\}/g, ctx.theme)
@@ -329,39 +361,41 @@ function buildVibePrompt(ctx: VibeGenContext): string {
 
 function parseVibeResponse(response: string, fallback: string): string {
   if (!response) return `${fallback}...`;
-  
+
   // Take only the first line (AI sometimes adds explanations)
-  let vibe = response.trim().split('\n')[0].trim();
-  
+  let vibe = response.trim().split("\n")[0].trim();
+
   // Remove quotes if model wrapped the response
   vibe = vibe.replace(/^["']|["']$/g, "");
-  
+
   // Ensure ellipsis
   if (!vibe.endsWith("...")) {
     vibe = vibe.replace(/\.+$/, "") + "...";
   }
-  
+
   // Enforce length limit (configurable, default 65 chars)
   if (vibe.length > config.maxLength) {
     vibe = vibe.slice(0, config.maxLength - 3) + "...";
   }
-  
+
   // Final validation
   if (!vibe || vibe === "...") {
     return `${fallback}...`;
   }
-  
+
   return vibe;
 }
 
 function buildAiContext(prompt: string): Context {
   return {
     systemPrompt: VIBE_SYSTEM_PROMPT,
-    messages: [{
-      role: "user",
-      content: [{ type: "text", text: prompt }],
-      timestamp: Date.now(),
-    }],
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: prompt }],
+        timestamp: Date.now(),
+      },
+    ],
   };
 }
 
@@ -376,7 +410,7 @@ async function generateVibe(
   if (!extensionCtx) {
     return `${config.fallback}...`;
   }
-  
+
   // Parse model spec (provider/modelId format, where modelId may contain slashes)
   const slashIndex = config.modelSpec.indexOf("/");
   if (slashIndex === -1) {
@@ -387,28 +421,38 @@ async function generateVibe(
   if (!provider || !modelId) {
     return `${config.fallback}...`;
   }
-  
+
   // Resolve model from registry
   const model = extensionCtx.modelRegistry.find(provider, modelId);
   if (!model) {
     console.debug(`[working-vibes] Model not found: ${config.modelSpec}`);
     return `${config.fallback}...`;
   }
-  
+
   // Get auth
   const auth = await extensionCtx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {
     console.debug(`[working-vibes] Auth failed for ${provider}: ${auth.error}`);
     return `${config.fallback}...`;
   }
-  
-  const aiContext = buildAiContext(buildVibePrompt(ctx));
-  
-  const response = await complete(model, aiContext, { apiKey: auth.apiKey, headers: auth.headers, signal });
 
-  const textContent = response.content.find(c => c.type === "text");
-  if (!textContent?.text && response.stopReason === "error" && response.errorMessage) {
-    console.debug(`[working-vibes] Vibe generation failed for ${config.modelSpec}: ${response.errorMessage}`);
+  const aiContext = buildAiContext(buildVibePrompt(ctx));
+
+  const response = await complete(model, aiContext, {
+    apiKey: auth.apiKey,
+    headers: auth.headers,
+    signal,
+  });
+
+  const textContent = response.content.find((c) => c.type === "text");
+  if (
+    !textContent?.text &&
+    response.stopReason === "error" &&
+    response.errorMessage
+  ) {
+    console.debug(
+      `[working-vibes] Vibe generation failed for ${config.modelSpec}: ${response.errorMessage}`,
+    );
   }
   return parseVibeResponse(textContent?.text || "", config.fallback);
 }
@@ -416,9 +460,12 @@ async function generateVibe(
 function trackRecentVibe(vibe: string): void {
   // Don't track fallback messages
   if (vibe === `${config.fallback}...`) return;
-  
+
   // Add to front, remove duplicates
-  recentVibes = [vibe, ...recentVibes.filter(v => v !== vibe)].slice(0, MAX_RECENT_VIBES);
+  recentVibes = [vibe, ...recentVibes.filter((v) => v !== vibe)].slice(
+    0,
+    MAX_RECENT_VIBES,
+  );
 }
 
 function updateVibeFromFile(setWorkingMessage: (msg?: string) => void): void {
@@ -426,7 +473,7 @@ function updateVibeFromFile(setWorkingMessage: (msg?: string) => void): void {
 }
 
 async function generateAndUpdate(
-  prompt: string, 
+  prompt: string,
   setWorkingMessage: (msg?: string) => void,
 ): Promise<void> {
   // File mode: instant, no API call
@@ -434,27 +481,24 @@ async function generateAndUpdate(
     updateVibeFromFile(setWorkingMessage);
     return;
   }
-  
+
   // Generate mode: API call with abort handling
   // Cancel any in-flight generation and create new controller
   // Capture in local variable to avoid race condition with subsequent calls
   const controller = new AbortController();
   currentGeneration?.abort();
   currentGeneration = controller;
-  
+
   // Create timeout signal (3 seconds)
   const timeoutSignal = AbortSignal.timeout(config.timeout);
-  const combinedSignal = AbortSignal.any([
-    controller.signal,
-    timeoutSignal,
-  ]);
-  
+  const combinedSignal = AbortSignal.any([controller.signal, timeoutSignal]);
+
   try {
     const vibe = await generateVibe(
       { theme: config.theme!, userPrompt: prompt },
       combinedSignal,
     );
-    
+
     // Only update if still streaming and THIS generation wasn't aborted
     if (isStreaming && !controller.signal.aborted) {
       trackRecentVibe(vibe);
@@ -486,7 +530,7 @@ export function getVibeTheme(): string | null {
 
 export function setVibeTheme(theme: string | null): boolean {
   config = { ...config, theme };
-  recentVibes = [];  // Clear recent vibes on theme change
+  recentVibes = []; // Clear recent vibes on theme change
   return saveConfig();
 }
 
@@ -500,19 +544,19 @@ export function setVibeModel(modelSpec: string): boolean {
 }
 
 export function onVibeBeforeAgentStart(
-  prompt: string, 
+  prompt: string,
   setWorkingMessage: (msg?: string) => void,
 ): void {
   // Skip if no theme configured or no extensionCtx
   if (!config.theme || !extensionCtx) return;
-  
+
   // Queue themed placeholder BEFORE agent_start creates the loader
   // This sets pendingWorkingMessage which is applied when loader is created
   setWorkingMessage(`Channeling ${config.theme}...`);
-  
+
   // Mark vibe generation time for rate limiting
   lastVibeTime = Date.now();
-  
+
   // Async: generate and update (fire-and-forget, don't await)
   generateAndUpdate(prompt, setWorkingMessage);
 }
@@ -525,15 +569,15 @@ export function onVibeToolCall(
   toolName: string,
   toolInput: Record<string, unknown>,
   setWorkingMessage: (msg?: string) => void,
-  agentContext?: string,  // Optional: recent agent response text for richer context
+  agentContext?: string, // Optional: recent agent response text for richer context
 ): void {
   // Skip if no theme, not streaming, or no extensionCtx
   if (!config.theme || !extensionCtx || !isStreaming) return;
-  
+
   // Rate limit: skip if not enough time has passed
   const now = Date.now();
   if (now - lastVibeTime < config.refreshInterval) return;
-  
+
   // Prefer agent context if provided (richer, more contextual)
   // Fall back to tool-based hint
   let hint: string;
@@ -554,13 +598,15 @@ export function onVibeToolCall(
       hint = `running command: ${cmd}`;
     }
   }
-  
+
   // Update time and generate new vibe
   lastVibeTime = now;
   generateAndUpdate(hint, setWorkingMessage);
 }
 
-export function onVibeAgentEnd(setWorkingMessage: (msg?: string) => void): void {
+export function onVibeAgentEnd(
+  setWorkingMessage: (msg?: string) => void,
+): void {
   isStreaming = false;
   // Cancel any in-flight generation
   currentGeneration?.abort();
@@ -613,12 +659,19 @@ export async function generateVibesBatch(
   count: number = 100,
 ): Promise<GenerateVibesResult> {
   const filePath = getVibeFilePath(theme);
-  const safeCount = Number.isFinite(count) ? Math.min(Math.max(Math.floor(count), 1), 500) : 100;
-  
+  const safeCount = Number.isFinite(count)
+    ? Math.min(Math.max(Math.floor(count), 1), 500)
+    : 100;
+
   if (!extensionCtx) {
-    return { success: false, count: 0, filePath, error: "Extension not initialized" };
+    return {
+      success: false,
+      count: 0,
+      filePath,
+      error: "Extension not initialized",
+    };
   }
-  
+
   // Parse model spec
   const slashIndex = config.modelSpec.indexOf("/");
   if (slashIndex === -1) {
@@ -626,68 +679,84 @@ export async function generateVibesBatch(
   }
   const provider = config.modelSpec.slice(0, slashIndex);
   const modelId = config.modelSpec.slice(slashIndex + 1);
-  
+
   // Resolve model
   const model = extensionCtx.modelRegistry.find(provider, modelId);
   if (!model) {
-    return { success: false, count: 0, filePath, error: `Model not found: ${config.modelSpec}` };
+    return {
+      success: false,
+      count: 0,
+      filePath,
+      error: `Model not found: ${config.modelSpec}`,
+    };
   }
-  
+
   // Get auth
   const auth = await extensionCtx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {
     return { success: false, count: 0, filePath, error: auth.error };
   }
-  
+
   // Build batch prompt
-  const prompt = BATCH_PROMPT
-    .replace(/\{theme\}/g, theme)
-    .replace(/\{count\}/g, String(safeCount));
-  
+  const prompt = BATCH_PROMPT.replace(/\{theme\}/g, theme).replace(
+    /\{count\}/g,
+    String(safeCount),
+  );
+
   const aiContext = buildAiContext(prompt);
-  
+
   try {
     // Use longer timeout for batch generation (30 seconds)
     const signal = AbortSignal.timeout(30000);
-    const response = await complete(model, aiContext, { apiKey: auth.apiKey, headers: auth.headers, signal });
-    
-    const textContent = response.content.find(c => c.type === "text");
+    const response = await complete(model, aiContext, {
+      apiKey: auth.apiKey,
+      headers: auth.headers,
+      signal,
+    });
+
+    const textContent = response.content.find((c) => c.type === "text");
     if (!textContent?.text) {
-      const error = response.stopReason === "error" && response.errorMessage
-        ? response.errorMessage
-        : "Empty response from model";
+      const error =
+        response.stopReason === "error" && response.errorMessage
+          ? response.errorMessage
+          : "Empty response from model";
       return { success: false, count: 0, filePath, error };
     }
-    
+
     // Parse response: one vibe per line
     const vibes = textContent.text
       .split("\n")
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => {
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => {
         // Clean up each line
-        let vibe = line.replace(/^["'\d.\-)\s]+/, "").trim();  // Remove leading quotes, numbers, bullets
-        vibe = vibe.replace(/["']$/g, "");  // Remove trailing quotes
+        let vibe = line.replace(/^["'\d.\-)\s]+/, "").trim(); // Remove leading quotes, numbers, bullets
+        vibe = vibe.replace(/["']$/g, ""); // Remove trailing quotes
         if (!vibe.endsWith("...")) {
           vibe = vibe.replace(/\.+$/, "") + "...";
         }
         return vibe;
       })
-      .filter(vibe => vibe.length > 3 && vibe !== "...");  // Filter invalid
-    
+      .filter((vibe) => vibe.length > 3 && vibe !== "..."); // Filter invalid
+
     if (vibes.length === 0) {
-      return { success: false, count: 0, filePath, error: "No valid vibes generated" };
+      return {
+        success: false,
+        count: 0,
+        filePath,
+        error: "No valid vibes generated",
+      };
     }
-    
+
     // Save to file
     saveVibesToFile(theme, vibes);
-    
+
     // Clear cache so next use loads fresh
     if (vibeCacheTheme === theme) {
       vibeCache = [];
       vibeCacheTheme = null;
     }
-    
+
     return { success: true, count: vibes.length, filePath };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

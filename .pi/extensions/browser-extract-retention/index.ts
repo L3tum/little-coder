@@ -53,7 +53,10 @@ function isAlreadyPruned(m: any): boolean {
  * BrowserNavigate toolCall — that's the URL the extract came from.
  * Returns undefined if no navigation precedes this extract.
  */
-function findUrlForExtract(messages: any[], extractIdx: number): string | undefined {
+function findUrlForExtract(
+  messages: any[],
+  extractIdx: number,
+): string | undefined {
   for (let i = extractIdx - 1; i >= 0; i--) {
     const m = messages[i];
     if (m?.role !== "assistant") continue;
@@ -78,13 +81,11 @@ function findUrlForExtract(messages: any[], extractIdx: number): string | undefi
  * Used to decide which are in the "retain raw" newest-N set and which get
  * pruned. The newest (highest index) is rank 0; older ones have higher rank.
  */
-function extractRankFromEnd(
-  messages: any[],
-  thisIdx: number,
-): number {
+function extractRankFromEnd(messages: any[], thisIdx: number): number {
   let rank = 0;
   for (let i = thisIdx + 1; i < messages.length; i++) {
-    if (isBrowserExtractResult(messages[i]) && !isAlreadyPruned(messages[i])) rank++;
+    if (isBrowserExtractResult(messages[i]) && !isAlreadyPruned(messages[i]))
+      rank++;
   }
   return rank;
 }
@@ -109,12 +110,15 @@ export function buildPlaceholder(
   originalChars: number,
   evidenceFromThisUrl: EvidenceEntry[],
 ): string {
-  const urlLine = url ? `URL: ${url}` : "URL: (unknown — see conversation above)";
-  const evList = evidenceFromThisUrl.length > 0
-    ? `Evidence saved from this extraction: ${evidenceFromThisUrl
-        .map((e) => `${e.id} (${e.note})`)
-        .join("; ")}. Use EvidenceGet <id> to recall any snippet.`
-    : "No EvidenceAdd calls yet cited this URL — raw text was dropped from context.";
+  const urlLine = url
+    ? `URL: ${url}`
+    : "URL: (unknown — see conversation above)";
+  const evList =
+    evidenceFromThisUrl.length > 0
+      ? `Evidence saved from this extraction: ${evidenceFromThisUrl
+          .map((e) => `${e.id} (${e.note})`)
+          .join("; ")}. Use EvidenceGet <id> to recall any snippet.`
+      : "No EvidenceAdd calls yet cited this URL — raw text was dropped from context.";
   return [
     `[BrowserExtract tool-result pruned — ${originalChars} chars originally extracted]`,
     urlLine,

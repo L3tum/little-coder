@@ -122,7 +122,11 @@ export function resolveContextLimit(
   if (typeof profileContextLimit === "number" && profileContextLimit > 0) {
     return profileContextLimit;
   }
-  if (typeof modelWindow === "number" && Number.isFinite(modelWindow) && modelWindow > 0) {
+  if (
+    typeof modelWindow === "number" &&
+    Number.isFinite(modelWindow) &&
+    modelWindow > 0
+  ) {
     return modelWindow;
   }
   return CONTEXT_FALLBACK;
@@ -130,7 +134,11 @@ export function resolveContextLimit(
 
 function resolveProfile(providerSlashModel: string): ModelProfile {
   loadSettings();
-  return resolveProfileFrom(settings, providerSlashModel, process.env.LITTLE_CODER_BENCHMARK);
+  return resolveProfileFrom(
+    settings,
+    providerSlashModel,
+    process.env.LITTLE_CODER_BENCHMARK,
+  );
 }
 
 // Per-benchmark tools that should always have skill cards present on turn 1,
@@ -190,7 +198,10 @@ export default function (pi: ExtensionAPI) {
     // window pi displays and read-guard reads), not a hardcoded settings value.
     // An explicit profile/benchmark context_limit still wins; 32k is the floor.
     const modelWindow = Number((model as any)?.contextWindow);
-    opts.littleCoder.contextLimit = resolveContextLimit(profile.context_limit, modelWindow);
+    opts.littleCoder.contextLimit = resolveContextLimit(
+      profile.context_limit,
+      modelWindow,
+    );
 
     resolvedTemperature = opts.littleCoder.temperature;
   });

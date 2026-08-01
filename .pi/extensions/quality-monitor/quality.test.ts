@@ -1,12 +1,18 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { assessResponse, buildCorrectionMessage, phraseForUser } from "./quality.ts";
+import {
+  assessResponse,
+  buildCorrectionMessage,
+  phraseForUser,
+} from "./quality.ts";
 import setupQualityMonitor from "./index.ts";
 
 const known = new Set(["Read", "Write", "Edit", "Bash", "Glob", "Grep"]);
 
 describe("assessResponse", () => {
   it("accepts text-only assistant response", () => {
-    expect(assessResponse("here's my thinking", [], [], known)).toEqual({ ok: true });
+    expect(assessResponse("here's my thinking", [], [], known)).toEqual({
+      ok: true,
+    });
   });
   it("accepts valid tool calls", () => {
     const calls = [{ name: "Read", input: { file_path: "/a" } }];
@@ -14,16 +20,23 @@ describe("assessResponse", () => {
   });
   it("detects empty response (no text, no calls)", () => {
     expect(assessResponse("", [], [], known)).toEqual({
-      ok: false, reason: "empty_response",
+      ok: false,
+      reason: "empty_response",
     });
   });
   it("detects empty tool name", () => {
     expect(assessResponse("", [{ name: "", input: {} }], [], known)).toEqual({
-      ok: false, reason: "empty_tool_name",
+      ok: false,
+      reason: "empty_tool_name",
     });
   });
   it("detects hallucinated tool name", () => {
-    const result = assessResponse("", [{ name: "FakeTool", input: {} }], [], known);
+    const result = assessResponse(
+      "",
+      [{ name: "FakeTool", input: {} }],
+      [],
+      known,
+    );
     expect(result).toEqual({ ok: false, reason: "unknown_tool:FakeTool" });
   });
   it("detects case-mismatch as unknown tool", () => {
@@ -42,8 +55,18 @@ describe("assessResponse", () => {
   it("detects repeated failing tool call", () => {
     const now = [{ name: "Read", input: { file_path: "/a" } }];
     const prev = [{ name: "Read", input: { file_path: "/a" } }];
-    expect(assessResponse("", now, prev, known, new Set(["Read"]), new Set(["Read"]))).toEqual({
-      ok: false, reason: "repeated_tool_call",
+    expect(
+      assessResponse(
+        "",
+        now,
+        prev,
+        known,
+        new Set(["Read"]),
+        new Set(["Read"]),
+      ),
+    ).toEqual({
+      ok: false,
+      reason: "repeated_tool_call",
     });
   });
   it("does not flag as repeat when inputs differ", () => {
@@ -54,28 +77,37 @@ describe("assessResponse", () => {
   it("does not flag exact retry when only the previous identical call had tool error", () => {
     const now = [{ name: "Read", input: { file_path: "/a" } }];
     const prev = [{ name: "Read", input: { file_path: "/a" } }];
-    expect(assessResponse("", now, prev, known, new Set(["Read"]), new Set())).toEqual({ ok: true });
+    expect(
+      assessResponse("", now, prev, known, new Set(["Read"]), new Set()),
+    ).toEqual({ ok: true });
   });
   it("does not flag retry of a different tool that errored", () => {
     const now = [{ name: "Write", input: { file_path: "/b" } }];
     const prev = [{ name: "Read", input: { file_path: "/a" } }];
     // Read errored, but the current call is Write — should be fine
-    expect(assessResponse("", now, prev, known, new Set(["Read"]))).toEqual({ ok: true });
+    expect(assessResponse("", now, prev, known, new Set(["Read"]))).toEqual({
+      ok: true,
+    });
   });
   it("does not flag repeated call when the tool succeeded in previous turn", () => {
     const now = [{ name: "Bash", input: { command: "ls" } }];
     const prev = [{ name: "Bash", input: { command: "ls" } }];
-    expect(assessResponse("", now, prev, known, new Set(), new Set(["Bash"]))).toEqual({ ok: true });
+    expect(
+      assessResponse("", now, prev, known, new Set(), new Set(["Bash"])),
+    ).toEqual({ ok: true });
   });
   it("does not flag repeated call when the tool succeeds on the current turn", () => {
     const now = [{ name: "Bash", input: { command: "ls" } }];
     const prev = [{ name: "Bash", input: { command: "ls" } }];
-    expect(assessResponse("", now, prev, known, new Set(["Bash"]), new Set())).toEqual({ ok: true });
+    expect(
+      assessResponse("", now, prev, known, new Set(["Bash"]), new Set()),
+    ).toEqual({ ok: true });
   });
   it("detects malformed args sentinel", () => {
     const calls = [{ name: "Read", input: { _raw: "garbage" } }];
     expect(assessResponse("", calls, [], known)).toEqual({
-      ok: false, reason: "malformed_args:Read",
+      ok: false,
+      reason: "malformed_args:Read",
     });
   });
 });
@@ -172,7 +204,9 @@ describe("quality-monitor turn_end", () => {
     // An ESC interrupt or harness abort produces a partial/empty message with
     // stopReason "aborted". This is the escape-interrupt bug: it must NOT steer
     // a 'your previous response was empty' correction onto the next prompt.
-    await fire(h, "turn_end", { message: { stopReason: "aborted", content: [] } });
+    await fire(h, "turn_end", {
+      message: { stopReason: "aborted", content: [] },
+    });
     expect(h.followUps).toHaveLength(0);
     expect(h.notifies).toHaveLength(0);
   });
@@ -186,7 +220,10 @@ describe("quality-monitor turn_end", () => {
 
   it("passes a normal text turn without intervention", async () => {
     await fire(h, "turn_end", {
-      message: { stopReason: "stop", content: [{ type: "text", text: "done." }] },
+      message: {
+        stopReason: "stop",
+        content: [{ type: "text", text: "done." }],
+      },
     });
     expect(h.followUps).toHaveLength(0);
     expect(h.notifies).toHaveLength(0);

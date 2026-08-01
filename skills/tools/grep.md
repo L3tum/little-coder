@@ -8,25 +8,30 @@ user-invocable: false
 description: Guidance for searching file contents with ripgrep-compatible patterns.
 keywords: [grep, search, regex, pattern, contents, matches, files]
 ---
+
 ## Grep Tool
+
 Search file contents with regex. Uses ripgrep.
 
 REQUIRED: pattern (regex pattern)
 OPTIONAL: path (directory/file), glob (file glob filter like "*.py"), ignoreCase (bool), literal (bool — treat pattern as literal text), context (lines of context before/after), limit (max matches, default 100)
 
 RULES:
+
 - Supports full regex syntax (unless `literal: true`)
-- Use `glob` to filter by file type (e.g. "*.py", "*.js")
+- Use `glob` to filter by file type (e.g. "_.py", "_.js")
 - Use `limit` to cap results; default 100
 - Returns matching lines with file path and line number
 - Good for finding function definitions, imports, references
 
 EXAMPLE:
+
 ```tool
 {"name": "grep", "input": {"pattern": "def main", "glob": "*.py"}}
 ```
 
 EXAMPLE with path:
+
 ```tool
 {"name": "grep", "input": {"pattern": "TODO|FIXME", "path": "/path/to/project/"}}
 ```

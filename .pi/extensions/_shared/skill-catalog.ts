@@ -17,11 +17,19 @@ export interface SkillCatalogEntry {
 }
 
 function repoSkillsRoot(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "skills");
+  return join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "..",
+    "..",
+    "skills",
+  );
 }
 
 function userSkillsRoot(): string {
-  return process.env.LITTLE_CODER_USER_SKILLS_DIR || join(homedir(), ".pi", "skills");
+  return (
+    process.env.LITTLE_CODER_USER_SKILLS_DIR || join(homedir(), ".pi", "skills")
+  );
 }
 
 function walkMarkdown(dir: string): string[] {
@@ -38,7 +46,11 @@ function walkMarkdown(dir: string): string[] {
 }
 
 function firstBodyLine(body: string): string | undefined {
-  return body.split("\n").map((line) => line.replace(/^#+\s*/, "").trim()).find(Boolean)?.slice(0, 140);
+  return body
+    .split("\n")
+    .map((line) => line.replace(/^#+\s*/, "").trim())
+    .find(Boolean)
+    ?.slice(0, 140);
 }
 
 function inferType(sourceDir: string, fmType: unknown): string {
@@ -61,9 +73,17 @@ export function listSkillCatalog(): SkillCatalogEntry[] {
       if (!parsed?.body) continue;
       const fm = parsed.frontmatter;
       const rel = relative(root, path).split(/[\\/]/);
-      const sourceDir = origin === "user" ? "user" : (rel[0] || basename(dirname(path)));
-      const targetTool = typeof fm.target_tool === "string" && fm.target_tool ? fm.target_tool : undefined;
-      const name = (typeof fm.name === "string" && fm.name) || (typeof fm.topic === "string" && fm.topic) || targetTool || basename(path, ".md");
+      const sourceDir =
+        origin === "user" ? "user" : rel[0] || basename(dirname(path));
+      const targetTool =
+        typeof fm.target_tool === "string" && fm.target_tool
+          ? fm.target_tool
+          : undefined;
+      const name =
+        (typeof fm.name === "string" && fm.name) ||
+        (typeof fm.topic === "string" && fm.topic) ||
+        targetTool ||
+        basename(path, ".md");
       entries.push({
         name,
         type: inferType(sourceDir, fm.type),
@@ -72,10 +92,20 @@ export function listSkillCatalog(): SkillCatalogEntry[] {
         path,
         tokenCost: typeof fm.token_cost === "number" ? fm.token_cost : 150,
         targetTool,
-        description: typeof fm.description === "string" && fm.description ? fm.description : firstBodyLine(parsed.body),
-        keywords: Array.isArray(fm.keywords) ? (fm.keywords as string[]).map((k) => k.toLowerCase()) : [],
+        description:
+          typeof fm.description === "string" && fm.description
+            ? fm.description
+            : firstBodyLine(parsed.body),
+        keywords: Array.isArray(fm.keywords)
+          ? (fm.keywords as string[]).map((k) => k.toLowerCase())
+          : [],
       });
     }
   }
-  return entries.sort((a, b) => a.origin.localeCompare(b.origin) || a.sourceDir.localeCompare(b.sourceDir) || a.name.localeCompare(b.name));
+  return entries.sort(
+    (a, b) =>
+      a.origin.localeCompare(b.origin) ||
+      a.sourceDir.localeCompare(b.sourceDir) ||
+      a.name.localeCompare(b.name),
+  );
 }

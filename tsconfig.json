@@ -11,8 +11,5 @@
     "noEmit": true
   },
   "include": [".pi/extensions/**/*.ts"],
-  "exclude": [
-    ".pi/extensions/**/__tests__/**",
-    ".pi/extensions/**/*.test.ts"
-  ]
+  "exclude": [".pi/extensions/**/__tests__/**", ".pi/extensions/**/*.test.ts"]
 }

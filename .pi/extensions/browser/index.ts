@@ -55,8 +55,13 @@ async function ensureSession(): Promise<BrowserSession> {
   let sess = sessions.get(key);
   if (!sess) {
     sess = {
-      pw: null, browser: null, context: null, page: null,
-      history: [], extractCache: new Map(), error: "",
+      pw: null,
+      browser: null,
+      context: null,
+      page: null,
+      history: [],
+      extractCache: new Map(),
+      error: "",
     };
     sessions.set(key, sess);
   }
@@ -76,8 +81,12 @@ async function ensureSession(): Promise<BrowserSession> {
     sess.context = context;
     sess.page = page;
   } catch (e: any) {
-    if (e?.code === "ERR_MODULE_NOT_FOUND" || /Cannot find module 'playwright'/.test(e?.message ?? "")) {
-      sess.error = "Playwright is not installed. Run: npm install playwright && npx playwright install chromium";
+    if (
+      e?.code === "ERR_MODULE_NOT_FOUND" ||
+      /Cannot find module 'playwright'/.test(e?.message ?? "")
+    ) {
+      sess.error =
+        "Playwright is not installed. Run: npm install playwright && npx playwright install chromium";
     } else {
       sess.error = `Browser launch failed: ${e?.message ?? e}`;
     }
@@ -90,13 +99,23 @@ export async function resetBrowserSession(sessionId?: string): Promise<void> {
   const sess = sessions.get(key);
   if (!sess) return;
   sessions.delete(key);
-  try { if (sess.page) await sess.page.close(); } catch {}
-  try { if (sess.context) await sess.context.close(); } catch {}
-  try { if (sess.browser) await sess.browser.close(); } catch {}
+  try {
+    if (sess.page) await sess.page.close();
+  } catch {}
+  try {
+    if (sess.context) await sess.context.close();
+  } catch {}
+  try {
+    if (sess.browser) await sess.browser.close();
+  } catch {}
 }
 
 function errorResult(text: string) {
-  return { content: [{ type: "text" as const, text }], details: {}, isError: true };
+  return {
+    content: [{ type: "text" as const, text }],
+    details: {},
+    isError: true,
+  };
 }
 function textResult(text: string) {
   return { content: [{ type: "text" as const, text }], details: {} };
@@ -106,7 +125,8 @@ function registerBrowserTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "BrowserNavigate",
     label: "BrowserNavigate",
-    description: "Navigate the browser to a URL. Must start with http:// or https://.",
+    description:
+      "Navigate the browser to a URL. Must start with http:// or https://.",
     parameters: Type.Object({
       url: Type.String({ description: "URL to navigate to" }),
     }),
@@ -124,7 +144,9 @@ function registerBrowserTools(pi: ExtensionAPI): void {
         sess.extractCache.clear();
         const status = resp ? resp.status() : "?";
         const title = await sess.page.title();
-        return textResult(`[status=${status}] ${sess.page.url()}\ntitle: ${title}`);
+        return textResult(
+          `[status=${status}] ${sess.page.url()}\ntitle: ${title}`,
+        );
       } catch (e: any) {
         return errorResult(`Error navigating to ${u}: ${e?.message ?? e}`);
       }
@@ -134,27 +156,38 @@ function registerBrowserTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "BrowserClick",
     label: "BrowserClick",
-    description: "Click an element by CSS selector, or by ARIA role (with optional accessible name).",
+    description:
+      "Click an element by CSS selector, or by ARIA role (with optional accessible name).",
     parameters: Type.Object({
       selector: Type.Optional(Type.String({ description: "CSS selector" })),
-      role: Type.Optional(Type.String({ description: "ARIA role (e.g. button, link)" })),
-      name: Type.Optional(Type.String({ description: "Accessible name for role" })),
+      role: Type.Optional(
+        Type.String({ description: "ARIA role (e.g. button, link)" }),
+      ),
+      name: Type.Optional(
+        Type.String({ description: "Accessible name for role" }),
+      ),
     }),
     async execute(_id, { selector, role, name }) {
       const sel = (selector ?? "").trim();
       const r = (role ?? "").trim();
       const n = (name ?? "").trim();
       if (!sel && !r) {
-        return errorResult("Error: provide either 'selector' or 'role' (+ optional 'name')");
+        return errorResult(
+          "Error: provide either 'selector' or 'role' (+ optional 'name')",
+        );
       }
       const sess = await ensureSession();
       if (sess.error) return errorResult(`Error: ${sess.error}`);
       try {
         const loc = r
-          ? (n ? sess.page.getByRole(r, { name: n }) : sess.page.getByRole(r))
+          ? n
+            ? sess.page.getByRole(r, { name: n })
+            : sess.page.getByRole(r)
           : sess.page.locator(sel);
         await loc.first().click();
-        await sess.page.waitForLoadState("domcontentloaded", { timeout: 10_000 });
+        await sess.page.waitForLoadState("domcontentloaded", {
+          timeout: 10_000,
+        });
         sess.history.push(sess.page.url());
         sess.extractCache.clear();
         return textResult(`clicked. url=${sess.page.url()}`);
@@ -167,11 +200,14 @@ function registerBrowserTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "BrowserType",
     label: "BrowserType",
-    description: "Fill a form field by selector. Optionally submit by pressing Enter.",
+    description:
+      "Fill a form field by selector. Optionally submit by pressing Enter.",
     parameters: Type.Object({
       selector: Type.String({ description: "CSS selector of the input" }),
       text: Type.String({ description: "Text to type" }),
-      submit: Type.Optional(Type.Boolean({ description: "Press Enter after typing" })),
+      submit: Type.Optional(
+        Type.Boolean({ description: "Press Enter after typing" }),
+      ),
     }),
     async execute(_id, { selector, text, submit }) {
       const sel = (selector ?? "").trim();
@@ -183,11 +219,15 @@ function registerBrowserTools(pi: ExtensionAPI): void {
         await sess.page.fill(sel, t);
         if (submit) {
           await sess.page.press(sel, "Enter");
-          await sess.page.waitForLoadState("domcontentloaded", { timeout: 10_000 });
+          await sess.page.waitForLoadState("domcontentloaded", {
+            timeout: 10_000,
+          });
           sess.history.push(sess.page.url());
           sess.extractCache.clear();
         }
-        return textResult(`typed ${t.length} chars into ${sel}${submit ? " + Enter" : ""}`);
+        return textResult(
+          `typed ${t.length} chars into ${sel}${submit ? " + Enter" : ""}`,
+        );
       } catch (e: any) {
         return errorResult(`Error typing: ${e?.message ?? e}`);
       }
@@ -197,10 +237,13 @@ function registerBrowserTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "BrowserScroll",
     label: "BrowserScroll",
-    description: "Scroll the current page up or down by a pixel amount (default 800px down).",
+    description:
+      "Scroll the current page up or down by a pixel amount (default 800px down).",
     parameters: Type.Object({
       direction: Type.Optional(Type.String({ description: "up or down" })),
-      amount: Type.Optional(Type.Integer({ description: "Pixels (default 800)" })),
+      amount: Type.Optional(
+        Type.Integer({ description: "Pixels (default 800)" }),
+      ),
     }),
     async execute(_id, { direction, amount }) {
       const dir = ((direction ?? "down") as string).toLowerCase();
@@ -224,7 +267,9 @@ function registerBrowserTools(pi: ExtensionAPI): void {
       "Extract the current page's readable text. Returns a 2KB chunk with cursor+has_more " +
       "so one page can't swamp context. Call repeatedly with the last 'next=' cursor.",
     parameters: Type.Object({
-      cursor: Type.Optional(Type.String({ description: "Byte offset to start from (default 0)" })),
+      cursor: Type.Optional(
+        Type.String({ description: "Byte offset to start from (default 0)" }),
+      ),
     }),
     async execute(_id, { cursor }) {
       const sess = await ensureSession();
@@ -239,12 +284,18 @@ function registerBrowserTools(pi: ExtensionAPI): void {
         const startRaw = parseInt((cursor ?? "0") as string, 10);
         const start = Number.isFinite(startRaw) ? startRaw : 0;
         if (start < 0 || start >= full.length) {
-          return textResult(`[cursor=${start} past end (length=${full.length})]`);
+          return textResult(
+            `[cursor=${start} past end (length=${full.length})]`,
+          );
         }
         const end = Math.min(start + CHUNK_SIZE, full.length);
         const chunk = full.slice(start, end);
         const hasMore = end < full.length;
-        const footerBits = [`cursor=${start}`, `next=${hasMore ? end : "null"}`, `total=${full.length}`];
+        const footerBits = [
+          `cursor=${start}`,
+          `next=${hasMore ? end : "null"}`,
+          `total=${full.length}`,
+        ];
         if (hasMore) footerBits.push("has_more=true");
         return textResult(`${chunk}\n[${footerBits.join(" ")}]`);
       } catch (e: any) {
@@ -279,7 +330,8 @@ function registerBrowserTools(pi: ExtensionAPI): void {
     async execute() {
       const sess = await ensureSession();
       if (sess.error) return errorResult(`Error: ${sess.error}`);
-      if (sess.history.length === 0) return textResult("(no pages visited yet)");
+      if (sess.history.length === 0)
+        return textResult("(no pages visited yet)");
       const lines = sess.history.slice(-20).map((u, i) => `${i + 1}. ${u}`);
       return textResult(lines.join("\n"));
     },
@@ -314,8 +366,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "enableBrowserTools",
     label: "EnableBrowserTools",
-    description: "Load Browser* tools into the active registry on demand. Prefer webfetch/websearch for non-interactive retrieval; enable Browser* only for interactive navigation, click, type, extract, history, or scroll workflows.",
-    promptSnippet: "enableBrowserTools(): load BrowserNavigate/BrowserExtract/BrowserClick and related Browser* tools only for interactive browsing; use webfetch/websearch first for simple retrieval.",
+    description:
+      "Load Browser* tools into the active registry on demand. Prefer webfetch/websearch for non-interactive retrieval; enable Browser* only for interactive navigation, click, type, extract, history, or scroll workflows.",
+    promptSnippet:
+      "enableBrowserTools(): load BrowserNavigate/BrowserExtract/BrowserClick and related Browser* tools only for interactive browsing; use webfetch/websearch first for simple retrieval.",
     parameters: Type.Object({}),
     async execute() {
       return { content: [{ type: "text", text: enable() }], details: {} };

@@ -21,7 +21,10 @@ describe("estimateTokens", () => {
 });
 
 describe("firstLines", () => {
-  const sample = Array.from({ length: 100 }, (_, i) => `${i + 1}\tline ${i + 1}`).join("\n");
+  const sample = Array.from(
+    { length: 100 },
+    (_, i) => `${i + 1}\tline ${i + 1}`,
+  ).join("\n");
 
   it("returns the first n lines and preserves cat -n prefixes", () => {
     const out = firstLines(sample, 30);
@@ -51,19 +54,34 @@ describe("shouldTrimRead", () => {
   it("trims when current tokens + estimate would exceed the window", () => {
     // 100k chars ≈ 28572 tokens; with 10000 already used that crosses 32768.
     expect(
-      shouldTrimRead({ ...base, contentChars: 100_000, currentTokens: 10_000, lineCount: 2000 }),
+      shouldTrimRead({
+        ...base,
+        contentChars: 100_000,
+        currentTokens: 10_000,
+        lineCount: 2000,
+      }),
     ).toBe(true);
   });
 
   it("does not trim when the result comfortably fits", () => {
     expect(
-      shouldTrimRead({ ...base, contentChars: 4_000, currentTokens: 1_000, lineCount: 200 }),
+      shouldTrimRead({
+        ...base,
+        contentChars: 4_000,
+        currentTokens: 1_000,
+        lineCount: 200,
+      }),
     ).toBe(false);
   });
 
   it("never trims when the result is <= headN lines", () => {
     expect(
-      shouldTrimRead({ ...base, contentChars: 1_000_000, currentTokens: 30_000, lineCount: HEAD_LINES }),
+      shouldTrimRead({
+        ...base,
+        contentChars: 1_000_000,
+        currentTokens: 30_000,
+        lineCount: HEAD_LINES,
+      }),
     ).toBe(false);
   });
 
@@ -72,23 +90,46 @@ describe("shouldTrimRead", () => {
     const overChars = Math.ceil(window * FALLBACK_FRACTION * 3.5) + 100; // est just over half
     const underChars = Math.floor(window * FALLBACK_FRACTION * 3.5) - 100; // est just under half
     expect(
-      shouldTrimRead({ contextWindow: window, headN: HEAD_LINES, currentTokens: null, contentChars: overChars, lineCount: 2000 }),
+      shouldTrimRead({
+        contextWindow: window,
+        headN: HEAD_LINES,
+        currentTokens: null,
+        contentChars: overChars,
+        lineCount: 2000,
+      }),
     ).toBe(true);
     expect(
-      shouldTrimRead({ contextWindow: window, headN: HEAD_LINES, currentTokens: null, contentChars: underChars, lineCount: 2000 }),
+      shouldTrimRead({
+        contextWindow: window,
+        headN: HEAD_LINES,
+        currentTokens: null,
+        contentChars: underChars,
+        lineCount: 2000,
+      }),
     ).toBe(false);
   });
 
   it("returns false when there is no context window to judge against", () => {
     expect(
-      shouldTrimRead({ contextWindow: 0, headN: HEAD_LINES, currentTokens: 1, contentChars: 1_000_000, lineCount: 2000 }),
+      shouldTrimRead({
+        contextWindow: 0,
+        headN: HEAD_LINES,
+        currentTokens: 1,
+        contentChars: 1_000_000,
+        lineCount: 2000,
+      }),
     ).toBe(false);
   });
 });
 
 describe("trimmedReadMessage", () => {
   it("explains the trim and directs to grep/find + targeted read", () => {
-    const msg = trimmedReadMessage({ shownLines: 30, totalLines: 2000, estTokens: 28572, contextWindow: 32768 });
+    const msg = trimmedReadMessage({
+      shownLines: 30,
+      totalLines: 2000,
+      estTokens: 28572,
+      contextWindow: 32768,
+    });
     expect(msg).toContain("too large");
     expect(msg).toContain("first 30 lines");
     expect(msg).toContain("grep");
@@ -109,11 +150,14 @@ function getToolResultHandler() {
     },
   };
   setupReadGuard(pi as any);
-  if (!handler) throw new Error("read-guard did not register a tool_result handler");
+  if (!handler)
+    throw new Error("read-guard did not register a tool_result handler");
   return handler;
 }
 
-function makeCtx(usage: { tokens: number | null; contextWindow: number } | undefined) {
+function makeCtx(
+  usage: { tokens: number | null; contextWindow: number } | undefined,
+) {
   const notifies: string[] = [];
   return {
     notifies,
@@ -124,8 +168,15 @@ function makeCtx(usage: { tokens: number | null; contextWindow: number } | undef
 
 // A read result whose text is `lines` numbered lines, ~chars wide each.
 function bigReadEvent(lines: number, width = 80) {
-  const text = Array.from({ length: lines }, (_, i) => `${i + 1}\t${"x".repeat(width)}`).join("\n");
-  return { toolName: "read", isError: false, content: [{ type: "text", text }] };
+  const text = Array.from(
+    { length: lines },
+    (_, i) => `${i + 1}\t${"x".repeat(width)}`,
+  ).join("\n");
+  return {
+    toolName: "read",
+    isError: false,
+    content: [{ type: "text", text }],
+  };
 }
 
 describe("read-guard tool_result handler", () => {

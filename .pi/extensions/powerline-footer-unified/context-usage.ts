@@ -22,11 +22,11 @@ export function readCoreContextUsage(ctx: unknown): CoreContextUsage | null {
   const tokens = usage.tokens;
   const contextWindow = usage.contextWindow;
   if (
-    typeof tokens !== "number"
-    || !Number.isFinite(tokens)
-    || typeof contextWindow !== "number"
-    || !Number.isFinite(contextWindow)
-    || contextWindow <= 0
+    typeof tokens !== "number" ||
+    !Number.isFinite(tokens) ||
+    typeof contextWindow !== "number" ||
+    !Number.isFinite(contextWindow) ||
+    contextWindow <= 0
   ) {
     return null;
   }
@@ -35,8 +35,9 @@ export function readCoreContextUsage(ctx: unknown): CoreContextUsage | null {
   return {
     contextTokens: tokens,
     contextWindow,
-    contextPercent: typeof percent === "number" && Number.isFinite(percent)
-      ? percent
-      : (tokens / contextWindow) * 100,
+    contextPercent:
+      typeof percent === "number" && Number.isFinite(percent)
+        ? percent
+        : (tokens / contextWindow) * 100,
   };
 }

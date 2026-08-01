@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import breadcrumbs from "./index.ts";
 
-afterEach(() => { delete process.env.PI_CODING_AGENT_DIR; });
+afterEach(() => {
+  delete process.env.PI_CODING_AGENT_DIR;
+});
 
 describe("breadcrumbs extension", () => {
   it("registers search/read tools and /breadcrumbs command", () => {
@@ -24,10 +26,16 @@ describe("breadcrumbs extension", () => {
     let readTool: any;
     const pi: any = {
       registerCommand: () => {},
-      registerTool: (tool: any) => { if (tool.name === "breadcrumbs_read") readTool = tool; },
+      registerTool: (tool: any) => {
+        if (tool.name === "breadcrumbs_read") readTool = tool;
+      },
     };
     breadcrumbs(pi);
-    const result = await readTool.execute("id", { session: "missing", maxTurns: 999, maxCharacters: 999999 });
+    const result = await readTool.execute("id", {
+      session: "missing",
+      maxTurns: 999,
+      maxCharacters: 999999,
+    });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("unknown session");
   });
@@ -38,18 +46,46 @@ describe("breadcrumbs extension", () => {
     const dir = join(root, "sessions", "demo");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, "one.jsonl");
-    writeFileSync(file, [
-      JSON.stringify({ timestamp: "2026-01-01", cwd: "/repo/demo", role: "user", content: "hello" }),
-      JSON.stringify({ timestamp: "2026-01-01", toolName: "read", content: "SECRET TOOL OUTPUT" }),
-      JSON.stringify({ timestamp: "2026-01-01", role: "assistant", content: "done" }),
-    ].join("\n"));
+    writeFileSync(
+      file,
+      [
+        JSON.stringify({
+          timestamp: "2026-01-01",
+          cwd: "/repo/demo",
+          role: "user",
+          content: "hello",
+        }),
+        JSON.stringify({
+          timestamp: "2026-01-01",
+          toolName: "read",
+          content: "SECRET TOOL OUTPUT",
+        }),
+        JSON.stringify({
+          timestamp: "2026-01-01",
+          role: "assistant",
+          content: "done",
+        }),
+      ].join("\n"),
+    );
     let readTool: any;
-    const pi: any = { registerCommand: () => {}, registerTool: (tool: any) => { if (tool.name === "breadcrumbs_read") readTool = tool; } };
+    const pi: any = {
+      registerCommand: () => {},
+      registerTool: (tool: any) => {
+        if (tool.name === "breadcrumbs_read") readTool = tool;
+      },
+    };
     breadcrumbs(pi);
-    const hidden = await readTool.execute("id", { session: "demo/one", maxTurns: 20 });
+    const hidden = await readTool.execute("id", {
+      session: "demo/one",
+      maxTurns: 20,
+    });
     expect(hidden.content[0].text).toContain("hello");
     expect(hidden.content[0].text).not.toContain("SECRET TOOL OUTPUT");
-    const included = await readTool.execute("id", { session: "demo/one", maxTurns: 20, includeToolOutput: true });
+    const included = await readTool.execute("id", {
+      session: "demo/one",
+      maxTurns: 20,
+      includeToolOutput: true,
+    });
     expect(included.content[0].text).toContain("SECRET TOOL OUTPUT");
   });
 });

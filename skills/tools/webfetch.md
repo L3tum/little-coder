@@ -6,19 +6,24 @@ priority: 6
 token_cost: 80
 user-invocable: false
 description: Guidance for fetching non-interactive web pages by URL.
-keywords: [webfetch, fetch, url, web, http, documentation, page, non-interactive]
+keywords:
+  [webfetch, fetch, url, web, http, documentation, page, non-interactive]
 ---
+
 ## WebFetch Tool
+
 Fetch and extract content from a URL.
 
 REQUIRED: url (full URL starting with http:// or https://)
 
 RULES:
+
 - Always use complete URLs with protocol
 - Returns extracted text content (HTML stripped)
 - Good for reading documentation, API references, web pages
 
 EXAMPLE:
+
 ```tool
 {"name": "webfetch", "input": {"url": "https://docs.python.org/3/library/json.html"}}
 ```

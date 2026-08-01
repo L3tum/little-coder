@@ -29,7 +29,11 @@ function normalizeLines(lines: string[] | undefined, width: number): string[] {
 
   return lines
     .filter((line) => line !== undefined && line !== null)
-    .map((line) => visibleWidth(line) > width ? truncateToWidth(line, width, "", true) : line);
+    .map((line) =>
+      visibleWidth(line) > width
+        ? truncateToWidth(line, width, "", true)
+        : line,
+    );
 }
 
 function takeTail(lines: string[], count: number): string[] {
@@ -43,16 +47,27 @@ function capEditorLines(lines: string[], count: number): string[] {
 
   const cursorRow = lines.findIndex((line) => line.includes(CURSOR_MARKER));
   if (cursorRow !== -1) {
-    const start = Math.max(0, Math.min(cursorRow - count + 1, lines.length - count));
+    const start = Math.max(
+      0,
+      Math.min(cursorRow - count + 1, lines.length - count),
+    );
     return lines.slice(start, start + count);
   }
 
-  const selectedRow = lines.findIndex((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimStart().startsWith("→ "));
+  const selectedRow = lines.findIndex((line) =>
+    line
+      .replace(/\x1b\[[0-9;]*m/g, "")
+      .trimStart()
+      .startsWith("→ "),
+  );
   if (selectedRow === -1) {
     return lines.slice(0, count);
   }
 
-  const start = Math.max(0, Math.min(selectedRow - Math.floor(count / 2), lines.length - count));
+  const start = Math.max(
+    0,
+    Math.min(selectedRow - Math.floor(count / 2), lines.length - count),
+  );
   return lines.slice(start, start + count);
 }
 
@@ -69,13 +84,18 @@ function extractCursor(lines: string[]): FixedEditorClusterRender {
       };
     }
 
-    return line.slice(0, markerIndex) + line.slice(markerIndex + CURSOR_MARKER.length);
+    return (
+      line.slice(0, markerIndex) +
+      line.slice(markerIndex + CURSOR_MARKER.length)
+    );
   });
 
   return { lines: cleaned, cursor };
 }
 
-export function renderFixedEditorCluster(input: FixedEditorClusterInput): FixedEditorClusterRender {
+export function renderFixedEditorCluster(
+  input: FixedEditorClusterInput,
+): FixedEditorClusterRender {
   const width = Math.max(1, input.width);
   const maxRows = Math.max(1, input.terminalRows - 1);
 

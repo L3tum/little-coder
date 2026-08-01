@@ -1,6 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { assessResponse, buildCorrectionMessage, phraseForUser, type ToolCall } from "./quality.ts";
+import {
+  assessResponse,
+  buildCorrectionMessage,
+  phraseForUser,
+  type ToolCall,
+} from "./quality.ts";
 import { harnessIntervention } from "../_shared/intervention.ts";
+import { isTokenLimitError } from "../token-limit-guard/index.ts";
 
 // Port of local/quality.py. Hooks turn_end, inspects the assistant message
 // + previous turn's tool calls, and — if we detect a failure mode — sends
@@ -29,9 +35,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async () => {
     knownTools.clear();
-    const activeTools = typeof (pi as any).getActiveTools === "function"
-      ? (pi as any).getActiveTools()
-      : [];
+    const activeTools =
+      typeof (pi as any).getActiveTools === "function"
+        ? (pi as any).getActiveTools()
+        : [];
     if (Array.isArray(activeTools)) {
       activeTools.forEach((name: unknown) => {
         if (typeof name === "string") knownTools.add(name);
@@ -71,13 +78,23 @@ export default function (pi: ExtensionAPI) {
 
     // Turns that fail before completion should not seed repeat-loop detection.
     if (stopReason === "error") {
+      // Token limit errors are handled by the token-limit-guard extension.
+      // Skip correction logic to avoid duplicate messages.
+      if (isTokenLimitError((message as any).errorMessage)) {
+        previousToolCalls = [];
+        previousTurnErrorTools = new Set();
+        consecutiveFailures = 0;
+        return;
+      }
       previousToolCalls = [];
       previousTurnErrorTools = new Set();
       consecutiveFailures = 0;
       return;
     }
 
-    const toolResults = Array.isArray((event as any).toolResults) ? (event as any).toolResults : [];
+    const toolResults = Array.isArray((event as any).toolResults)
+      ? (event as any).toolResults
+      : [];
 
     // Build the set of tool names that errored this turn.
     const currentErrorTools = new Set<string>();
@@ -116,7 +133,10 @@ export default function (pi: ExtensionAPI) {
     }
 
     const correction = buildCorrectionMessage(verdict.reason, knownTools);
-    harnessIntervention(ctx, `${phraseForUser(verdict.reason)} — redirecting the model.`);
+    harnessIntervention(
+      ctx,
+      `${phraseForUser(verdict.reason)} — redirecting the model.`,
+    );
     // "steer" delivers the correction promptly to the in-flight loop. The
     // prior "followUp" mode parked the message until the *next* user input,
     // by which point it was no longer relevant (issue #16).

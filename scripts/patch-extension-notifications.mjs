@@ -12,13 +12,13 @@ export const PATCHES = [
   {
     name: "plannotator planning prompt guidance",
     path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
-    oldText: `Available tools: read, bash, grep, find, ls, write (markdown only), edit (markdown only), \${PLAN_SUBMIT_TOOL}\n\nDo not run destructive bash commands (rm, git push, npm install, etc.) — focus on reading and exploring the codebase. Web fetching (curl, wget) is fine.`,
-    newText: `Available tools include code_search, lsp, findRead, read, bash, grep, find, ls, websearch, webfetch, EvidenceAdd, ask_user, write (markdown only), edit (markdown only), \${PLAN_SUBMIT_TOOL}\n\nDo not run destructive bash commands (rm, git push, npm install, etc.) — focus on reading and exploring the codebase. Use websearch/webfetch for external package, API, library, compatibility, or tool-choice research.`,
+    oldText: `Do not run destructive commands (rm, git push, npm install, etc.) — focus on reading and exploring the codebase. Web fetching is fine.`,
+    newText: `Available tools include code_search, lsp, findRead, read, bash, grep, find, ls, websearch, webfetch, EvidenceAdd, ask_user, write (markdown only), edit (markdown only), \${PLAN_SUBMIT_TOOL}\n\nDo not run destructive commands (rm, git push, npm install, etc.) — focus on reading and exploring the codebase. Use websearch/webfetch for external package, API, library, compatibility, or tool-choice research.`,
   },
   {
     name: "plannotator planning workflow tool order",
     path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
-    oldText: `1. **Explore** — Use read, grep, find, ls, and bash to understand the codebase. Actively search for existing functions, utilities, and patterns that can be reused — avoid proposing new code when suitable implementations already exist.\n2. **Update the plan file** — After each discovery, immediately capture what you learned in the plan. Don't wait until the end. Use write for the initial draft, then edit for all subsequent updates.\n3. **Ask the user** — When you hit an ambiguity or decision you can't resolve from code alone, ask. Then go back to step 1.`,
+    oldText: `1. **Explore** — Use the available reading, searching, and command tools to understand the codebase. Actively search for existing functions, utilities, and patterns that can be reused — avoid proposing new code when suitable implementations already exist.\n2. **Update the plan file** — After each discovery, immediately capture what you learned in the plan. Don't wait until the end. Use the available file tools to create the initial draft and make targeted updates.\n3. **Ask the user** — When you hit an ambiguity or decision you can't resolve from code alone, ask. Then go back to step 1.`,
     newText: `1. **Explore** — Prefer code_search for symbols/relationships/semantic search, then lsp for definitions/references/types/diagnostics, then bounded findRead, then targeted read. Avoid broad grep/find/read sweeps unless code-aware tools cannot answer the question. Actively search for existing functions, utilities, and patterns that can be reused — avoid proposing new code when suitable implementations already exist.\n2. **Research and record evidence** — Use EvidenceAdd for any factual claim the final plan will cite. Use websearch/webfetch for external package, API, library, compatibility, or tool-choice research. Do not rely on memory for external facts that affect the plan.\n3. **Update the plan file** — After each discovery, immediately capture what you learned in the plan. Don't wait until the end. Use write for the initial draft, then edit for all subsequent updates.\n4. **Ask the user** — After code/web research, use ask_user for unresolved user decisions when available; otherwise ask plain end-of-turn questions. Then go back to step 1.`,
   },
   {
@@ -29,7 +29,12 @@ export const PATCHES = [
   },
   {
     name: "plannotator browser URL notification",
-    path: ["node_modules", "@plannotator", "pi-extension", "plannotator-browser.ts"],
+    path: [
+      "node_modules",
+      "@plannotator",
+      "pi-extension",
+      "plannotator-browser.ts",
+    ],
     oldText: `async function openBrowserForServer(serverUrl: string, ctx: ExtensionContext): Promise<void> {\n\tconst browserResult = await openBrowser(serverUrl);\n\tif (isRemoteSession()) {\n\t\tctx.ui.notify(\`[Plannotator] \${serverUrl}\`, "info");\n\t} else if (!browserResult.opened) {\n\t\tctx.ui.notify(\`Open this URL to review: \${serverUrl}\`, "info");\n\t}\n}`,
     newText: `async function openBrowserForServer(serverUrl: string, ctx: ExtensionContext): Promise<void> {\n\tctx.ui.notify(\`Plannotator listening at: \${serverUrl}\`, "info");\n\tconst browserResult = await openBrowser(serverUrl);\n\tif (!browserResult.opened) {\n\t\tctx.ui.notify(\`Open this URL to review: \${serverUrl}\`, "info");\n\t}\n}`,
   },
@@ -42,13 +47,18 @@ export const PATCHES = [
   {
     name: "pi-inspect structured and provider context rows",
     path: ["node_modules", "pi-inspect", "public", "app.js"],
-    oldText: String.raw`  if (s.systemPrompt) {
+    oldText:
+      String.raw`  if (s.systemPrompt) {
     for (const part of splitSystemPrompt(s.systemPrompt, s.cwd)) {
       items.push({
         kind: 'context',
-        id: ` + "`context:${part.id}`" + String.raw`,
+        id: ` +
+      "`context:${part.id}`" +
+      String.raw`,
         name: part.name,
-        source: ` + "`${part.text.length} chars`" + String.raw`,
+        source: ` +
+      "`${part.text.length} chars`" +
+      String.raw`,
         description: part.text.slice(0, 240).replace(/\s+/g, ' '),
         chars: part.text.length,
         path: part.path ?? null,
@@ -57,13 +67,18 @@ export const PATCHES = [
     }
   }
   return items;`,
-    newText: String.raw`  if (s.systemPrompt) {
+    newText:
+      String.raw`  if (s.systemPrompt) {
     for (const part of splitSystemPrompt(s.systemPrompt, s.cwd)) {
       items.push({
         kind: 'context',
-        id: ` + "`context:${part.id}`" + String.raw`,
+        id: ` +
+      "`context:${part.id}`" +
+      String.raw`,
         name: part.name,
-        source: ` + "`${part.text.length} chars`" + String.raw`,
+        source: ` +
+      "`${part.text.length} chars`" +
+      String.raw`,
         description: part.text.slice(0, 240).replace(/\s+/g, ' '),
         chars: part.text.length,
         path: part.path ?? null,
@@ -73,24 +88,40 @@ export const PATCHES = [
   }
   if (s.systemPromptOptions) {
     const text = JSON.stringify(s.systemPromptOptions, null, 2);
-    items.push({ kind: 'context', id: 'context:system-prompt-options', name: 'structured prompt inputs', source: ` + "`${text.length} chars`" + String.raw`, description: 'Structured inputs Pi used to build the system prompt: selected tools, snippets, context files, skills, guidelines.', chars: text.length, path: null, raw: { label: 'Structured system prompt inputs', systemPromptOptions: s.systemPromptOptions } });
+    items.push({ kind: 'context', id: 'context:system-prompt-options', name: 'structured prompt inputs', source: ` +
+      "`${text.length} chars`" +
+      String.raw`, description: 'Structured inputs Pi used to build the system prompt: selected tools, snippets, context files, skills, guidelines.', chars: text.length, path: null, raw: { label: 'Structured system prompt inputs', systemPromptOptions: s.systemPromptOptions } });
   }
   if (Array.isArray(s.sessionEntries)) {
     const text = JSON.stringify(s.sessionEntries, null, 2);
     const count = s.sessionEntries.length;
-    items.push({ kind: 'context', id: 'context:session-entries', name: 'current session transcript', source: ` + "`${count} entries · ${text.length} chars`" + String.raw`, description: 'Persisted conversation entries for this session, including user/assistant/tool/custom entries recorded so far.', chars: text.length, path: null, raw: { label: 'Current session transcript (persisted session entries)', sessionEntries: s.sessionEntries } });
+    items.push({ kind: 'context', id: 'context:session-entries', name: 'current session transcript', source: ` +
+      "`${count} entries · ${text.length} chars`" +
+      String.raw`, description: 'Persisted conversation entries for this session, including user/assistant/tool/custom entries recorded so far.', chars: text.length, path: null, raw: { label: 'Current session transcript (persisted session entries)', sessionEntries: s.sessionEntries } });
   }
   if (s.providerPayload) {
     const text = JSON.stringify(s.providerPayload, null, 2);
-    items.push({ kind: 'context', id: 'context:provider-payload', name: 'current provider request payload', source: ` + "`${text.length} chars`" + String.raw`, description: 'Closest view of the current request sent to the model, including messages and active tool schemas when the provider includes them.', chars: text.length, path: null, raw: { label: 'Current provider request payload (actual model context)', providerPayload: s.providerPayload } });
+    items.push({ kind: 'context', id: 'context:provider-payload', name: 'current provider request payload', source: ` +
+      "`${text.length} chars`" +
+      String.raw`, description: 'Closest view of the current request sent to the model, including messages and active tool schemas when the provider includes them.', chars: text.length, path: null, raw: { label: 'Current provider request payload (actual model context)', providerPayload: s.providerPayload } });
   }
   return items;`,
+  },
+  {
+    name: "plannotator preserve user model after plan approval",
+    path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
+    oldText: `\tasync function applyPhaseConfig(ctx: ExtensionContext, opts: { restoreSavedState?: boolean } = {}): Promise<void> {\n\t\tconst profile = getPhaseProfile();\n\t\tif (opts.restoreSavedState !== false && savedState) {\n\t\t\tawait restoreSavedState(ctx);\n\t\t}\n\n\t\tif (phase === "planning" || phase === "executing") {`,
+    newText: `\tasync function applyPhaseConfig(ctx: ExtensionContext, opts: { restoreSavedState?: boolean } = {}): Promise<void> {\n\t\tconst profile = getPhaseProfile();\n\t\t// little-coder: capture the user's model before phase profile overrides.\n\t\t// When restoreSavedState is true (plan approved), preserve the original model.\n\t\tlet littleCoderPreApplyModel: { provider: string; id: string } | null = null;\n\t\tif (opts.restoreSavedState !== false && savedState?.model) {\n\t\t\tlittleCoderPreApplyModel = { provider: savedState.model.provider, id: savedState.model.id };\n\t\t}\n\t\tif (opts.restoreSavedState !== false && savedState) {\n\t\t\tawait restoreSavedState(ctx);\n\t\t}\n\n\t\tif (phase === "planning" || phase === "executing") {`,
+    alreadyAppliedText: ["littleCoderPreApplyModel"],
   },
 ];
 
 export function isPatchApplied(current, patch) {
   if (current.includes(patch.newText)) return true;
-  return Array.isArray(patch.alreadyAppliedText) && patch.alreadyAppliedText.every((text) => current.includes(text));
+  return (
+    Array.isArray(patch.alreadyAppliedText) &&
+    patch.alreadyAppliedText.every((text) => current.includes(text))
+  );
 }
 
 export function applyTextPatch(current, patch) {

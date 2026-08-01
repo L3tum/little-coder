@@ -1,5 +1,9 @@
 // @ts-nocheck
-import type { BashCommandRecord, BashModeSettings, BashTranscriptSnapshot } from "./types.ts";
+import type {
+  BashCommandRecord,
+  BashModeSettings,
+  BashTranscriptSnapshot,
+} from "./types.ts";
 
 function byteLength(value: string): number {
   return Buffer.byteLength(value, "utf8");
@@ -19,18 +23,30 @@ function compactLines(lines: string[]): string[] {
 }
 
 export class BashTranscriptStore {
-  private readonly settings: Pick<BashModeSettings, "transcriptMaxLines" | "transcriptMaxBytes">;
+  private readonly settings: Pick<
+    BashModeSettings,
+    "transcriptMaxLines" | "transcriptMaxBytes"
+  >;
   private commands: BashCommandRecord[] = [];
   private commandIndex = new Map<string, BashCommandRecord>();
   private totalLines = 0;
   private totalBytes = 0;
   private truncatedCommands = 0;
 
-  constructor(settings: Pick<BashModeSettings, "transcriptMaxLines" | "transcriptMaxBytes">) {
+  constructor(
+    settings: Pick<
+      BashModeSettings,
+      "transcriptMaxLines" | "transcriptMaxBytes"
+    >,
+  ) {
     this.settings = settings;
   }
 
-  startCommand(id: string, command: string, cwdAtStart: string): BashCommandRecord {
+  startCommand(
+    id: string,
+    command: string,
+    cwdAtStart: string,
+  ): BashCommandRecord {
     const entry: BashCommandRecord = {
       id,
       command,
@@ -57,7 +73,10 @@ export class BashTranscriptStore {
     if (lines.length === 0) return;
 
     entry.output.push(...lines);
-    const addedBytes = lines.reduce((sum, line) => sum + byteLength(line) + 1, 0);
+    const addedBytes = lines.reduce(
+      (sum, line) => sum + byteLength(line) + 1,
+      0,
+    );
     entry.outputBytes += addedBytes;
     this.totalLines += lines.length;
     this.totalBytes += addedBytes;
@@ -94,8 +113,9 @@ export class BashTranscriptStore {
 
   private enforceLimits(): void {
     while (
-      this.commands.length > 1
-      && (this.totalLines > this.settings.transcriptMaxLines || this.totalBytes > this.settings.transcriptMaxBytes)
+      this.commands.length > 1 &&
+      (this.totalLines > this.settings.transcriptMaxLines ||
+        this.totalBytes > this.settings.transcriptMaxBytes)
     ) {
       const removed = this.commands.shift();
       if (!removed) break;

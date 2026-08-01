@@ -34,7 +34,9 @@ export function normalizeWritePath(
   return { path: inputPath };
 }
 
-function pathKey(input: Record<string, unknown>): "path" | "file_path" | undefined {
+function pathKey(
+  input: Record<string, unknown>,
+): "path" | "file_path" | undefined {
   if (typeof input.path === "string") return "path";
   if (typeof input.file_path === "string") return "file_path";
   return undefined;

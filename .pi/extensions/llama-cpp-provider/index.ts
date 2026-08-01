@@ -47,7 +47,8 @@ export default async function (pi: ExtensionAPI) {
     if (!probeDisabled && name === "llamacpp" && entry.models.length > 0) {
       const probed = await probeContextWindow(entry.baseUrl, {
         url: process.env.LITTLE_CODER_LLAMACPP_PROPS_URL || undefined,
-        timeoutMs: Number(process.env.LITTLE_CODER_CTX_PROBE_TIMEOUT_MS) || undefined,
+        timeoutMs:
+          Number(process.env.LITTLE_CODER_CTX_PROBE_TIMEOUT_MS) || undefined,
       });
       if (probed) {
         models = entry.models.map((m) => ({ ...m, contextWindow: probed }));

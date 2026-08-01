@@ -32,7 +32,10 @@ function backupIfNeeded(sessionId: string, filePath: string): void {
   try {
     if (existsSync(filePath)) {
       const content = readFileSync(filePath);
-      writeFileSync(join(checkpointDir(sessionId), safeName(filePath)), content);
+      writeFileSync(
+        join(checkpointDir(sessionId), safeName(filePath)),
+        content,
+      );
     } else {
       // Sentinel: file didn't exist before modification
       writeFileSync(
@@ -49,12 +52,18 @@ export default function (pi: ExtensionAPI) {
   let currentSessionId = "default";
 
   pi.on("session_start", async (_event, ctx) => {
-    currentSessionId = ctx.sessionManager.getSessionFile()?.split("/").pop() ?? "default";
+    currentSessionId =
+      ctx.sessionManager.getSessionFile()?.split("/").pop() ?? "default";
   });
 
   pi.on("tool_call", async (event) => {
     const name = (event as any).toolName;
-    if (name !== "write" && name !== "Write" && name !== "edit" && name !== "Edit") {
+    if (
+      name !== "write" &&
+      name !== "Write" &&
+      name !== "edit" &&
+      name !== "Edit"
+    ) {
       return;
     }
     const input: any = (event as any).input ?? (event as any).args;

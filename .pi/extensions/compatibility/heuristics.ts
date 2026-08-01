@@ -21,9 +21,12 @@ function tokenize(name: string): string[] {
 
 function canonicalToken(token: string): string {
   if (["text", "string", "str"].includes(token)) return "text";
-  if (["filepath", "filename", "pathname", "directory", "dir"].includes(token)) return "path";
-  if (token.endsWith("ies") && token.length > 3) return token.slice(0, -3) + "y";
-  if (token.endsWith("s") && token.length > 3 && !token.endsWith("ss")) return token.slice(0, -1);
+  if (["filepath", "filename", "pathname", "directory", "dir"].includes(token))
+    return "path";
+  if (token.endsWith("ies") && token.length > 3)
+    return token.slice(0, -3) + "y";
+  if (token.endsWith("s") && token.length > 3 && !token.endsWith("ss"))
+    return token.slice(0, -1);
   return token;
 }
 
@@ -38,14 +41,17 @@ function normalizedName(name: string): string {
 function editDistance(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    Array(n + 1).fill(0),
+  );
   for (let i = 0; i <= m; i++) dp[i][0] = i;
   for (let j = 0; j <= n; j++) dp[0][j] = j;
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
     }
   }
   return dp[m][n];
@@ -67,10 +73,17 @@ function keyScore(source: string, target: string): number {
     if (srcSet.has(token)) overlap++;
   }
   let score = overlap / Math.max(srcSet.size, dstSet.size, 1);
-  if (src.length > 0 && dst.length > 0 && src[src.length - 1] === dst[dst.length - 1]) {
+  if (
+    src.length > 0 &&
+    dst.length > 0 &&
+    src[src.length - 1] === dst[dst.length - 1]
+  ) {
     score += 0.25;
   }
-  if (dst.every((token) => srcSet.has(token)) || src.every((token) => dstSet.has(token))) {
+  if (
+    dst.every((token) => srcSet.has(token)) ||
+    src.every((token) => dstSet.has(token))
+  ) {
     score += 0.15;
   }
   const dist = editDistance(sourceNorm, targetNorm);
@@ -79,7 +92,10 @@ function keyScore(source: string, target: string): number {
   return Math.min(score, 1);
 }
 
-function bestKeyMatch(source: string, candidates: string[]): string | undefined {
+function bestKeyMatch(
+  source: string,
+  candidates: string[],
+): string | undefined {
   let best: { name: string; score: number } | null = null;
   for (const candidate of candidates) {
     const score = keyScore(source, candidate);
@@ -135,7 +151,10 @@ export function rewriteValueToSchema(
 
     for (const key of unmatched) {
       if (key in props) continue;
-      const target = bestKeyMatch(key, Object.keys(props).filter((name) => !(name in next)));
+      const target = bestKeyMatch(
+        key,
+        Object.keys(props).filter((name) => !(name in next)),
+      );
       if (!target) {
         next[key] = value[key];
         continue;
@@ -147,7 +166,11 @@ export function rewriteValueToSchema(
     }
 
     for (const [key, propSchema] of Object.entries(props)) {
-      if (propSchema?.type === "array" && key in next && !Array.isArray(next[key])) {
+      if (
+        propSchema?.type === "array" &&
+        key in next &&
+        !Array.isArray(next[key])
+      ) {
         const out = rewriteValueToSchema(next[key], propSchema, stats);
         next[key] = out.value;
         stats.arrayWrappedKeys.push(key);
@@ -161,10 +184,15 @@ export function rewriteValueToSchema(
   return { value, changed: false, stats };
 }
 
-export function findCompatibleToolName(toolName: string, knownTools: Iterable<string>): string | undefined {
+export function findCompatibleToolName(
+  toolName: string,
+  knownTools: Iterable<string>,
+): string | undefined {
   const names = [...knownTools];
   if (names.length === 0) return undefined;
-  const exactCaseInsensitive = names.find((name) => name.toLowerCase() === toolName.toLowerCase());
+  const exactCaseInsensitive = names.find(
+    (name) => name.toLowerCase() === toolName.toLowerCase(),
+  );
   if (exactCaseInsensitive) return exactCaseInsensitive;
   const aliased = TOOL_NAME_ALIASES[toolName.toLowerCase()];
   if (aliased && names.includes(aliased)) return aliased;

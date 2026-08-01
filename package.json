@@ -48,27 +48,31 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^0.80.6",
-    "@earendil-works/pi-coding-agent": "^0.80.6",
-    "@earendil-works/pi-tui": "^0.80.6",
-    "@plannotator/pi-extension": "^0.23.0",
+    "@earendil-works/pi-ai": "^0.83.0",
+    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-tui": "^0.83.0",
+    "@plannotator/pi-extension": "^0.25.1",
     "@sinclair/typebox": "^0.34.49",
     "chokidar": "^5.0.0",
     "glob": "^13.0.6",
     "open": "^11.0.0",
-    "pi-better-openai": "^0.1.18",
     "pi-ask-user": "^0.11.1",
+    "pi-better-openai": "^0.1.18",
     "pi-inspect": "^0.5.0",
     "pi-powerline-footer": "^0.7.0",
     "playwright": "^1.59.1",
     "qrcode": "^1.5.0",
+    "scripts": "^0.1.0",
     "typebox": "^1.1.38",
     "vscode-languageserver-protocol": "^3.17.5",
     "ws": "^8.16.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^2.1.0"
   },
   "optionalDependencies": {

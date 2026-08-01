@@ -16,7 +16,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 // muscle-memory command works, and so the help/branding line can advertise it.
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("clear", {
-    description: "Start a fresh session — clears history and reloads context, like relaunching",
+    description:
+      "Start a fresh session — clears history and reloads context, like relaunching",
     handler: async (_args, ctx) => {
       // newSession() handles the confirm/cancel flow and the full lifecycle.
       // Returns { cancelled } if the user backed out; nothing else to do here.

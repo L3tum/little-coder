@@ -75,7 +75,7 @@ export function shouldTrimRead(a: {
   if (!a.contextWindow) return false;
   if (a.lineCount <= a.headN) return false;
   const est = estimateTokens(a.contentChars);
-  if (a.currentTokens == null) {
+  if (a.currentTokens === null) {
     return est > a.contextWindow * FALLBACK_FRACTION;
   }
   return a.currentTokens + est > a.contextWindow - RESERVE;
@@ -110,7 +110,7 @@ export default function (pi: ExtensionAPI) {
     if (String((event as any).toolName ?? "").toLowerCase() !== "read") return;
     if ((event as any).isError) return;
 
-    const content = (((event as any).content ?? []) as TextOrImage[]);
+    const content = ((event as any).content ?? []) as TextOrImage[];
     if (content.length === 0) return;
     // Text-only: an image read can't be line-trimmed, leave it alone.
     if (content.some((c) => c.type !== "text")) return;
@@ -119,7 +119,9 @@ export default function (pi: ExtensionAPI) {
     // getContextUsage may be absent on older SDK builds; without a window we
     // can't judge overflow, so leave the result untouched.
     const usage =
-      typeof ctx.getContextUsage === "function" ? ctx.getContextUsage() : undefined;
+      typeof ctx.getContextUsage === "function"
+        ? ctx.getContextUsage()
+        : undefined;
     if (!usage?.contextWindow) return;
 
     const lineCount = countLines(text);

@@ -35,8 +35,42 @@ When a problem asks for minimum moves.`;
     expect(p).not.toBeNull();
     expect(p!.frontmatter.topic).toBe("State-Space Search");
     expect(p!.frontmatter.keywords).toEqual([
-      "bucket", "pouring", "state space", "minimum moves", "shortest sequence",
+      "bucket",
+      "pouring",
+      "state space",
+      "minimum moves",
+      "shortest sequence",
     ]);
+  });
+
+  it("parses multi-line flow arrays (Prettier reformatted)", () => {
+    const text = `---
+name: bfs-state-space
+type: domain-knowledge
+topic: State-Space Search
+token_cost: 120
+keywords:
+  [
+    bucket,
+    pouring,
+    state space,
+  ]
+requires_tools: [Read]
+user-invocable: false
+description: Test.
+---
+Body content.`;
+    const p = parseSkillFile(text);
+    expect(p).not.toBeNull();
+    expect(Array.isArray(p!.frontmatter.keywords)).toBe(true);
+    expect(p!.frontmatter.keywords).toEqual([
+      "bucket",
+      "pouring",
+      "state space",
+    ]);
+    expect(p!.frontmatter.requires_tools).toEqual(["Read"]);
+    expect(p!.frontmatter["user-invocable"]).toBe(false);
+    expect(p!.frontmatter.description).toBe("Test.");
   });
 
   it("parses requires_tools arrays", () => {

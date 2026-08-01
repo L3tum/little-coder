@@ -34,13 +34,23 @@ describe("isSafeBash", () => {
   });
   it("allows npm/npx test diagnostics", () => {
     expect(isSafeBash("npm test")).toBe(true);
-    expect(isSafeBash("npm test -- .pi/extensions/compatibility/heuristics.test.ts")).toBe(true);
+    expect(
+      isSafeBash("npm test -- .pi/extensions/compatibility/heuristics.test.ts"),
+    ).toBe(true);
     expect(isSafeBash("npm run test -- --runInBand")).toBe(true);
-    expect(isSafeBash("npx vitest run .pi/extensions/compatibility/heuristics.test.ts")).toBe(true);
+    expect(
+      isSafeBash(
+        "npx vitest run .pi/extensions/compatibility/heuristics.test.ts",
+      ),
+    ).toBe(true);
     expect(isSafeBash("npx --yes vitest run permission.test.ts")).toBe(true);
     expect(isSafeBash("npx skills --help")).toBe(true);
     expect(isSafeBash("npx skills find code-review")).toBe(true);
-    expect(isSafeBash("npm test -- --run .pi/extensions/permission-gate/permission.test.ts && npm run typecheck")).toBe(true);
+    expect(
+      isSafeBash(
+        "npm test -- --run .pi/extensions/permission-gate/permission.test.ts && npm run typecheck",
+      ),
+    ).toBe(true);
   });
   it("blocks non-whitelisted commands", () => {
     expect(isSafeBash("rm -rf /")).toBe(false);
@@ -147,9 +157,13 @@ describe("workspace path helpers", () => {
   const cwd = "/home/me/proj";
 
   it("resolves relative and home paths", () => {
-    expect(resolveWorkspacePath("src/file.ts", cwd)).toBe("/home/me/proj/src/file.ts");
+    expect(resolveWorkspacePath("src/file.ts", cwd)).toBe(
+      "/home/me/proj/src/file.ts",
+    );
     expect(resolveWorkspacePath("/tmp/x", cwd)).toBe("/tmp/x");
-    expect(resolveWorkspacePath("~/notes.txt", cwd)).toBe(`${homedir()}/notes.txt`);
+    expect(resolveWorkspacePath("~/notes.txt", cwd)).toBe(
+      `${homedir()}/notes.txt`,
+    );
   });
 
   it("detects paths within workspace", () => {
@@ -170,17 +184,29 @@ describe("getExternalWorkspaceAccess", () => {
   const cwd = "/home/me/proj";
 
   it("ignores in-workspace read/edit/write", () => {
-    expect(getExternalWorkspaceAccess("read", { path: "README.md" }, cwd)).toBeNull();
-    expect(getExternalWorkspaceAccess("edit", { path: "src/app.ts" }, cwd)).toBeNull();
-    expect(getExternalWorkspaceAccess("write", { path: "notes/plan.md" }, cwd)).toBeNull();
+    expect(
+      getExternalWorkspaceAccess("read", { path: "README.md" }, cwd),
+    ).toBeNull();
+    expect(
+      getExternalWorkspaceAccess("edit", { path: "src/app.ts" }, cwd),
+    ).toBeNull();
+    expect(
+      getExternalWorkspaceAccess("write", { path: "notes/plan.md" }, cwd),
+    ).toBeNull();
   });
 
   it("flags external read/edit/write", () => {
-    expect(getExternalWorkspaceAccess("read", { path: "../secret.txt" }, cwd)).toEqual({
+    expect(
+      getExternalWorkspaceAccess("read", { path: "../secret.txt" }, cwd),
+    ).toEqual({
       summary: "/home/me/secret.txt",
     });
-    expect(getExternalWorkspaceAccess("edit", { path: "/tmp/config.ini" }, cwd)).toBeNull();
-    expect(getExternalWorkspaceAccess("write", { path: "/etc/hosts" }, cwd)).toEqual({
+    expect(
+      getExternalWorkspaceAccess("edit", { path: "/tmp/config.ini" }, cwd),
+    ).toBeNull();
+    expect(
+      getExternalWorkspaceAccess("write", { path: "/etc/hosts" }, cwd),
+    ).toEqual({
       summary: "/etc/hosts",
     });
   });
@@ -189,24 +215,52 @@ describe("getExternalWorkspaceAccess", () => {
     expect(getExternalWorkspaceAccess("grep", { path: "../" }, cwd)).toEqual({
       summary: "/home/me",
     });
-    expect(getExternalWorkspaceAccess("findRead", { path: "../", pattern: "*.ts" }, cwd)).toEqual({
+    expect(
+      getExternalWorkspaceAccess(
+        "findRead",
+        { path: "../", pattern: "*.ts" },
+        cwd,
+      ),
+    ).toEqual({
       summary: "/home/me",
     });
-    expect(getExternalWorkspaceAccess("findRead", { pattern: "../*.ts" }, cwd)).toEqual({
+    expect(
+      getExternalWorkspaceAccess("findRead", { pattern: "../*.ts" }, cwd),
+    ).toEqual({
       summary: "/home/me/proj (pattern escapes base: ../*.ts)",
     });
   });
 
   it("allows trusted bash temp output files outside workspace", () => {
     const tmp = tmpdir();
-    expect(getExternalWorkspaceAccess("read", { path: `${tmp}/pi-bash-abc123.log` }, cwd)).toBeNull();
-    expect(getExternalWorkspaceAccess("findRead", { path: tmp, pattern: "pi-bash-*.log" }, cwd)).toBeNull();
+    expect(
+      getExternalWorkspaceAccess(
+        "read",
+        { path: `${tmp}/pi-bash-abc123.log` },
+        cwd,
+      ),
+    ).toBeNull();
+    expect(
+      getExternalWorkspaceAccess(
+        "findRead",
+        { path: tmp, pattern: "pi-bash-*.log" },
+        cwd,
+      ),
+    ).toBeNull();
   });
 
   it("allows broad temp files outside workspace", () => {
     const tmp = tmpdir();
-    expect(getExternalWorkspaceAccess("read", { path: `${tmp}/notes.txt` }, cwd)).toBeNull();
-    expect(getExternalWorkspaceAccess("findRead", { path: tmp, pattern: "*.log" }, cwd)).toBeNull();
+    expect(
+      getExternalWorkspaceAccess("read", { path: `${tmp}/notes.txt` }, cwd),
+    ).toBeNull();
+    expect(
+      getExternalWorkspaceAccess(
+        "findRead",
+        { path: tmp, pattern: "*.log" },
+        cwd,
+      ),
+    ).toBeNull();
   });
 });
 
@@ -222,6 +276,24 @@ describe("getSafePrefixes", () => {
     } finally {
       if (prev === undefined) delete process.env.LITTLE_CODER_BASH_ALLOW;
       else process.env.LITTLE_CODER_BASH_ALLOW = prev;
+    }
+  });
+});
+
+describe("BUILTIN_SAFE_PREFIXES whitelist coverage", () => {
+  it("every builtin prefix passes isSafeBash", () => {
+    const prev = process.env.LITTLE_CODER_BASH_ALLOW;
+    delete process.env.LITTLE_CODER_BASH_ALLOW;
+    try {
+      const prefixes = getSafePrefixes(); // returns BUILTIN_SAFE_PREFIXES when env is empty
+      for (const prefix of prefixes) {
+        // Prefixes with trailing spaces need an argument since isSafeBash trims
+        const command = prefix.endsWith(" ") ? prefix + "test-arg" : prefix;
+        expect(isSafeBash(command, prefixes), `prefix "${prefix}"`).toBe(true);
+      }
+      expect(prefixes.length).toBeGreaterThan(50);
+    } finally {
+      process.env.LITTLE_CODER_BASH_ALLOW = prev;
     }
   });
 });

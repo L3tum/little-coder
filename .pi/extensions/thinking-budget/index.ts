@@ -3,7 +3,8 @@ import { harnessIntervention } from "../_shared/intervention.ts";
 
 // pi's thinking-level union (not re-exported from the package root). Mirrors
 // settings-manager's ThinkingLevel; structurally assignable to pi's own type.
-type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type ThinkingLevel =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 // Port of the thinking-budget cap + partial-trace reuse logic from
 // providers.py. little-coder's Python implementation aborts the stream
@@ -52,7 +53,9 @@ function charsToTokens(chars: number): number {
 // and older SDK builds may lack the getter.
 function safeGetThinkingLevel(pi: ExtensionAPI): ThinkingLevel | undefined {
   try {
-    return typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : undefined;
+    return typeof pi.getThinkingLevel === "function"
+      ? pi.getThinkingLevel()
+      : undefined;
   } catch {
     return undefined;
   }

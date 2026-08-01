@@ -66,7 +66,8 @@ function getToolCallHandler() {
     },
   };
   setupWriteGuard(pi as any);
-  if (!handler) throw new Error("write-guard did not register a tool_call handler");
+  if (!handler)
+    throw new Error("write-guard did not register a tool_call handler");
   return handler;
 }
 
@@ -90,13 +91,18 @@ describe("write-guard tool_call interceptor", () => {
   it("blocks a write to an existing file with an Edit recipe", async () => {
     const handler = getToolCallHandler();
     const ctx = makeCtx(dir);
-    const event = { toolName: "write", input: { path: existing, content: "new" } };
+    const event = {
+      toolName: "write",
+      input: { path: existing, content: "new" },
+    };
     const result = await handler(event, ctx);
     expect(result?.block).toBe(true);
     expect(result.reason).toContain("already exists");
     expect(result.reason).toContain('"name": "edit"'); // correct pi edit recipe
     expect(result.reason).toContain("oldText");
-    expect(ctx.notifies[0]).toMatch(/harness intervention:.*redirected the model to Edit/i);
+    expect(ctx.notifies[0]).toMatch(
+      /harness intervention:.*redirected the model to Edit/i,
+    );
   });
 
   it("allows a write to a NEW file without creating it and normalizes the path in place", async () => {
@@ -132,21 +138,30 @@ describe("write-guard tool_call interceptor", () => {
   it("is case-insensitive on the tool name", async () => {
     const handler = getToolCallHandler();
     const ctx = makeCtx(dir);
-    const result = await handler({ toolName: "Write", input: { path: existing } }, ctx);
+    const result = await handler(
+      { toolName: "Write", input: { path: existing } },
+      ctx,
+    );
     expect(result?.block).toBe(true);
   });
 
   it("ignores non-write tools", async () => {
     const handler = getToolCallHandler();
     const ctx = makeCtx(dir);
-    const result = await handler({ toolName: "read", input: { path: existing } }, ctx);
+    const result = await handler(
+      { toolName: "read", input: { path: existing } },
+      ctx,
+    );
     expect(result).toBeUndefined();
   });
 
   it("ignores a write call with no path argument", async () => {
     const handler = getToolCallHandler();
     const ctx = makeCtx(dir);
-    const result = await handler({ toolName: "write", input: { content: "x" } }, ctx);
+    const result = await handler(
+      { toolName: "write", input: { content: "x" } },
+      ctx,
+    );
     expect(result).toBeUndefined();
   });
 });

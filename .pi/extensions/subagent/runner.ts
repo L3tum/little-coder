@@ -9,7 +9,14 @@ import { startSubprocess } from "../_shared/subprocess.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+// AgentToolResult is re-exported by pi-agent-core which is not always installed.
+// Define the minimal shape we need locally.
+type AgentToolResult<TDetails = unknown> = {
+  content: Array<{ type: "text"; text: string }>;
+  details?: TDetails;
+  isError?: boolean;
+  usage?: Record<string, number>;
+};
 import type { AgentConfig } from "./agents.js";
 import { parseInheritedCliArgs } from "./runner-cli.js";
 import { processPiJsonLine } from "./runner-events.js";
@@ -30,6 +37,47 @@ const SUBAGENT_MAX_DEPTH_ENV = "PI_SUBAGENT_MAX_DEPTH";
 const SUBAGENT_STACK_ENV = "PI_SUBAGENT_STACK";
 const SUBAGENT_PREVENT_CYCLES_ENV = "PI_SUBAGENT_PREVENT_CYCLES";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
+
+/** Maps signal names to their POSIX numbers for exit code computation. */
+const SIGNAL_MAP: Record<string, number> = {
+  SIGHUP: 1,
+  SIGINT: 2,
+  SIGQUIT: 3,
+  SIGILL: 4,
+  SIGTRAP: 5,
+  SIGABRT: 6,
+  SIGFPE: 8,
+  SIGSEGV: 11,
+  SIGPIPE: 13,
+  SIGALRM: 14,
+  SIGTERM: 15,
+  SIGKILL: 9,
+  SIGCHLD: 17,
+  SIGCONT: 18,
+  SIGSTOP: 19,
+  SIGTSTP: 20,
+  SIGTTIN: 21,
+  SIGTTOU: 22,
+  SIGBREAK: 21,
+  SIGBUS: 10,
+  SIGINFO: 29,
+  SIGIO: 29,
+  SIGIOT: 6,
+  SIGLOST: 29,
+  SIGPOLL: 29,
+  SIGPROF: 27,
+  SIGPWR: 30,
+  SIGSTKFLT: 16,
+  SIGSYS: 12,
+  SIGUNUSED: 31,
+  SIGURG: 23,
+  SIGUSR1: 10,
+  SIGUSR2: 12,
+  SIGVTALRM: 26,
+  SIGWINCH: 28,
+  SIGXCPU: 24,
+  SIGXFSZ: 25,
+};
 
 type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
@@ -151,6 +199,8 @@ export interface RunAgentOptions {
   delegationMode: DelegationMode;
   /** Serialized parent session snapshot used when delegationMode is "fork". */
   forkSessionSnapshotJsonl?: string;
+  /** Override the agent's system prompt for this run. */
+  systemPromptOverride?: string;
   /** Current delegation depth of the caller process. */
   parentDepth: number;
   /** Delegation stack from the caller process (ancestor agent names). */
@@ -183,6 +233,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     taskCwd,
     delegationMode,
     forkSessionSnapshotJsonl,
+    systemPromptOverride,
     parentDepth,
     parentAgentStack,
     maxDepth,
@@ -253,8 +304,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
   // Write system prompt to temp file if needed
   let promptTmpDir: string | null = null;
   let promptTmpPath: string | null = null;
-  if (agent.systemPrompt.trim()) {
-    const tmp = writePromptToTempFile(agent.name, agent.systemPrompt);
+  const effectivePrompt = systemPromptOverride ?? agent.systemPrompt;
+  if (effectivePrompt.trim()) {
+    const tmp = writePromptToTempFile(agent.name, effectivePrompt);
     promptTmpDir = tmp.dir;
     promptTmpPath = tmp.filePath;
   }
@@ -263,7 +315,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
   let forkSessionTmpDir: string | null = null;
   let forkSessionTmpPath: string | null = null;
   if (delegationMode === "fork" && forkSessionSnapshotJsonl) {
-    const tmp = writeForkSessionToTempFile(agent.name, forkSessionSnapshotJsonl);
+    const tmp = writeForkSessionToTempFile(
+      agent.name,
+      forkSessionSnapshotJsonl,
+    );
     forkSessionTmpDir = tmp.dir;
     forkSessionTmpPath = tmp.filePath;
   }
@@ -321,9 +376,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       const terminateChild = () => {
         if (isWindows) {
           if (proc.pid !== undefined) {
-            const killer = spawn("taskkill", ["/T", "/F", "/PID", String(proc.pid)], {
-              stdio: "ignore",
-            });
+            const killer = spawn(
+              "taskkill",
+              ["/T", "/F", "/PID", String(proc.pid)],
+              {
+                stdio: "ignore",
+              },
+            );
             killer.unref();
           }
           return;
@@ -388,12 +447,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       proc.stdout!.on("data", onStdoutData);
       proc.stderr!.on("data", onStderrData);
 
-      proc.on("close", (code, signal) => {
+      proc.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
         didClose = true;
         if (buffer.trim()) flushBufferedLines(buffer);
         if (signal) {
-          const signalNumber = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGILL: 4, SIGTRAP: 5, SIGABRT: 6, SIGFPE: 8, SIGSEGV: 11, SIGPIPE: 13, SIGALRM: 14, SIGTERM: 15, SIGKILL: 9, SIGCHLD: 17, SIGCONT: 18, SIGSTOP: 19, SIGTSTP: 20, SIGTTIN: 21, SIGTTOU: 22 }[signal] ?? 0;
-          result.stderr += (result.stderr.trim() ? "\n" : "") + `Process killed by signal ${signal}.`;
+          const signalNumber = SIGNAL_MAP[signal] ?? 0;
+          result.stderr +=
+            (result.stderr.trim() ? "\n" : "") +
+            `Process killed by signal ${signal}.`;
           finish(128 + signalNumber);
         } else {
           finish(code ?? 0);

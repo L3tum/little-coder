@@ -35,6 +35,9 @@ export interface InterventionCtx {
  *                "the model has thought long enough — forcing it to start
  *                implementing."
  */
-export function harnessIntervention(ctx: InterventionCtx, message: string): void {
+export function harnessIntervention(
+  ctx: InterventionCtx,
+  message: string,
+): void {
   ctx.ui.notify(`harness intervention: ${message}`, "info");
 }

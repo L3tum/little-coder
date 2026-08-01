@@ -41,7 +41,11 @@ class OutputAccumulator {
   private tempFilePath: string | undefined;
   private tempFileStream: WriteStream | undefined;
 
-  constructor(options: { maxLines: number; maxBytes: number; tempFilePrefix: string }) {
+  constructor(options: {
+    maxLines: number;
+    maxBytes: number;
+    tempFilePrefix: string;
+  }) {
     this.maxLines = options.maxLines;
     this.maxBytes = options.maxBytes;
     this.maxRollingBytes = Math.max(this.maxBytes * 2, 1);
@@ -49,7 +53,8 @@ class OutputAccumulator {
   }
 
   append(data: Buffer): void {
-    if (this.finished) throw new Error("Cannot append to a finished output accumulator");
+    if (this.finished)
+      throw new Error("Cannot append to a finished output accumulator");
     this.totalRawBytes += data.length;
     this.appendDecodedText(this.decoder.decode(data, { stream: true }));
     if (this.tempFileStream || this.shouldUseTempFile()) {
@@ -72,19 +77,22 @@ class OutputAccumulator {
       maxLines: this.maxLines,
       maxBytes: this.maxBytes,
     });
-    const truncated = this.totalLines > this.maxLines || this.totalDecodedBytes > this.maxBytes;
+    const truncated =
+      this.totalLines > this.maxLines || this.totalDecodedBytes > this.maxBytes;
     const truncation = {
       ...tailTruncation,
       truncated,
       truncatedBy: truncated
-        ? (tailTruncation.truncatedBy ?? (this.totalDecodedBytes > this.maxBytes ? "bytes" : "lines"))
+        ? (tailTruncation.truncatedBy ??
+          (this.totalDecodedBytes > this.maxBytes ? "bytes" : "lines"))
         : null,
       totalLines: this.totalLines,
       totalBytes: this.totalDecodedBytes,
       maxLines: this.maxLines,
       maxBytes: this.maxBytes,
     };
-    if (options.persistIfTruncated && truncation.truncated) this.ensureTempFile();
+    if (options.persistIfTruncated && truncation.truncated)
+      this.ensureTempFile();
     return {
       content: truncation.content,
       truncation,
@@ -144,7 +152,8 @@ class OutputAccumulator {
     }
     let start = buffer.length - this.maxRollingBytes;
     while (start < buffer.length && (buffer[start] & 0xc0) === 0x80) start++;
-    this.tailStartsAtLineBoundary = start === 0 ? this.tailStartsAtLineBoundary : buffer[start - 1] === 0x0a;
+    this.tailStartsAtLineBoundary =
+      start === 0 ? this.tailStartsAtLineBoundary : buffer[start - 1] === 0x0a;
     this.tailText = buffer.subarray(start).toString("utf-8");
     this.tailBytes = byteLength(this.tailText);
   }
@@ -152,11 +161,17 @@ class OutputAccumulator {
   private getSnapshotText(): string {
     if (this.tailStartsAtLineBoundary) return this.tailText;
     const firstNewline = this.tailText.indexOf("\n");
-    return firstNewline === -1 ? this.tailText : this.tailText.slice(firstNewline + 1);
+    return firstNewline === -1
+      ? this.tailText
+      : this.tailText.slice(firstNewline + 1);
   }
 
   private shouldUseTempFile(): boolean {
-    return this.totalRawBytes > this.maxBytes || this.totalDecodedBytes > this.maxBytes || this.totalLines > this.maxLines;
+    return (
+      this.totalRawBytes > this.maxBytes ||
+      this.totalDecodedBytes > this.maxBytes ||
+      this.totalLines > this.maxLines
+    );
   }
 
   private ensureTempFile(): void {
@@ -175,7 +190,10 @@ export function isWithinDirectory(root: string, target: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-export function resolveWorkspaceCwd(requested: string, cwd: string): { ok: true; path: string } | { ok: false; reason: string } {
+export function resolveWorkspaceCwd(
+  requested: string,
+  cwd: string,
+): { ok: true; path: string } | { ok: false; reason: string } {
   const trimmed = requested.trim();
   if (!trimmed) return { ok: true, path: cwd };
   const resolved = resolve(cwd, trimmed);
@@ -202,24 +220,40 @@ export default function (pi: any) {
       "Optionally provide a timeout in seconds. Optionally provide cwd to run from the current working directory or one of its subdirectories.",
     parameters: Type.Object({
       command: Type.String({ description: "Bash command to execute" }),
-      timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
-      cwd: Type.Optional(Type.String({ description: "Working directory. Must be current working directory or its subdirectory." })),
+      timeout: Type.Optional(
+        Type.Number({
+          description: "Timeout in seconds (optional, no default timeout)",
+        }),
+      ),
+      cwd: Type.Optional(
+        Type.String({
+          description:
+            "Working directory. Must be current working directory or its subdirectory.",
+        }),
+      ),
     }),
     prepareArguments(args: any) {
       if (!args || typeof args !== "object") return args;
       return {
         command: typeof args.command === "string" ? args.command : "",
         timeout: typeof args.timeout === "number" ? args.timeout : undefined,
-        cwd: typeof args.cwd === "string"
-          ? args.cwd
-          : typeof args.workingDirectory === "string"
-            ? args.workingDirectory
-            : typeof args.working_directory === "string"
-              ? args.working_directory
-              : undefined,
+        cwd:
+          typeof args.cwd === "string"
+            ? args.cwd
+            : typeof args.workingDirectory === "string"
+              ? args.workingDirectory
+              : typeof args.working_directory === "string"
+                ? args.working_directory
+                : undefined,
       };
     },
-    async execute(_toolCallId: string, input: any, signal: AbortSignal, onUpdate: any, ctx: any) {
+    async execute(
+      _toolCallId: string,
+      input: any,
+      signal: AbortSignal,
+      onUpdate: any,
+      ctx: any,
+    ) {
       const chosenCwd = typeof input?.cwd === "string" ? input.cwd : "";
       const resolved = resolveWorkspaceCwd(chosenCwd, ctx.cwd);
       if (!resolved.ok) {
@@ -247,7 +281,9 @@ export default function (pi: any) {
         onUpdate({
           content: [{ type: "text", text: snapshot.content || "" }],
           details: {
-            truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
+            truncation: snapshot.truncation.truncated
+              ? snapshot.truncation
+              : undefined,
             fullOutputPath: snapshot.fullOutputPath,
           },
         });
@@ -310,7 +346,8 @@ export default function (pi: any) {
         return { text, details };
       };
 
-      const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
+      const appendStatus = (text: string, status: string) =>
+        `${text ? `${text}\n\n` : ""}${status}`;
 
       try {
         let exitCode;
@@ -329,7 +366,12 @@ export default function (pi: any) {
           }
           if (err instanceof Error && err.message.startsWith("timeout:")) {
             const timeoutSecs = err.message.split(":")[1];
-            throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
+            throw new Error(
+              appendStatus(
+                text,
+                `Command timed out after ${timeoutSecs} seconds`,
+              ),
+            );
           }
           throw err;
         }
@@ -337,7 +379,9 @@ export default function (pi: any) {
         const snapshot = await finishOutput();
         const { text: outputText, details } = formatOutput(snapshot);
         if (exitCode !== 0 && exitCode !== null) {
-          throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
+          throw new Error(
+            appendStatus(outputText, `Command exited with code ${exitCode}`),
+          );
         }
         return { content: [{ type: "text", text: outputText }], details };
       } finally {

@@ -1,6 +1,14 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createReadToolDefinition, createWriteToolDefinition } from "@earendil-works/pi-coding-agent";
-import { findCompatibleToolName, rewriteValueToSchema, type CompatRewriteStats } from "./heuristics.ts";
+import {
+  createReadToolDefinition,
+  createWriteToolDefinition,
+} from "@earendil-works/pi-coding-agent";
+import {
+  findCompatibleToolName,
+  rewriteValueToSchema,
+  type CompatRewriteStats,
+} from "./heuristics.ts";
+import { isTokenLimitError } from "../token-limit-guard/index.ts";
 
 interface CompatStats {
   toolCallsSeen: number;
@@ -29,7 +37,10 @@ function addNote(stats: CompatStats, note: string): void {
   if (stats.recentNotes.length > 12) stats.recentNotes.length = 12;
 }
 
-function replaceObjectContents(target: Record<string, unknown>, next: Record<string, unknown>): void {
+function replaceObjectContents(
+  target: Record<string, unknown>,
+  next: Record<string, unknown>,
+): void {
   for (const key of Object.keys(target)) delete target[key];
   for (const [key, value] of Object.entries(next)) target[key] = value;
 }
@@ -43,7 +54,9 @@ function renderStats(stats: CompatStats): string {
     `  arrayWraps: ${stats.arrayWraps}`,
     `  unknownToolCorrections: ${stats.unknownToolCorrections}`,
   ];
-  const tools = Object.entries(stats.rewrittenByTool).sort((a, b) => b[1] - a[1]);
+  const tools = Object.entries(stats.rewrittenByTool).sort(
+    (a, b) => b[1] - a[1],
+  );
   if (tools.length > 0) {
     lines.push("", "Rewrites by tool:");
     for (const [tool, count] of tools) lines.push(`  ${tool}: ${count}`);
@@ -67,7 +80,8 @@ export default function (pi: ExtensionAPI) {
     // with a prepareArguments shim that applies the rewrite before validation.
     const wrapPrepare = (def: any) => {
       def.prepareArguments = (args: unknown) => {
-        if (!args || typeof args !== "object" || Array.isArray(args)) return args;
+        if (!args || typeof args !== "object" || Array.isArray(args))
+          return args;
         const out = rewriteValueToSchema(
           args as Record<string, unknown>,
           def.parameters as any,
@@ -76,14 +90,23 @@ export default function (pi: ExtensionAPI) {
           changed: boolean;
           stats: CompatRewriteStats;
         };
-        if (!out.changed || !out.value || typeof out.value !== "object" || Array.isArray(out.value))
+        if (
+          !out.changed ||
+          !out.value ||
+          typeof out.value !== "object" ||
+          Array.isArray(out.value)
+        )
           return args;
         return out.value;
       };
       return def;
     };
-    pi.registerTool(wrapPrepare(createReadToolDefinition(process.cwd())) as any);
-    pi.registerTool(wrapPrepare(createWriteToolDefinition(process.cwd())) as any);
+    pi.registerTool(
+      wrapPrepare(createReadToolDefinition(process.cwd())) as any,
+    );
+    pi.registerTool(
+      wrapPrepare(createWriteToolDefinition(process.cwd())) as any,
+    );
   });
 
   pi.registerCommand("compat-stats", {
@@ -96,8 +119,15 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("tool_call", async (event) => {
     stats.toolCallsSeen++;
-    if (!event.input || typeof event.input !== "object" || Array.isArray(event.input)) return;
-    const tool = (pi.getAllTools() as Array<{ name: string; parameters?: unknown }>).find((t) => t.name === event.toolName);
+    if (
+      !event.input ||
+      typeof event.input !== "object" ||
+      Array.isArray(event.input)
+    )
+      return;
+    const tool = (
+      pi.getAllTools() as Array<{ name: string; parameters?: unknown }>
+    ).find((t) => t.name === event.toolName);
     const schema = tool?.parameters as any;
     if (!schema) return;
 
@@ -106,19 +136,33 @@ export default function (pi: ExtensionAPI) {
       changed: boolean;
       stats: CompatRewriteStats;
     };
-    if (!out.changed || !out.value || typeof out.value !== "object" || Array.isArray(out.value)) return;
+    if (
+      !out.changed ||
+      !out.value ||
+      typeof out.value !== "object" ||
+      Array.isArray(out.value)
+    )
+      return;
 
-    replaceObjectContents(event.input as Record<string, unknown>, out.value as Record<string, unknown>);
+    replaceObjectContents(
+      event.input as Record<string, unknown>,
+      out.value as Record<string, unknown>,
+    );
     stats.mutatedCalls++;
     stats.renamedKeys += out.stats.renamedKeys.length;
     stats.arrayWraps += out.stats.arrayWrappedKeys.length;
-    stats.rewrittenByTool[event.toolName] = (stats.rewrittenByTool[event.toolName] ?? 0) + 1;
+    stats.rewrittenByTool[event.toolName] =
+      (stats.rewrittenByTool[event.toolName] ?? 0) + 1;
     const detailParts: string[] = [];
     if (out.stats.renamedKeys.length > 0) {
-      detailParts.push(out.stats.renamedKeys.map((p) => `${p.from}→${p.to}`).join(", "));
+      detailParts.push(
+        out.stats.renamedKeys.map((p) => `${p.from}→${p.to}`).join(", "),
+      );
     }
     if (out.stats.arrayWrappedKeys.length > 0) {
-      detailParts.push(`wrapped arrays: ${out.stats.arrayWrappedKeys.join(", ")}`);
+      detailParts.push(
+        `wrapped arrays: ${out.stats.arrayWrappedKeys.join(", ")}`,
+      );
     }
     addNote(stats, `${event.toolName}: ${detailParts.join("; ")}`);
   });
@@ -126,9 +170,25 @@ export default function (pi: ExtensionAPI) {
   pi.on("turn_end", async (event, ctx) => {
     const message = (event as any).message;
     if (!message || (message as any).stopReason !== "error") return;
-    const knownTools = new Set((pi.getAllTools() as Array<{ name: string }>).map((t) => t.name));
-    const content = Array.isArray(message.content) ? message.content : [];
-    const calls = content
+
+    const messageContent = Array.isArray(message.content)
+      ? message.content
+      : [];
+
+    // Skip steer logic for token limit errors — retrying won't help, and the
+    // token-limit-guard extension handles the user-facing message.
+    if (isTokenLimitError(message.errorMessage)) return;
+    if (
+      messageContent.some(
+        (b: any) => b?.type === "text" && isTokenLimitError(b.text),
+      )
+    )
+      return;
+
+    const knownTools = new Set(
+      (pi.getAllTools() as Array<{ name: string }>).map((t) => t.name),
+    );
+    const calls = messageContent
       .filter((block: any) => block?.type === "toolCall")
       .map((block: any) => ({
         name: String(block.name ?? ""),
@@ -149,12 +209,15 @@ export default function (pi: ExtensionAPI) {
         fixedCall,
         "```",
       ].join("\n");
-      ctx.ui.notify(`compatibility: corrected tool '${call.name}' → '${corrected}'`, "warning");
+      ctx.ui.notify(
+        `compatibility: corrected tool '${call.name}' → '${corrected}'`,
+        "warning",
+      );
       pi.sendUserMessage(text, { deliverAs: "steer" });
       return;
     }
 
-    const rawText = content
+    const rawText = messageContent
       .filter((block: any) => block?.type === "text")
       .map((block: any) => String(block.text ?? ""))
       .join("\n");
@@ -166,7 +229,10 @@ export default function (pi: ExtensionAPI) {
     stats.unknownToolCorrections++;
     addNote(stats, `tool name: ${bad}→${corrected}`);
     const text = `Compatibility correction: tool '${bad}' should be '${corrected}'. Retry the same call with the corrected tool name.`;
-    ctx.ui.notify(`compatibility: corrected tool '${bad}' → '${corrected}'`, "warning");
+    ctx.ui.notify(
+      `compatibility: corrected tool '${bad}' → '${corrected}'`,
+      "warning",
+    );
     pi.sendUserMessage(text, { deliverAs: "steer" });
   });
 }

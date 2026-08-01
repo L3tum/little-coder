@@ -62,20 +62,47 @@ export default function (pi: ExtensionAPI) {
       const n = (note ?? "").trim();
       let sn = snippet ?? "";
       if (!src) {
-        return { content: [{ type: "text", text: "Error: source is required (URL or identifier)" }], details: {}, isError: true };
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error: source is required (URL or identifier)",
+            },
+          ],
+          details: {},
+          isError: true,
+        };
       }
       if (!n) {
-        return { content: [{ type: "text", text: "Error: note is required (1-line summary of the snippet)" }], details: {}, isError: true };
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Error: note is required (1-line summary of the snippet)",
+            },
+          ],
+          details: {},
+          isError: true,
+        };
       }
       if (!sn) {
-        return { content: [{ type: "text", text: "Error: snippet is required" }], details: {}, isError: true };
+        return {
+          content: [{ type: "text", text: "Error: snippet is required" }],
+          details: {},
+          isError: true,
+        };
       }
       if (sn.length > SNIPPET_CAP) {
-        sn = sn.slice(0, SNIPPET_CAP) + `\n[... snippet truncated, kept ${SNIPPET_CAP} chars ...]`;
+        sn =
+          sn.slice(0, SNIPPET_CAP) +
+          `\n[... snippet truncated, kept ${SNIPPET_CAP} chars ...]`;
       }
       const id = "e" + randomBytes(3).toString("hex");
       bucket().push({ id, source: src, note: n, snippet: sn });
-      return { content: [{ type: "text", text: `stored ${id}: ${n}` }], details: {} };
+      return {
+        content: [{ type: "text", text: `stored ${id}: ${n}` }],
+        details: {},
+      };
     },
   });
 
@@ -89,14 +116,29 @@ export default function (pi: ExtensionAPI) {
     async execute(_id, { id }) {
       const eid = (id ?? "").trim();
       if (!eid) {
-        return { content: [{ type: "text", text: "Error: id is required" }], details: {}, isError: true };
+        return {
+          content: [{ type: "text", text: "Error: id is required" }],
+          details: {},
+          isError: true,
+        };
       }
       const e = bucket().find((x) => x.id === eid);
       if (!e) {
-        return { content: [{ type: "text", text: `Error: evidence id '${eid}' not found` }], details: {}, isError: true };
+        return {
+          content: [
+            { type: "text", text: `Error: evidence id '${eid}' not found` },
+          ],
+          details: {},
+          isError: true,
+        };
       }
       return {
-        content: [{ type: "text", text: `[${e.id}] source: ${e.source}\nnote: ${e.note}\nsnippet:\n${e.snippet}` }],
+        content: [
+          {
+            type: "text",
+            text: `[${e.id}] source: ${e.source}\nnote: ${e.note}\nsnippet:\n${e.snippet}`,
+          },
+        ],
         details: {},
       };
     },
@@ -105,15 +147,22 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "EvidenceList",
     label: "EvidenceList",
-    description: "List all evidence entries in this session: id, source, one-line note.",
+    description:
+      "List all evidence entries in this session: id, source, one-line note.",
     parameters: Type.Object({}),
     async execute() {
       const b = bucket();
       if (b.length === 0) {
-        return { content: [{ type: "text", text: "(no evidence stored yet)" }], details: {} };
+        return {
+          content: [{ type: "text", text: "(no evidence stored yet)" }],
+          details: {},
+        };
       }
       const lines = b.map((e) => `${e.id}\t${e.source}\t${e.note}`);
-      return { content: [{ type: "text", text: lines.join("\n") }], details: {} };
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        details: {},
+      };
     },
   });
 }

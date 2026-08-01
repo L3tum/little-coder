@@ -18,7 +18,11 @@ function looksLikeExplicitRelativePath(value) {
 function resolvePathArg(value, options = {}) {
   const { allowPackageSource = false, alwaysResolveRelative = false } = options;
   if (!value) return value;
-  if (allowPackageSource && (value.startsWith("npm:") || value.startsWith("git:"))) return value;
+  if (
+    allowPackageSource &&
+    (value.startsWith("npm:") || value.startsWith("git:"))
+  )
+    return value;
   if (value.startsWith("~/")) return path.join(os.homedir(), value.slice(2));
   if (path.isAbsolute(value)) return value;
 
@@ -120,7 +124,10 @@ export function parseInheritedCliArgs(argv) {
     if (flagName === "--extension" || flagName === "-e") {
       const [value, skip] = getValue();
       if (value !== undefined) {
-        extensionArgs.push(flagName, resolvePathArg(value, { allowPackageSource: true }));
+        extensionArgs.push(
+          flagName,
+          resolvePathArg(value, { allowPackageSource: true }),
+        );
       }
       i += skip;
       continue;
@@ -128,7 +135,8 @@ export function parseInheritedCliArgs(argv) {
 
     if (["--skill", "--prompt-template", "--theme"].includes(flagName)) {
       const [value, skip] = getValue();
-      if (value !== undefined) alwaysProxy.push(flagName, resolvePathArg(value));
+      if (value !== undefined)
+        alwaysProxy.push(flagName, resolvePathArg(value));
       i += skip;
       continue;
     }
@@ -136,19 +144,19 @@ export function parseInheritedCliArgs(argv) {
     if (flagName === "--session-dir") {
       const [value, skip] = getValue();
       if (value !== undefined) {
-        alwaysProxy.push(flagName, resolvePathArg(value, { alwaysResolveRelative: true }));
+        alwaysProxy.push(
+          flagName,
+          resolvePathArg(value, { alwaysResolveRelative: true }),
+        );
       }
       i += skip;
       continue;
     }
 
     if (
-      [
-        "--provider",
-        "--api-key",
-        "--system-prompt",
-        "--models",
-      ].includes(flagName)
+      ["--provider", "--api-key", "--system-prompt", "--models"].includes(
+        flagName,
+      )
     ) {
       const [value, skip] = getValue();
       if (value !== undefined) alwaysProxy.push(flagName, value);

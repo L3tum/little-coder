@@ -9,6 +9,7 @@ user_invocable: false
 description: Checklist for citing saved evidence before final answers on research tasks.
 keywords: [cite, citation, evidence, final answer, research, source]
 ---
+
 ## Cite-before-answer checklist
 
 Before typing your final answer, run this check internally:

@@ -31,7 +31,9 @@ const toolSkills = [
 
 describe("frontmatter-driven tool prediction", () => {
   it("predicts read for 'read config.py'", () => {
-    expect(predictTools("read config.py and show me the output", toolSkills)).toContain("read");
+    expect(
+      predictTools("read config.py and show me the output", toolSkills),
+    ).toContain("read");
   });
   it("predicts edit for 'fix the bug'", () => {
     const p = predictTools("please fix the bug in auth.py", toolSkills);
@@ -69,7 +71,9 @@ describe("skills directory loads from repo", () => {
   it("every tool skill has target_tool in frontmatter", () => {
     const files = readdirSync(toolsDir).filter((f) => f.endsWith(".md"));
     for (const file of files) {
-      const parsed = parseSkillFile(readFileSync(join(toolsDir, file), "utf-8"));
+      const parsed = parseSkillFile(
+        readFileSync(join(toolsDir, file), "utf-8"),
+      );
       expect(parsed, `${file} should parse`).not.toBeNull();
       expect(typeof parsed!.frontmatter.target_tool).toBe("string");
     }
@@ -79,20 +83,40 @@ describe("skills directory loads from repo", () => {
     const files = readdirSync(toolsDir).filter((f) => f.endsWith(".md"));
     const targets = new Set<string>();
     for (const file of files) {
-      const parsed = parseSkillFile(readFileSync(join(toolsDir, file), "utf-8"));
+      const parsed = parseSkillFile(
+        readFileSync(join(toolsDir, file), "utf-8"),
+      );
       const t = parsed?.frontmatter.target_tool;
       if (typeof t === "string") targets.add(t);
     }
-    for (const core of ["read", "write", "edit", "bash", "glob", "grep", "webfetch"]) {
+    for (const core of [
+      "read",
+      "write",
+      "edit",
+      "bash",
+      "glob",
+      "grep",
+      "webfetch",
+    ]) {
       expect(targets.has(core), `expected target_tool=${core}`).toBe(true);
     }
   });
 
   it("knowledge/protocol skills are selectable by keyword metadata", () => {
     const entries = [knowledgeDir, protocolsDir].flatMap((dir) =>
-      readdirSync(dir).filter((f) => f.endsWith(".md")).map((file) => parseSkillFile(readFileSync(join(dir, file), "utf-8"))),
+      readdirSync(dir)
+        .filter((f) => f.endsWith(".md"))
+        .map((file) => parseSkillFile(readFileSync(join(dir, file), "utf-8"))),
     );
-    expect(entries.some((entry) => Array.isArray(entry?.frontmatter.keywords) && entry.frontmatter.keywords.length > 0)).toBe(true);
-    expect(entries.some((entry) => Array.isArray(entry?.frontmatter.requires_tools))).toBe(true);
+    expect(
+      entries.some(
+        (entry) =>
+          Array.isArray(entry?.frontmatter.keywords) &&
+          entry.frontmatter.keywords.length > 0,
+      ),
+    ).toBe(true);
+    expect(
+      entries.some((entry) => Array.isArray(entry?.frontmatter.requires_tools)),
+    ).toBe(true);
   });
 });

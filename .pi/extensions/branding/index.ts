@@ -1,6 +1,10 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { WelcomeHeader, discoverLoadedCounts, getRecentSessions } from "pi-powerline-footer/welcome.ts";
+import {
+  WelcomeHeader,
+  discoverLoadedCounts,
+  getRecentSessions,
+} from "pi-powerline-footer/welcome.ts";
 import { readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +43,8 @@ function readVersion(): string {
     const here = dirname(fileURLToPath(import.meta.url));
     const pkgPath = join(here, "..", "..", "..", "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-    if (typeof pkg?.version === "string" && pkg.version.length > 0) return pkg.version;
+    if (typeof pkg?.version === "string" && pkg.version.length > 0)
+      return pkg.version;
   } catch {
     // best-effort; fall through
   }
@@ -232,15 +237,25 @@ function buildHeader(theme: Theme): string[] {
   ];
 }
 
-function applyBranding(ctx: { ui: { setHeader: Function; setTitle: Function }; cwd: string; model?: { name?: string; id?: string; provider?: string } }): void {
+function applyBranding(ctx: {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  ui: { setHeader: Function; setTitle: Function };
+  cwd: string;
+  model?: { name?: string; id?: string; provider?: string };
+}): void {
   const modelName = ctx.model?.name || ctx.model?.id || "No model";
   const providerName = ctx.model?.provider || "Unknown";
-  const powerlineHeader = new WelcomeHeader(modelName, providerName, getRecentSessions(3), discoverLoadedCounts());
+  const powerlineHeader = new WelcomeHeader(
+    modelName,
+    providerName,
+    getRecentSessions(3),
+    discoverLoadedCounts(),
+  );
 
   ctx.ui.setHeader((_tui: unknown, theme: Theme) => ({
     render(width: number): string[] {
-      return [...powerlineHeader.render(width), ...buildHeader(theme)].map((line) =>
-        truncateToWidth(line, width, "…"),
+      return [...powerlineHeader.render(width), ...buildHeader(theme)].map(
+        (line) => truncateToWidth(line, width, "…"),
       );
     },
     invalidate() {

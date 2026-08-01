@@ -23,7 +23,12 @@ export interface ProviderModelEntry {
   input: ("text" | "image")[];
   contextWindow: number;
   maxTokens: number;
-  cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
 }
 
 export interface ProviderEntry {
@@ -40,7 +45,11 @@ export interface ModelsFile {
 export interface LoadResult {
   providers: Record<string, ProviderEntry>;
   /** Files that were attempted, in resolution order. Useful for diagnostics. */
-  sources: { path: string; status: "ok" | "missing" | "invalid"; error?: string }[];
+  sources: {
+    path: string;
+    status: "ok" | "missing" | "invalid";
+    error?: string;
+  }[];
 }
 
 /** Provider env knob: if set, overrides the provider's baseUrl. Originally a
@@ -54,7 +63,9 @@ const LEGACY_BASE_URL_ENV: Record<string, string> = {
 };
 
 /** Resolution order for the user-override file. First existing path wins. */
-export function resolveOverridePath(env: NodeJS.ProcessEnv = process.env): string | undefined {
+export function resolveOverridePath(
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
   if (env.LITTLE_CODER_MODELS_FILE) return env.LITTLE_CODER_MODELS_FILE;
   const xdg = env.XDG_CONFIG_HOME;
   if (xdg) return join(xdg, "little-coder", "models.json");
@@ -64,23 +75,39 @@ export function resolveOverridePath(env: NodeJS.ProcessEnv = process.env): strin
 
 function parseModelsFile(raw: string): ModelsFile {
   const parsed = JSON.parse(raw);
-  if (!parsed || typeof parsed !== "object" || !parsed.providers || typeof parsed.providers !== "object") {
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    !parsed.providers ||
+    typeof parsed.providers !== "object"
+  ) {
     throw new Error("expected top-level { providers: { ... } }");
   }
   return parsed as ModelsFile;
 }
 
-function readIfPresent(path: string): { kind: "ok"; data: ModelsFile } | { kind: "missing" } | { kind: "invalid"; error: string } {
+function readIfPresent(
+  path: string,
+):
+  | { kind: "ok"; data: ModelsFile }
+  | { kind: "missing" }
+  | { kind: "invalid"; error: string } {
   if (!existsSync(path)) return { kind: "missing" };
   try {
     const raw = readFileSync(path, "utf-8");
     return { kind: "ok", data: parseModelsFile(raw) };
   } catch (err) {
-    return { kind: "invalid", error: err instanceof Error ? err.message : String(err) };
+    return {
+      kind: "invalid",
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
-export function applyEnvOverrides(providers: Record<string, ProviderEntry>, env: NodeJS.ProcessEnv = process.env): Record<string, ProviderEntry> {
+export function applyEnvOverrides(
+  providers: Record<string, ProviderEntry>,
+  env: NodeJS.ProcessEnv = process.env,
+): Record<string, ProviderEntry> {
   const out: Record<string, ProviderEntry> = {};
   for (const [name, entry] of Object.entries(providers)) {
     const envVar = LEGACY_BASE_URL_ENV[name];
@@ -114,7 +141,10 @@ export function mergeProviders(
  * apply env-var baseUrl overrides for the legacy providers, and return the
  * merged provider map plus diagnostics for each source.
  */
-export function loadProviders(pkgRoot: string, env: NodeJS.ProcessEnv = process.env): LoadResult {
+export function loadProviders(
+  pkgRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+): LoadResult {
   const sources: LoadResult["sources"] = [];
   const defaultPath = join(pkgRoot, "models.json");
   const defaultRead = readIfPresent(defaultPath);
@@ -125,7 +155,11 @@ export function loadProviders(pkgRoot: string, env: NodeJS.ProcessEnv = process.
   } else if (defaultRead.kind === "missing") {
     sources.push({ path: defaultPath, status: "missing" });
   } else {
-    sources.push({ path: defaultPath, status: "invalid", error: defaultRead.error });
+    sources.push({
+      path: defaultPath,
+      status: "invalid",
+      error: defaultRead.error,
+    });
   }
 
   const overridePath = resolveOverridePath(env);
@@ -138,7 +172,11 @@ export function loadProviders(pkgRoot: string, env: NodeJS.ProcessEnv = process.
     } else if (userRead.kind === "missing") {
       sources.push({ path: overridePath, status: "missing" });
     } else {
-      sources.push({ path: overridePath, status: "invalid", error: userRead.error });
+      sources.push({
+        path: overridePath,
+        status: "invalid",
+        error: userRead.error,
+      });
     }
   }
 
@@ -166,7 +204,10 @@ export function propsUrlFor(baseUrl: string): string {
  *  conversation can use); some builds also expose a top-level n_ctx. Returns
  *  undefined when absent or not a positive number. */
 export function contextWindowFromProps(json: unknown): number | undefined {
-  const j = json as { default_generation_settings?: { n_ctx?: unknown }; n_ctx?: unknown } | null;
+  const j = json as {
+    default_generation_settings?: { n_ctx?: unknown };
+    n_ctx?: unknown;
+  } | null;
   const n = Number(j?.default_generation_settings?.n_ctx ?? j?.n_ctx);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
@@ -181,7 +222,10 @@ export interface ProbeDeps {
  *  undefined on ANY failure (server down, no /props, non-JSON, timeout) so the
  *  caller falls back to the declared window — never throws, never blocks beyond
  *  timeoutMs. */
-export async function probeContextWindow(baseUrl: string, deps: ProbeDeps = {}): Promise<number | undefined> {
+export async function probeContextWindow(
+  baseUrl: string,
+  deps: ProbeDeps = {},
+): Promise<number | undefined> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const url = deps.url ?? propsUrlFor(baseUrl);
   const timeoutMs = deps.timeoutMs ?? 1500;

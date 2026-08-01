@@ -8,23 +8,28 @@ user-invocable: false
 description: Guidance for finding file paths with glob patterns.
 keywords: [glob, find, files, path, pattern, recursive, list]
 ---
+
 ## Glob Tool
+
 Find files matching a glob pattern.
 
 REQUIRED: pattern (glob pattern like "**/*.py")
 OPTIONAL: path (directory to search in, defaults to cwd)
 
 RULES:
+
 - Use ** for recursive matching across directories
 - Returns sorted list of matching file paths
 - Good for finding files by extension or name pattern
 
 EXAMPLE:
+
 ```tool
 {"name": "glob", "input": {"pattern": "**/*.py"}}
 ```
 
 EXAMPLE with path:
+
 ```tool
 {"name": "glob", "input": {"pattern": "*.md", "path": "/path/to/docs/"}}
 ```

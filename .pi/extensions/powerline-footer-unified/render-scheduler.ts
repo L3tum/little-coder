@@ -4,7 +4,10 @@ export interface RenderScheduler {
   cancel(): void;
 }
 
-export function createRenderScheduler(render: () => void, defaultDelayMs: number): RenderScheduler {
+export function createRenderScheduler(
+  render: () => void,
+  defaultDelayMs: number,
+): RenderScheduler {
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   return {

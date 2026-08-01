@@ -42,3 +42,7 @@ __pycache__/
 debug_payload.json
 brainstorm_outputs/
 .pi/memory/supersedes.json
+
+# Auto-generated plan artifacts (deep-plan pipeline output)
+plans/deep-plan-*.md
+PLAN.md

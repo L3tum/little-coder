@@ -42,12 +42,12 @@ The report opens in your browser automatically.
 
 ### Flags
 
-| Flag | Description |
-|------|-------------|
-| `--refresh` / `-r` | Invalidate all cached LLM facet extractions and re-run them |
-| `--no-open` | Generate the report without opening it in the browser |
-| `--since <N>d` | Only analyze sessions from the last N days (e.g. `--since 7d`) |
-| `--md` | Output a Markdown report instead of opening the HTML version |
+| Flag               | Description                                                    |
+| ------------------ | -------------------------------------------------------------- |
+| `--refresh` / `-r` | Invalidate all cached LLM facet extractions and re-run them    |
+| `--no-open`        | Generate the report without opening it in the browser          |
+| `--since <N>d`     | Only analyze sessions from the last N days (e.g. `--since 7d`) |
+| `--md`             | Output a Markdown report instead of opening the HTML version   |
 
 ### Examples
 
@@ -118,12 +118,12 @@ The pipeline runs in five phases:
 
 Results are cached in `~/.pi/agent/usage-data/`:
 
-| Path | Contents |
-|------|----------|
-| `session-meta/<id>.json` | Deterministic stats, cached permanently |
-| `facets/<id>.json` | LLM-extracted facets, cached permanently (clear with `--refresh`) |
-| `report.html` | Last generated report |
-| `report.md` | Last markdown export (when using `--md`) |
+| Path                     | Contents                                                          |
+| ------------------------ | ----------------------------------------------------------------- |
+| `session-meta/<id>.json` | Deterministic stats, cached permanently                           |
+| `facets/<id>.json`       | LLM-extracted facets, cached permanently (clear with `--refresh`) |
+| `report.html`            | Last generated report                                             |
+| `report.md`              | Last markdown export (when using `--md`)                          |
 
 ## Requirements
 

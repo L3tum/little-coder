@@ -15,9 +15,9 @@ const settingsPath = join(here, "..", "..", "settings.json");
 describe("benchmark-profiles resolution against real settings.json", () => {
   const settings = JSON.parse(readFileSync(settingsPath, "utf-8")).little_coder;
 
-  it("resolves base profile for llamacpp/qwen3.6-35b-a3b (budget bumped to 4096)", () => {
+  it("resolves base profile for llamacpp/qwen3.6-35b-a3b (budget bumped to 16384)", () => {
     const p = resolveProfileFrom(settings, "llamacpp/qwen3.6-35b-a3b");
-    expect(p.thinking_budget).toBe(4096);
+    expect(p.thinking_budget).toBe(16384);
     // base profiles no longer hardcode context_limit — it derives from the
     // model's live registered window at runtime (see resolveContextLimit).
     expect(p.context_limit).toBeUndefined();
@@ -25,7 +25,11 @@ describe("benchmark-profiles resolution against real settings.json", () => {
   });
 
   it("applies terminal_bench overrides", () => {
-    const p = resolveProfileFrom(settings, "llamacpp/qwen3.6-35b-a3b", "terminal_bench");
+    const p = resolveProfileFrom(
+      settings,
+      "llamacpp/qwen3.6-35b-a3b",
+      "terminal_bench",
+    );
     expect(p.thinking_budget).toBe(3000); // benchmark override kept
     expect(p.temperature).toBe(0.2);
     expect(p.max_turns).toBe(40);
@@ -40,21 +44,27 @@ describe("benchmark-profiles resolution against real settings.json", () => {
     expect(p.context_limit).toBe(65536);
   });
 
-  it("unknown model falls back to default_model_profile (also 4096)", () => {
+  it("unknown model falls back to default_model_profile (also 16384)", () => {
     const p = resolveProfileFrom(settings, "fake-provider/fake-model");
-    expect(p.thinking_budget).toBe(4096);
+    expect(p.thinking_budget).toBe(16384);
     expect(p.context_limit).toBeUndefined();
   });
 
   it("unknown benchmark name yields base profile unchanged", () => {
-    const p = resolveProfileFrom(settings, "llamacpp/qwen3.6-35b-a3b", "totally_made_up");
-    expect(p.thinking_budget).toBe(4096);
+    const p = resolveProfileFrom(
+      settings,
+      "llamacpp/qwen3.6-35b-a3b",
+      "totally_made_up",
+    );
+    expect(p.thinking_budget).toBe(16384);
     expect(p.max_turns).toBeUndefined();
   });
 
-  it("every shipped per-model profile carries the 4096 budget", () => {
+  it("every shipped per-model profile carries the 16384 budget", () => {
     for (const key of Object.keys(settings.model_profiles)) {
-      expect(resolveProfileFrom(settings, key).thinking_budget, key).toBe(4096);
+      expect(resolveProfileFrom(settings, key).thinking_budget, key).toBe(
+        16384,
+      );
     }
   });
 });
@@ -64,14 +74,16 @@ describe("separator-insensitive model-key matching (issue #8 quirk)", () => {
   // matched the hyphenated profile key, so per-model profiles were silently
   // skipped and everything fell back to default.
   const settings = {
-    default_model_profile: { thinking_budget: 4096 },
+    default_model_profile: { thinking_budget: 16384 },
     model_profiles: {
       "llamacpp/qwen3.6-35b-a3b": { thinking_budget: 1234, temperature: 0.3 },
     },
   };
 
   it("normKey collapses ':' to '-'", () => {
-    expect(normKey("llamacpp/qwen3.6:35b-a3b")).toBe("llamacpp/qwen3.6-35b-a3b");
+    expect(normKey("llamacpp/qwen3.6:35b-a3b")).toBe(
+      "llamacpp/qwen3.6-35b-a3b",
+    );
   });
 
   it("matches a colon runtime id to a hyphenated profile key", () => {
@@ -80,7 +92,9 @@ describe("separator-insensitive model-key matching (issue #8 quirk)", () => {
   });
 
   it("still matches the exact hyphenated id", () => {
-    expect(resolveProfileFrom(settings, "llamacpp/qwen3.6-35b-a3b").thinking_budget).toBe(1234);
+    expect(
+      resolveProfileFrom(settings, "llamacpp/qwen3.6-35b-a3b").thinking_budget,
+    ).toBe(1234);
   });
 
   it("matches via prefix when the runtime id has a tag suffix", () => {
@@ -89,7 +103,9 @@ describe("separator-insensitive model-key matching (issue #8 quirk)", () => {
   });
 
   it("an unrelated model still falls back to default", () => {
-    expect(resolveProfileFrom(settings, "ollama/llama3").thinking_budget).toBe(4096);
+    expect(resolveProfileFrom(settings, "ollama/llama3").thinking_budget).toBe(
+      16384,
+    );
   });
 });
 
@@ -118,7 +134,7 @@ describe("before_agent_start publishes a model-window contextLimit", () => {
     else delete process.env.LITTLE_CODER_BENCHMARK;
     try {
       const handlers: Record<string, ((e: any, c: any) => any)[]> = {};
-      const pi = { on: (n: string, h: any) => ((handlers[n] ??= []).push(h)) };
+      const pi = { on: (n: string, h: any) => (handlers[n] ??= []).push(h) };
       benchmarkProfiles(pi as any);
       const event: any = { systemPromptOptions: {} };
       const ctx: any = { model };
@@ -131,12 +147,20 @@ describe("before_agent_start publishes a model-window contextLimit", () => {
   }
 
   it("follows the model's contextWindow for a normal (non-benchmark) run", () => {
-    const lc = fireWith({ provider: "llamacpp", id: "qwen3.6-35b-a3b", contextWindow: 131072 });
+    const lc = fireWith({
+      provider: "llamacpp",
+      id: "qwen3.6-35b-a3b",
+      contextWindow: 131072,
+    });
     expect(lc.contextLimit).toBe(131072);
   });
 
   it("falls back to 32768 when the model reports no usable window", () => {
-    const lc = fireWith({ provider: "llamacpp", id: "qwen3.6-35b-a3b", contextWindow: 0 });
+    const lc = fireWith({
+      provider: "llamacpp",
+      id: "qwen3.6-35b-a3b",
+      contextWindow: 0,
+    });
     expect(lc.contextLimit).toBe(32768);
   });
 

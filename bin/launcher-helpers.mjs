@@ -11,7 +11,9 @@ export function applySubAgentEnv(env) {
 }
 
 export function isBrandingExtensionPath(path) {
-  return /(?:^|[/\\])\.pi[/\\]extensions[/\\]branding[/\\]index\.ts$/.test(path);
+  return /(?:^|[/\\])\.pi[/\\]extensions[/\\]branding[/\\]index\.ts$/.test(
+    path,
+  );
 }
 
 export function shouldAppendSystemPrompt(systemPromptPath, appendPromptPath) {
@@ -24,7 +26,14 @@ export function shouldAppendSystemPrompt(systemPromptPath, appendPromptPath) {
   }
 }
 
-export function discoverBundledExtensionArgs(extDir, { issueAgentSubagent = false, subagentMode = false, resolveExtensionEntry = (p) => p } = {}) {
+export function discoverBundledExtensionArgs(
+  extDir,
+  {
+    issueAgentSubagent = false,
+    subagentMode = false,
+    resolveExtensionEntry = (p) => p,
+  } = {},
+) {
   const extArgs = [];
   if (!existsSync(extDir)) return extArgs;
   for (const name of readdirSync(extDir).sort()) {
@@ -33,7 +42,11 @@ export function discoverBundledExtensionArgs(extDir, { issueAgentSubagent = fals
     try {
       if (statSync(subdir).isDirectory() && existsSync(idx)) {
         const resolved = resolveExtensionEntry(idx);
-        if ((subagentMode || issueAgentSubagent) && isBrandingExtensionPath(resolved)) continue;
+        if (
+          (subagentMode || issueAgentSubagent) &&
+          isBrandingExtensionPath(resolved)
+        )
+          continue;
         extArgs.push("--extension", resolved);
       }
     } catch {

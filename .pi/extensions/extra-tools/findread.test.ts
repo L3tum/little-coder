@@ -28,7 +28,12 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 describe("findRead tool", () => {
   it("prefixes effective invocation for matches", async () => {
     const tool = registeredTool("findRead");
-    const result = await tool.execute("id", { pattern: "**/*.txt", path: dir, maxFiles: 3, maxCharacters: 20 });
+    const result = await tool.execute("id", {
+      pattern: "**/*.txt",
+      path: dir,
+      maxFiles: 3,
+      maxCharacters: 20,
+    });
     const text = result.content[0].text;
     expect(text).toContain("findRead invocation:");
     expect(text).toContain('pattern="**/*.txt"');
@@ -40,7 +45,10 @@ describe("findRead tool", () => {
 
   it("prefixes effective invocation for no matches", async () => {
     const tool = registeredTool("findRead");
-    const result = await tool.execute("id", { pattern: "**/*.missing", path: dir });
+    const result = await tool.execute("id", {
+      pattern: "**/*.missing",
+      path: dir,
+    });
     const text = result.content[0].text;
     expect(text).toContain("findRead invocation:");
     expect(text).toContain("No files matched");

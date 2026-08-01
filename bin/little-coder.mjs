@@ -4,19 +4,21 @@
 // wired in — works from any working directory.
 
 import { spawn } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkForUpdate } from "./update-check.mjs";
-import { discoverBundledExtensionArgs, shouldAppendSystemPrompt } from "./launcher-helpers.mjs";
+import {
+  discoverBundledExtensionArgs,
+  shouldAppendSystemPrompt,
+} from "./launcher-helpers.mjs";
+import {
+  bundledPackageArgs,
+  readJson,
+  resolveExtensionEntry,
+  setPkgRoot,
+} from "./launcher-internal.mjs";
 
 // ---- 1. Node version preflight (>= 22.19.0, matching pi.dev) ----
 const MIN_NODE = [22, 19, 0];
@@ -36,6 +38,7 @@ if (tooOld) {
 // ---- 2. Resolve package install root ----
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..");
+setPkgRoot(pkgRoot);
 
 // ---- 3. Resolve the bundled pi CLI entry point ----
 // We invoke pi's JS entry directly under the current Node binary instead of
@@ -51,12 +54,21 @@ const pkgRoot = resolve(here, "..");
 //      Windows argv quoting itself.
 //   2. We no longer need a separate `cmd.exe /c …` branch, so the same
 //      spawn path works identically on Linux, macOS, and Windows.
-const piPkgRoot = join(pkgRoot, "node_modules", "@earendil-works", "pi-coding-agent");
+const piPkgRoot = join(
+  pkgRoot,
+  "node_modules",
+  "@earendil-works",
+  "pi-coding-agent",
+);
 let piEntry;
 try {
-  const piPkgJson = JSON.parse(readFileSync(join(piPkgRoot, "package.json"), "utf-8"));
-  const binRel = typeof piPkgJson?.bin === "string" ? piPkgJson.bin : piPkgJson?.bin?.pi;
-  if (typeof binRel !== "string") throw new Error("pi package.json has no bin.pi entry");
+  const piPkgJson = JSON.parse(
+    readFileSync(join(piPkgRoot, "package.json"), "utf-8"),
+  );
+  const binRel =
+    typeof piPkgJson?.bin === "string" ? piPkgJson.bin : piPkgJson?.bin?.pi;
+  if (typeof binRel !== "string")
+    throw new Error("pi package.json has no bin.pi entry");
   piEntry = resolve(piPkgRoot, binRel);
 } catch (err) {
   console.error(
@@ -74,87 +86,23 @@ if (!existsSync(piEntry)) {
   process.exit(1);
 }
 
-function readJson(path) {
-  try {
-    return JSON.parse(readFileSync(path, "utf-8"));
-  } catch {
-    return null;
-  }
-}
-
-function resolveExtensionEntry(resourcePath) {
-  if (!existsSync(resourcePath)) return null;
-  try {
-    if (!statSync(resourcePath).isDirectory()) return resourcePath;
-    for (const name of ["index.ts", "index.js", "index.mjs", "index.cjs"]) {
-      const candidate = join(resourcePath, name);
-      if (existsSync(candidate)) return candidate;
-    }
-    const pkg = readJson(join(resourcePath, "package.json"));
-    if (typeof pkg?.main === "string") {
-      const mainPath = resolve(resourcePath, pkg.main);
-      if (existsSync(mainPath)) return mainPath;
-    }
-    const codeFiles = readdirSync(resourcePath)
-      .filter((name) => /\.(?:[cm]?js|ts)$/.test(name))
-      .filter((name) => !name.endsWith(".d.ts"))
-      .sort();
-    if (codeFiles.length === 1) return join(resourcePath, codeFiles[0]);
-  } catch {
-    return null;
-  }
-  return resourcePath;
-}
-
-function addPiResources(args, flag, baseDir, resources) {
-  if (!Array.isArray(resources)) return;
-  for (const resource of resources) {
-    if (typeof resource !== "string" || resource.length === 0) continue;
-    const requestedPath = resolve(baseDir, resource);
-    const resolvedPath = flag === "--extension"
-      ? resolveExtensionEntry(requestedPath)
-      : requestedPath;
-    if (!resolvedPath || !existsSync(resolvedPath)) {
-      console.warn(`little-coder: skipping missing ${flag.slice(2)} resource ${requestedPath}`);
-      continue;
-    }
-    args.push(flag, resolvedPath);
-  }
-}
-
-function bundledPackageArgs(pkgJson, { subagentMode = false } = {}) {
-  const args = [];
-  const packageNames = Array.isArray(pkgJson?.littleCoder?.packages)
-    ? pkgJson.littleCoder.packages
-    : [];
-
-  for (const packageName of packageNames) {
-    if (typeof packageName !== "string" || packageName.length === 0) continue;
-    if (subagentMode && packageName === "pi-ask-user") continue;
-    const pkgJsonPath = join(pkgRoot, "node_modules", ...packageName.split("/"), "package.json");
-    const depPkgJson = readJson(pkgJsonPath);
-    const manifest = depPkgJson?.pi;
-    if (!manifest || typeof manifest !== "object") continue;
-    const depRoot = dirname(pkgJsonPath);
-    addPiResources(args, "--extension", depRoot, manifest.extensions);
-    addPiResources(args, "--prompt-template", depRoot, manifest.prompts);
-    addPiResources(args, "--theme", depRoot, manifest.themes);
-  }
-
-  return args;
-}
-
 // ---- 4. Auto-discover bundled extensions ----
 const rootPkgJson = readJson(join(pkgRoot, "package.json")) ?? {};
 const extDir = join(pkgRoot, ".pi", "extensions");
 const subprocessPreload = join(extDir, "_shared", "subprocess-preload.mjs");
 const rawUserArgs = process.argv.slice(2);
-const subagentMode = Boolean(process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH);
-const extArgs = discoverBundledExtensionArgs(extDir, { subagentMode, resolveExtensionEntry });
+const subagentMode = Boolean(
+  process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH,
+);
+const extArgs = discoverBundledExtensionArgs(extDir, {
+  subagentMode,
+  resolveExtensionEntry,
+});
 const packageArgs = bundledPackageArgs(rootPkgJson, { subagentMode });
 
 // ---- 5. Update check (best-effort, blocks on TTY prompt only) ----
-const currentVersion = typeof rootPkgJson?.version === "string" ? rootPkgJson.version : "0.0.0";
+const currentVersion =
+  typeof rootPkgJson?.version === "string" ? rootPkgJson.version : "0.0.0";
 const exitAfterCheck = await checkForUpdate(currentVersion);
 if (exitAfterCheck) {
   // Successful update happened; user needs to re-run the new binary.
@@ -222,11 +170,12 @@ try {
   const agentDirEnv = process.env.PI_CODING_AGENT_DIR;
   let agentDir;
   if (agentDirEnv && agentDirEnv.trim().length > 0) {
-    agentDir = agentDirEnv === "~"
-      ? homedir()
-      : agentDirEnv.startsWith("~/")
-        ? homedir() + agentDirEnv.slice(1)
-        : agentDirEnv;
+    agentDir =
+      agentDirEnv === "~"
+        ? homedir()
+        : agentDirEnv.startsWith("~/")
+          ? homedir() + agentDirEnv.slice(1)
+          : agentDirEnv;
   } else {
     agentDir = join(homedir(), ".pi", "agent");
   }
@@ -251,7 +200,8 @@ try {
     const piPkgJson = JSON.parse(
       readFileSync(join(piPkgRoot, "package.json"), "utf-8"),
     );
-    if (typeof piPkgJson?.version === "string") bundledPiVersion = piPkgJson.version;
+    if (typeof piPkgJson?.version === "string")
+      bundledPiVersion = piPkgJson.version;
   } catch {
     // If we can't read pi's version, fall back to leaving lastChangelogVersion
     // alone — pi will then show its own changelog on the next launch. Better
@@ -263,7 +213,10 @@ try {
     globalSettings.quietStartup = true;
     mutated = true;
   }
-  if (bundledPiVersion && globalSettings.lastChangelogVersion !== bundledPiVersion) {
+  if (
+    bundledPiVersion &&
+    globalSettings.lastChangelogVersion !== bundledPiVersion
+  ) {
     globalSettings.lastChangelogVersion = bundledPiVersion;
     mutated = true;
   }
@@ -283,12 +236,16 @@ try {
       betterOpenAIConfig = {};
     }
   }
-  const footerConfig = betterOpenAIConfig.footer && typeof betterOpenAIConfig.footer === "object"
-    ? betterOpenAIConfig.footer
-    : {};
+  const footerConfig =
+    betterOpenAIConfig.footer && typeof betterOpenAIConfig.footer === "object"
+      ? betterOpenAIConfig.footer
+      : {};
   if (footerConfig.mode !== "off") {
     betterOpenAIConfig.footer = { ...footerConfig, mode: "off" };
-    writeFileSync(betterOpenAIConfigPath, JSON.stringify(betterOpenAIConfig, null, 2));
+    writeFileSync(
+      betterOpenAIConfigPath,
+      JSON.stringify(betterOpenAIConfig, null, 2),
+    );
   }
 } catch {
   // Best-effort. If we can't write the settings (read-only HOME, etc.) pi
@@ -301,7 +258,9 @@ try {
 // pi inherits the exact runtime that already passed our >= 22.19.0 preflight.
 // Passing piEntry as an argv element (not a shell string) avoids any
 // shell-injection / space-in-path classes on every platform.
-const nodeArgs = existsSync(subprocessPreload) ? ["--import", subprocessPreload, piEntry, ...piArgs] : [piEntry, ...piArgs];
+const nodeArgs = existsSync(subprocessPreload)
+  ? ["--import", subprocessPreload, piEntry, ...piArgs]
+  : [piEntry, ...piArgs];
 const child = spawn(process.execPath, nodeArgs, {
   stdio: subagentMode ? ["ignore", "pipe", "pipe"] : "inherit",
   cwd: process.cwd(),

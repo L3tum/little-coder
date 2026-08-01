@@ -5,9 +5,7 @@ export interface ToolCall {
   input: unknown;
 }
 
-export type QualityResult =
-  | { ok: true }
-  | { ok: false; reason: string };
+export type QualityResult = { ok: true } | { ok: false; reason: string };
 
 export function assessResponse(
   text: string,
@@ -37,10 +35,12 @@ export function assessResponse(
   if (toolCalls.length > 0 && recentToolCalls.length > 0) {
     for (const tc of toolCalls) {
       for (const prev of recentToolCalls) {
-        if (tc.name === prev.name &&
-            JSON.stringify(tc.input) === JSON.stringify(prev.input) &&
-            recentToolCallsErrorTools.has(tc.name) &&
-            currentToolCallsErrorTools.has(tc.name)) {
+        if (
+          tc.name === prev.name &&
+          JSON.stringify(tc.input) === JSON.stringify(prev.input) &&
+          recentToolCallsErrorTools.has(tc.name) &&
+          currentToolCallsErrorTools.has(tc.name)
+        ) {
           return { ok: false, reason: "repeated_tool_call" };
         }
       }
@@ -58,29 +58,40 @@ export function assessResponse(
 }
 
 function formatToolList(knownTools: Set<string>): string {
-  if (knownTools.size === 0) return "Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch";
+  if (knownTools.size === 0)
+    return "Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch";
   return [...knownTools].sort().join(", ");
 }
 
 // Simple Levenshtein distance for fuzzy matching tool names.
 function editDistance(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  const m = a.length,
+    n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () =>
+    Array(n + 1).fill(0),
+  );
   for (let i = 0; i <= m; i++) dp[i][0] = i;
   for (let j = 0; j <= n; j++) dp[0][j] = j;
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1]
+          : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
     }
   }
   return dp[m][n];
 }
 
-function findSimilarTools(toolName: string, knownTools: Set<string>, maxResults = 3): string[] {
+function findSimilarTools(
+  toolName: string,
+  knownTools: Set<string>,
+  maxResults = 3,
+): string[] {
   if (knownTools.size === 0) return [];
-  const exactCaseInsensitive = [...knownTools].find((t) => t.toLowerCase() === toolName.toLowerCase());
+  const exactCaseInsensitive = [...knownTools].find(
+    (t) => t.toLowerCase() === toolName.toLowerCase(),
+  );
   if (exactCaseInsensitive) return [exactCaseInsensitive];
   const scored = [...knownTools].map((t) => ({
     name: t,
@@ -88,10 +99,16 @@ function findSimilarTools(toolName: string, knownTools: Set<string>, maxResults 
   }));
   scored.sort((a, b) => a.dist - b.dist || a.name.localeCompare(b.name));
   const threshold = Math.min(3, Math.max(1, Math.floor(toolName.length / 2)));
-  return scored.filter((s) => s.dist <= threshold).slice(0, maxResults).map((s) => s.name);
+  return scored
+    .filter((s) => s.dist <= threshold)
+    .slice(0, maxResults)
+    .map((s) => s.name);
 }
 
-export function buildCorrectionMessage(reason: string, knownTools: Set<string> = new Set()): string {
+export function buildCorrectionMessage(
+  reason: string,
+  knownTools: Set<string> = new Set(),
+): string {
   const tools = formatToolList(knownTools);
   const corrections: Record<string, string> = {
     empty_response:
@@ -101,7 +118,7 @@ export function buildCorrectionMessage(reason: string, knownTools: Set<string> =
       "Do not output nothing. Pick one action and execute it now.",
     empty_tool_name:
       "STOP: Your tool call had an empty tool name. You must specify WHICH tool.\n" +
-      "Format: {\"name\": \"<tool_name>\", \"input\": {<args>}}\n" +
+      'Format: {"name": "<tool_name>", "input": {<args>}}\n' +
       `Available tools: ${tools}.\n` +
       "Pick the right tool for what you need to do and call it properly.",
     repeated_tool_call:
@@ -117,12 +134,12 @@ export function buildCorrectionMessage(reason: string, knownTools: Set<string> =
   if (reason.startsWith("unknown_tool:")) {
     const toolName = reason.slice("unknown_tool:".length);
     const similar = findSimilarTools(toolName, knownTools);
-    let msg =
-      `STOP: Tool '${toolName}' does not exist. You tried to use a tool that isn't available.\n`;
+    let msg = `STOP: Tool '${toolName}' does not exist. You tried to use a tool that isn't available.\n`;
     if (similar.length > 0) {
       msg += `Did you mean: ${similar.join(", ")}?\n`;
     }
-    msg += `Available tools: ${tools}.\n` +
+    msg +=
+      `Available tools: ${tools}.\n` +
       "Pick one of these and call it with the correct name.";
     return msg;
   }
@@ -136,7 +153,10 @@ export function buildCorrectionMessage(reason: string, knownTools: Set<string> =
     );
   }
 
-  return corrections[reason] ?? `Issue detected: ${reason}. Please review your last action and try a different approach.`;
+  return (
+    corrections[reason] ??
+    `Issue detected: ${reason}. Please review your last action and try a different approach.`
+  );
 }
 
 // Short, user-facing phrasing for the harness-intervention line (distinct from

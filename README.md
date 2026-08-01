@@ -1,13 +1,12 @@
 ![little-coder — a coding agent for the laptop in front of you](assets/banner.svg)
 
-
 # little-coder
 
 **L3tum's fork of little-coder: a coding agent tuned for small local models, built on top of [pi](https://pi.dev).**
 
 > **Fork note.** Maintained by **L3tum**. Historical paper / benchmark results in this README remain attributed to Itay Inbar's original little-coder work. Fork-era benchmarks: **TBD**.
 
-The research story behind all this — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[*Honey, I Shrunk the Coding Agent*](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**. Start there if you want the "why"; stay here for the "how".
+The research story behind all this — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[_Honey, I Shrunk the Coding Agent_](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**. Start there if you want the "why"; stay here for the "how".
 
 ## Highlights
 
@@ -77,7 +76,7 @@ little-coder uses reflection-generated skills and breadcrumbs for reusable sessi
 
 Use `/usage` for the inline usage dashboard and `/insights` for the vendored Pi Insights report.
 
-For local providers (llama.cpp, Ollama, LM Studio) pi expects *some* value in the API-key env even though local servers ignore it:
+For local providers (llama.cpp, Ollama, LM Studio) pi expects _some_ value in the API-key env even though local servers ignore it:
 
 ```bash
 export LLAMACPP_API_KEY=noop
@@ -139,9 +138,9 @@ ollama pull qwen3.5        # 9.7B — the paper's model
 
 On the **server** (the box with the GPU):
 
-- *llama.cpp*: start `llama-server` with `--host 0.0.0.0` (or your specific LAN interface) instead of `127.0.0.1`. Everything else from Option A unchanged.
-- *LM Studio*: in the Server tab, enable **Serve on local network** so it binds `0.0.0.0:1234` instead of `127.0.0.1:1234`.
-- *Ollama*: `OLLAMA_HOST=0.0.0.0:11434 ollama serve` (or set `OLLAMA_HOST=0.0.0.0` in the user systemd unit).
+- _llama.cpp_: start `llama-server` with `--host 0.0.0.0` (or your specific LAN interface) instead of `127.0.0.1`. Everything else from Option A unchanged.
+- _LM Studio_: in the Server tab, enable **Serve on local network** so it binds `0.0.0.0:1234` instead of `127.0.0.1:1234`.
+- _Ollama_: `OLLAMA_HOST=0.0.0.0:11434 ollama serve` (or set `OLLAMA_HOST=0.0.0.0` in the user systemd unit).
 - If `ufw` / `firewalld` is active, allow your LAN subnet to the relevant port (e.g. `sudo ufw allow from 192.168.0.0/16 to any port 8888 proto tcp`).
 - Find the LAN IP with `hostname -I` (Linux) or `ipconfig getifaddr en0` (macOS).
 
@@ -215,10 +214,10 @@ little-coder gates `Bash` tool calls against a built-in safe-prefix whitelist (`
 
 Two env vars control the gate:
 
-| Env var | Values | Effect |
-|---|---|---|
-| `LITTLE_CODER_PERMISSION_MODE` | `auto` *(default)* / `accept-all` / `manual` | `auto`: block any bash command not on the whitelist. `accept-all`: skip the gate entirely, every bash call passes (the benchmark runner sets this). `manual`: same as `auto` but with a different rejection message. |
-| `LITTLE_CODER_BASH_ALLOW` | comma-separated prefixes | Extra allow-prefixes merged with the built-in list. **Trailing whitespace is meaningful**: `"make "` allows `make test` but not `makefoo`; `"make"` allows both. |
+| Env var                        | Values                                       | Effect                                                                                                                                                                                                               |
+| ------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LITTLE_CODER_PERMISSION_MODE` | `auto` _(default)_ / `accept-all` / `manual` | `auto`: block any bash command not on the whitelist. `accept-all`: skip the gate entirely, every bash call passes (the benchmark runner sets this). `manual`: same as `auto` but with a different rejection message. |
+| `LITTLE_CODER_BASH_ALLOW`      | comma-separated prefixes                     | Extra allow-prefixes merged with the built-in list. **Trailing whitespace is meaningful**: `"make "` allows `make test` but not `makefoo`; `"make"` allows both.                                                     |
 
 Examples:
 
@@ -238,14 +237,14 @@ Write/Edit confirmations are pi's responsibility; little-coder doesn't intercept
 
 Fork benchmark reruns under L3tum: **TBD**. Table below preserves source-project results for attribution and context.
 
-| Release | Model | Benchmark | Result |
-|---|---|---|---|
-| [**v0.0.2**](https://github.com/itayinbarr/little-coder/releases/tag/v0.0.2) (commit `1d62bde`) — the paper | Qwen3.5-9B via Ollama | Aider Polyglot (225 exercises) | **45.56 %** mean of two runs; matched-model vanilla Aider baseline 19.11 %. Paper: [*Honey, I Shrunk the Coding Agent* on Substack](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent). |
-| [**v0.0.5**](https://github.com/itayinbarr/little-coder/releases/tag/v0.0.5) — pre-pi Python | Qwen3.6-35B-A3B via llama.cpp | Aider Polyglot | **78.67 %**. [Full narrative](docs/benchmark-qwen3.6-35b-a3b.md). |
-| [**v0.1.4**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.4) — on pi | Qwen3.6-35B-A3B via llama.cpp | Terminal-Bench-Core v0.1.1 (80 tasks) | **40.0 %** in 6 h 50 min. [Write-up](docs/benchmark-terminal-bench-v0.1.1.md). |
-| [**v0.1.13**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.13) — on pi, TB 2.0 leaderboard | Qwen3.6-35B-A3B via llama.cpp | Terminal-Bench 2.0 (89 tasks × 5 trials = 445) | **24.6 % ± 3.2** — accepted to the [Terminal-Bench 2.0 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.0) (rank 120). |
-| [**v0.1.24**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.24) — on pi, TB 2.0 leaderboard, smaller model | Qwen3.5-9B (Q4_K_M) via llama.cpp (5.3 GB on GPU, 2× faster per-token than the 35B-A3B) | Terminal-Bench 2.0 (89 tasks × 5 trials = 445) | **9.2 % ± 2.4** — accepted to the [Terminal-Bench 2.0 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.0) (rank 142). |
-| [**v0.1.27**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.27) — on pi, GAIA validation | Qwen3.6-35B-A3B via llama.cpp | GAIA validation set (165 tasks) | **40.00 %** (66 / 165). L1 60.4 % / L2 37.2 % / L3 7.7 %. Test-split run pending. |
+| Release                                                                                                                   | Model                                                                                   | Benchmark                                      | Result                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**v0.0.2**](https://github.com/itayinbarr/little-coder/releases/tag/v0.0.2) (commit `1d62bde`) — the paper               | Qwen3.5-9B via Ollama                                                                   | Aider Polyglot (225 exercises)                 | **45.56 %** mean of two runs; matched-model vanilla Aider baseline 19.11 %. Paper: [_Honey, I Shrunk the Coding Agent_ on Substack](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent). |
+| [**v0.0.5**](https://github.com/itayinbarr/little-coder/releases/tag/v0.0.5) — pre-pi Python                              | Qwen3.6-35B-A3B via llama.cpp                                                           | Aider Polyglot                                 | **78.67 %**. [Full narrative](docs/benchmark-qwen3.6-35b-a3b.md).                                                                                                                                                |
+| [**v0.1.4**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.4) — on pi                                      | Qwen3.6-35B-A3B via llama.cpp                                                           | Terminal-Bench-Core v0.1.1 (80 tasks)          | **40.0 %** in 6 h 50 min. [Write-up](docs/benchmark-terminal-bench-v0.1.1.md).                                                                                                                                   |
+| [**v0.1.13**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.13) — on pi, TB 2.0 leaderboard                | Qwen3.6-35B-A3B via llama.cpp                                                           | Terminal-Bench 2.0 (89 tasks × 5 trials = 445) | **24.6 % ± 3.2** — accepted to the [Terminal-Bench 2.0 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.0) (rank 120).                                                                            |
+| [**v0.1.24**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.24) — on pi, TB 2.0 leaderboard, smaller model | Qwen3.5-9B (Q4_K_M) via llama.cpp (5.3 GB on GPU, 2× faster per-token than the 35B-A3B) | Terminal-Bench 2.0 (89 tasks × 5 trials = 445) | **9.2 % ± 2.4** — accepted to the [Terminal-Bench 2.0 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.0) (rank 142).                                                                             |
+| [**v0.1.27**](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.27) — on pi, GAIA validation                   | Qwen3.6-35B-A3B via llama.cpp                                                           | GAIA validation set (165 tasks)                | **40.00 %** (66 / 165). L1 60.4 % / L2 37.2 % / L3 7.7 %. Test-split run pending.                                                                                                                                |
 
 All runs used a consumer laptop: i9-14900HX, 32 GB RAM, **8 GB VRAM** on RTX 5070 Laptop (Blackwell). No cloud inference at any point.
 
@@ -273,9 +272,9 @@ Current fork direction under **L3tum**:
 
 **LAN client times out (no `RST`, just hangs)** — the inference box's firewall is dropping the SYN. The usual cause is `ufw` with a default-deny policy that allow-lists only SSH / a few dev ports. From the server: `sudo ufw status verbose` to confirm; `sudo ufw allow from <your-lan-subnet>/24 to any port 8888 proto tcp` to fix (scoped to the LAN so you're not exposing the box). Docker-published ports bypass `ufw` via `PREROUTING` NAT, which is why a Docker container can be reachable while a plain `llama-server` on the same host isn't.
 
-**Image attachment is accepted but the request returns 4xx** — your llama-server is running without a vision projector. Re-launch it with `--mmproj ~/models/mmproj-F16.gguf` (or another mmproj variant from the same GGUF repo). The `--list-models` `images` column reflects what the client *will attempt to send*, not what the server can answer; the projector is what gives the model eyes.
+**Image attachment is accepted but the request returns 4xx** — your llama-server is running without a vision projector. Re-launch it with `--mmproj ~/models/mmproj-F16.gguf` (or another mmproj variant from the same GGUF repo). The `--list-models` `images` column reflects what the client _will attempt to send_, not what the server can answer; the projector is what gives the model eyes.
 
-**No API key env var warning** — pi expects *some* key even for local providers. Export `LLAMACPP_API_KEY=noop` (or `OLLAMA_API_KEY=noop`) before launching.
+**No API key env var warning** — pi expects _some_ key even for local providers. Export `LLAMACPP_API_KEY=noop` (or `OLLAMA_API_KEY=noop`) before launching.
 
 **No pi "Update Available" banner** — that's intentional. little-coder defaults `PI_SKIP_VERSION_CHECK=1` so the bundled pi runtime doesn't nag about updating itself; little-coder pins pi to a known-good version per release. If you actually want the banner back, `export PI_SKIP_VERSION_CHECK=0` before launching.
 
@@ -305,7 +304,7 @@ The benchmarks harness (`benchmarks/`) is dev-only and not shipped with the npm 
 
 ## Architecture
 
-```
+````
 little-coder/
 ├── .pi/
 │   ├── settings.json               # per-model profiles + benchmark_overrides (terminal_bench, gaia)
@@ -345,7 +344,7 @@ little-coder/
 └── docs/
     ├── benchmark-*.md              # per-benchmark narratives
     └── architecture.md             # v0.0.5-era Python architecture (historical)
-```
+````
 
 **Key invariant.** pi is a minimal base by design. Every little-coder mechanism ships as a pi extension that hooks pi's lifecycle events (`before_agent_start`, `context`, `before_provider_request`, `tool_call`, `tool_result`, `turn_end`, `session_compact`). Extensions are independent: the launcher discovers every `.pi/extensions/*/index.ts` and loads it explicitly with `--extension`, and pi runs with `--no-extensions`, so the bundled set is exactly what loads — no more, no less. If you don't want one, delete its directory; if you want to add another, drop it next to the existing ones (or pass `-e <path>` at launch).
 

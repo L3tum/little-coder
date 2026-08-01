@@ -1,7 +1,11 @@
 // @ts-nocheck
 import { fileURLToPath } from "node:url";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
-import { isKeyRelease, matchesKey, visibleWidth, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+  isKeyRelease,
+  visibleWidth,
+  truncateToWidth,
+} from "@earendil-works/pi-tui";
 import type { KeybindingsManager } from "@earendil-works/pi-coding-agent/dist/core/keybindings.js";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import { matchesConfiguredShortcut } from "../shortcuts.ts";
@@ -24,7 +28,10 @@ interface BashModeEditorOptions {
   onInterrupt: () => void;
   onNotify: (message: string, level?: "info" | "warning" | "error") => void;
   getHistoryEntries: (prefix: string) => string[];
-  resolveGhostSuggestion: (text: string, signal: AbortSignal) => Promise<GhostSuggestion | null>;
+  resolveGhostSuggestion: (
+    text: string,
+    signal: AbortSignal,
+  ) => Promise<GhostSuggestion | null>;
 }
 
 const DEFAULT_EDITOR_BOUNDARY_SHORTCUTS: EditorBoundaryShortcuts = {
@@ -37,10 +44,12 @@ function isPrintableInput(data: string): boolean {
 }
 
 function isCommandUndoShortcut(data: string): boolean {
-  return data === "\x1b[122;9u"
-    || data === "\x1b[122;9:1u"
-    || data === "\x1b[122;9:2u"
-    || data === "\x1b[27;9;122~";
+  return (
+    data === "\x1b[122;9u" ||
+    data === "\x1b[122;9:1u" ||
+    data === "\x1b[122;9:2u" ||
+    data === "\x1b[27;9;122~"
+  );
 }
 
 function bracketedPasteContent(data: string): string | null {
@@ -61,7 +70,10 @@ function decodeFileUriList(text: string): string | null {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0 && !entry.startsWith("#"));
 
-  if (entries.length === 0 || entries.some((entry) => !entry.startsWith("file://"))) {
+  if (
+    entries.length === 0 ||
+    entries.some((entry) => !entry.startsWith("file://"))
+  ) {
     return null;
   }
 
@@ -101,7 +113,12 @@ export class BashModeEditor extends CustomEditor {
   private ghostAbort: AbortController | null = null;
   private ghostToken = 0;
 
-  constructor(tui: any, theme: any, keybindings: KeybindingsManager, options: BashModeEditorOptions) {
+  constructor(
+    tui: any,
+    theme: any,
+    keybindings: KeybindingsManager,
+    options: BashModeEditorOptions,
+  ) {
     super(tui, theme, keybindings);
     this.keybindingsRef = keybindings;
     this.optionsRef = options;
@@ -136,7 +153,10 @@ export class BashModeEditor extends CustomEditor {
     this.shellHistoryDraft = "";
     this.clearGhostSuggestion();
 
-    if ("cancelAutocomplete" in this && typeof this.cancelAutocomplete === "function") {
+    if (
+      "cancelAutocomplete" in this &&
+      typeof this.cancelAutocomplete === "function"
+    ) {
       this.cancelAutocomplete();
     }
     this.tui.requestRender();
@@ -157,7 +177,8 @@ export class BashModeEditor extends CustomEditor {
       return;
     }
 
-    const pasteInProgress = data.includes("\x1b[200~") || Reflect.get(this, "isInPaste") === true;
+    const pasteInProgress =
+      data.includes("\x1b[200~") || Reflect.get(this, "isInPaste") === true;
     if (pasteInProgress) {
       super.handleInput(data);
       if (Reflect.get(this, "isInPaste") === true) {
@@ -185,46 +206,71 @@ export class BashModeEditor extends CustomEditor {
         return;
       }
 
-      if (bashMode && this.keybindingsRef.matches(data, "app.clear") && this.optionsRef.isShellRunning()) {
+      if (
+        bashMode &&
+        this.keybindingsRef.matches(data, "app.clear") &&
+        this.optionsRef.isShellRunning()
+      ) {
         this.optionsRef.onInterrupt();
         return;
       }
 
-      if (bashMode && this.keybindingsRef.matches(data, "tui.editor.cursorUp")) {
+      if (
+        bashMode &&
+        this.keybindingsRef.matches(data, "tui.editor.cursorUp")
+      ) {
         this.navigateShellHistory(-1);
         return;
       }
 
-      if (bashMode && this.keybindingsRef.matches(data, "tui.editor.cursorDown")) {
+      if (
+        bashMode &&
+        this.keybindingsRef.matches(data, "tui.editor.cursorDown")
+      ) {
         this.navigateShellHistory(1);
         return;
       }
 
-      const editorBoundaryShortcuts = this.optionsRef.editorBoundaryShortcuts ?? DEFAULT_EDITOR_BOUNDARY_SHORTCUTS;
-      if (!isKeyRelease(data) && matchesConfiguredShortcut(data, editorBoundaryShortcuts.start)) {
+      const editorBoundaryShortcuts =
+        this.optionsRef.editorBoundaryShortcuts ??
+        DEFAULT_EDITOR_BOUNDARY_SHORTCUTS;
+      if (
+        !isKeyRelease(data) &&
+        matchesConfiguredShortcut(data, editorBoundaryShortcuts.start)
+      ) {
         this.moveCursorToEditorBoundary("start");
         return;
       }
 
-      if (!isKeyRelease(data) && matchesConfiguredShortcut(data, editorBoundaryShortcuts.end)) {
+      if (
+        !isKeyRelease(data) &&
+        matchesConfiguredShortcut(data, editorBoundaryShortcuts.end)
+      ) {
         this.moveCursorToEditorBoundary("end");
         return;
       }
 
-      if ((bashMode || oneOffBashCommand) && this.keybindingsRef.matches(data, "tui.input.tab")) {
+      if (
+        (bashMode || oneOffBashCommand) &&
+        this.keybindingsRef.matches(data, "tui.input.tab")
+      ) {
         this.acceptGhostSuggestion();
         return;
       }
 
       if (
-        (bashMode || oneOffBashCommand)
-        && this.keybindingsRef.matches(data, "tui.editor.cursorRight")
-        && this.acceptGhostSuggestion()
+        (bashMode || oneOffBashCommand) &&
+        this.keybindingsRef.matches(data, "tui.editor.cursorRight") &&
+        this.acceptGhostSuggestion()
       ) {
         return;
       }
 
-      if (bashMode && this.keybindingsRef.matches(data, "tui.input.submit") && !this.keybindingsRef.matches(data, "tui.input.newLine")) {
+      if (
+        bashMode &&
+        this.keybindingsRef.matches(data, "tui.input.submit") &&
+        !this.keybindingsRef.matches(data, "tui.input.newLine")
+      ) {
         if (this.optionsRef.isShellRunning()) {
           this.optionsRef.onNotify("Shell command already running", "warning");
           return;
@@ -255,18 +301,17 @@ export class BashModeEditor extends CustomEditor {
     }
 
     if (
-      pasteInProgress
-      ||
-      isPrintableInput(data)
-      || this.keybindingsRef.matches(data, "tui.editor.deleteCharBackward")
-      || this.keybindingsRef.matches(data, "tui.editor.deleteCharForward")
-      || this.keybindingsRef.matches(data, "tui.editor.deleteWordBackward")
-      || this.keybindingsRef.matches(data, "tui.editor.deleteWordForward")
-      || this.keybindingsRef.matches(data, "tui.editor.deleteToLineStart")
-      || this.keybindingsRef.matches(data, "tui.editor.deleteToLineEnd")
-      || this.keybindingsRef.matches(data, "tui.input.newLine")
-      || this.keybindingsRef.matches(data, "tui.editor.cursorLeft")
-      || this.keybindingsRef.matches(data, "tui.editor.cursorRight")
+      pasteInProgress ||
+      isPrintableInput(data) ||
+      this.keybindingsRef.matches(data, "tui.editor.deleteCharBackward") ||
+      this.keybindingsRef.matches(data, "tui.editor.deleteCharForward") ||
+      this.keybindingsRef.matches(data, "tui.editor.deleteWordBackward") ||
+      this.keybindingsRef.matches(data, "tui.editor.deleteWordForward") ||
+      this.keybindingsRef.matches(data, "tui.editor.deleteToLineStart") ||
+      this.keybindingsRef.matches(data, "tui.editor.deleteToLineEnd") ||
+      this.keybindingsRef.matches(data, "tui.input.newLine") ||
+      this.keybindingsRef.matches(data, "tui.editor.cursorLeft") ||
+      this.keybindingsRef.matches(data, "tui.editor.cursorRight")
     ) {
       this.shellHistoryIndex = -1;
       this.shellHistoryItems = [];
@@ -284,7 +329,8 @@ export class BashModeEditor extends CustomEditor {
     if (text.includes("\n")) return lines;
     const cursor = this.getCursor();
     if (cursor.line !== 0 || cursor.col !== text.length) return lines;
-    if (!this.ghost.value.startsWith(text) || this.ghost.value === text) return lines;
+    if (!this.ghost.value.startsWith(text) || this.ghost.value === text)
+      return lines;
     if (lines.length < 3) return lines;
 
     const suffix = this.ghost.value.slice(text.length);
@@ -296,14 +342,18 @@ export class BashModeEditor extends CustomEditor {
     const shownSuffix = truncateToWidth(suffix, availableWidth, "", true);
     if (!shownSuffix) return lines;
 
-    const padding = " ".repeat(Math.max(0, width - visibleWidth(text) - 1 - visibleWidth(shownSuffix)));
+    const padding = " ".repeat(
+      Math.max(0, width - visibleWidth(text) - 1 - visibleWidth(shownSuffix)),
+    );
     const ghost = `\x1b[38;5;244m${shownSuffix}\x1b[0m`;
     lines[contentLine] = `${text}${cursorBlock}${ghost}${padding}`;
     return lines;
   }
 
   private isShellCompletionContext(): boolean {
-    return this.optionsRef.isBashModeActive() || this.isOneOffBashCommandContext();
+    return (
+      this.optionsRef.isBashModeActive() || this.isOneOffBashCommandContext()
+    );
   }
 
   private isOneOffBashCommandContext(): boolean {
@@ -312,7 +362,8 @@ export class BashModeEditor extends CustomEditor {
 
   private moveCursorToEditorBoundary(position: "start" | "end"): void {
     const state = Reflect.get(this, "state");
-    const lines = state && typeof state === "object" ? Reflect.get(state, "lines") : null;
+    const lines =
+      state && typeof state === "object" ? Reflect.get(state, "lines") : null;
     if (!Array.isArray(lines)) {
       throw new Error("Editor cursor state is unavailable");
     }
@@ -323,7 +374,11 @@ export class BashModeEditor extends CustomEditor {
     } else {
       const lastLine = Math.max(0, lines.length - 1);
       Reflect.set(state, "cursorLine", lastLine);
-      Reflect.set(state, "cursorCol", typeof lines[lastLine] === "string" ? lines[lastLine].length : 0);
+      Reflect.set(
+        state,
+        "cursorCol",
+        typeof lines[lastLine] === "string" ? lines[lastLine].length : 0,
+      );
     }
 
     Reflect.set(this, "lastAction", null);
@@ -340,7 +395,8 @@ export class BashModeEditor extends CustomEditor {
     const cursor = this.getCursor();
     if (cursor.line !== 0 || cursor.col !== text.length) return false;
 
-    if (!this.ghost.value.startsWith(text) || this.ghost.value === text) return false;
+    if (!this.ghost.value.startsWith(text) || this.ghost.value === text)
+      return false;
     this.setText(this.ghost.value);
     this.clearGhostSuggestion();
     return true;
@@ -359,8 +415,14 @@ export class BashModeEditor extends CustomEditor {
     }
 
     if (direction < 0) {
-      this.shellHistoryIndex = Math.min(this.shellHistoryItems.length - 1, this.shellHistoryIndex + 1);
-      this.setText(this.shellHistoryItems[this.shellHistoryIndex] ?? this.shellHistoryDraft);
+      this.shellHistoryIndex = Math.min(
+        this.shellHistoryItems.length - 1,
+        this.shellHistoryIndex + 1,
+      );
+      this.setText(
+        this.shellHistoryItems[this.shellHistoryIndex] ??
+          this.shellHistoryDraft,
+      );
       this.clearGhostSuggestion();
       return;
     }
@@ -373,7 +435,9 @@ export class BashModeEditor extends CustomEditor {
       return;
     }
 
-    this.setText(this.shellHistoryItems[this.shellHistoryIndex] ?? this.shellHistoryDraft);
+    this.setText(
+      this.shellHistoryItems[this.shellHistoryIndex] ?? this.shellHistoryDraft,
+    );
     this.clearGhostSuggestion();
   }
 
@@ -384,15 +448,20 @@ export class BashModeEditor extends CustomEditor {
 
     const controller = new AbortController();
     this.ghostAbort = controller;
-    this.optionsRef.resolveGhostSuggestion(text, controller.signal)
+    this.optionsRef
+      .resolveGhostSuggestion(text, controller.signal)
       .then((ghost) => {
-        if (controller.signal.aborted || currentToken !== this.ghostToken) return;
+        if (controller.signal.aborted || currentToken !== this.ghostToken)
+          return;
         this.ghost = ghost;
         this.tui.requestRender();
       })
       .catch((error) => {
         if (error instanceof Error && error.message === "aborted") return;
-        console.debug("[powerline-footer] Failed to resolve bash ghost suggestion:", error);
+        console.debug(
+          "[powerline-footer] Failed to resolve bash ghost suggestion:",
+          error,
+        );
       });
   }
 }

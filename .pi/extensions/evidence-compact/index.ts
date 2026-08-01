@@ -28,7 +28,9 @@ export default function (pi: ExtensionAPI) {
         `evidence-compact: ${store.length} evidence entries preserved across compaction`,
         "info",
       );
-      await pi.sendUserMessage(BRIDGE_TEMPLATE(store.length), { deliverAs: "followUp" });
+      await pi.sendUserMessage(BRIDGE_TEMPLATE(store.length), {
+        deliverAs: "followUp",
+      });
     } catch (err) {
       try {
         ctx.ui?.notify?.(

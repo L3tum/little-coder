@@ -7,12 +7,24 @@ describe("findCompatibleToolName", () => {
   });
 
   it("matches camel/snake and plural heuristics", () => {
-    expect(findCompatibleToolName("Findread", ["findRead", "glob"])).toBe("findRead");
+    expect(findCompatibleToolName("Findread", ["findRead", "glob"])).toBe(
+      "findRead",
+    );
   });
 
   it("maps legacy codebase-memory names to the new short aliases", () => {
-    expect(findCompatibleToolName("codebase_memory_search_graph", ["code_search", "read"])).toBe("code_search");
-    expect(findCompatibleToolName("codebase_memory_manage_adr", ["code_adr", "read"])).toBe("code_adr");
+    expect(
+      findCompatibleToolName("codebase_memory_search_graph", [
+        "code_search",
+        "read",
+      ]),
+    ).toBe("code_search");
+    expect(
+      findCompatibleToolName("codebase_memory_manage_adr", [
+        "code_adr",
+        "read",
+      ]),
+    ).toBe("code_adr");
   });
 });
 
@@ -40,8 +52,13 @@ describe("rewriteValueToSchema", () => {
         },
       },
     };
-    const out = rewriteValueToSchema({ replacements: [{ oldText: "a", newText: "b" }] }, schema);
-    expect(out.value).toEqual({ replacements: [{ old_string: "a", new_string: "b" }] });
+    const out = rewriteValueToSchema(
+      { replacements: [{ oldText: "a", newText: "b" }] },
+      schema,
+    );
+    expect(out.value).toEqual({
+      replacements: [{ old_string: "a", new_string: "b" }],
+    });
   });
 
   it("renames singular edit to edits and wraps it into an array", () => {
@@ -60,7 +77,12 @@ describe("rewriteValueToSchema", () => {
         },
       },
     };
-    const out = rewriteValueToSchema({ edit: { oldText: "x", newText: "y" } }, schema);
-    expect(out.value).toEqual({ edits: [{ old_string: "x", new_string: "y" }] });
+    const out = rewriteValueToSchema(
+      { edit: { oldText: "x", newText: "y" } },
+      schema,
+    );
+    expect(out.value).toEqual({
+      edits: [{ old_string: "x", new_string: "y" }],
+    });
   });
 });

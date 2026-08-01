@@ -127,7 +127,9 @@ describe("thinking-budget recovery (issue #8)", () => {
     expect(h.level()).toBe("off");
     expect(h.followUps).toHaveLength(1);
     expect(h.followUps[0]).toMatch(/thinking budget exceeded/i);
-    expect(h.notifies[0]).toMatch(/harness intervention:.*thought long enough/i);
+    expect(h.notifies[0]).toMatch(
+      /harness intervention:.*thought long enough/i,
+    );
   });
 
   it("does not double-abort across multiple bursts in the same turn", async () => {
@@ -200,13 +202,23 @@ describe("thinking-budget recovery (issue #8)", () => {
     setupExtension(second.pi as any);
 
     await startRun(first);
-    await fire(first.pi, "message_update", thinkingDelta("x".repeat(1000)), first.ctx);
+    await fire(
+      first.pi,
+      "message_update",
+      thinkingDelta("x".repeat(1000)),
+      first.ctx,
+    );
     expect(first.level()).toBe("off");
 
     await fire(second.pi, "session_start", {}, second.ctx);
     first.setLevelExternally("high");
     await fire(first.pi, "agent_start", {}, first.ctx);
-    await fire(first.pi, "before_agent_start", { systemPromptOptions: {} }, first.ctx);
+    await fire(
+      first.pi,
+      "before_agent_start",
+      { systemPromptOptions: {} },
+      first.ctx,
+    );
     await fire(first.pi, "turn_start", {}, first.ctx);
 
     expect(first.level()).toBe("off");

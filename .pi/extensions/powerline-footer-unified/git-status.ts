@@ -25,14 +25,18 @@ let branchInvalidationCounter = 0;
 
 /**
  * Parse git status --porcelain output
- * 
+ *
  * Format: XY filename
  * X = index status, Y = working tree status
  * ?? = untracked
  * Other X values = staged
  * Other Y values = unstaged
  */
-function parseGitStatusOutput(output: string): { staged: number; unstaged: number; untracked: number } {
+function parseGitStatusOutput(output: string): {
+  staged: number;
+  unstaged: number;
+  untracked: number;
+} {
   let staged = 0;
   let unstaged = 0;
   let untracked = 0;
@@ -112,7 +116,11 @@ async function fetchGitBranch(): Promise<string | null> {
 /**
  * Fetch git status asynchronously
  */
-async function fetchGitStatus(): Promise<{ staged: number; unstaged: number; untracked: number } | null> {
+async function fetchGitStatus(): Promise<{
+  staged: number;
+  unstaged: number;
+  untracked: number;
+} | null> {
   const output = await runGit(["status", "--porcelain"], 500);
   if (output === null) return null;
   return parseGitStatusOutput(output);
@@ -161,8 +169,8 @@ export function getGitStatus(providerBranch: string | null): GitStatus {
 
   // Return cached if fresh
   if (cachedStatus && now - cachedStatus.timestamp < CACHE_TTL_MS) {
-    return { 
-      branch, 
+    return {
+      branch,
       staged: cachedStatus.staged,
       unstaged: cachedStatus.unstaged,
       untracked: cachedStatus.untracked,
@@ -176,7 +184,12 @@ export function getGitStatus(providerBranch: string | null): GitStatus {
       // Cache result if no invalidation happened (including null for non-git dirs)
       if (fetchId === invalidationCounter) {
         cachedStatus = result
-          ? { staged: result.staged, unstaged: result.unstaged, untracked: result.untracked, timestamp: Date.now() }
+          ? {
+              staged: result.staged,
+              unstaged: result.unstaged,
+              untracked: result.untracked,
+              timestamp: Date.now(),
+            }
           : { staged: 0, unstaged: 0, untracked: 0, timestamp: Date.now() };
       }
       pendingFetch = null;
@@ -185,8 +198,8 @@ export function getGitStatus(providerBranch: string | null): GitStatus {
 
   // Return last cached or empty
   if (cachedStatus) {
-    return { 
-      branch, 
+    return {
+      branch,
       staged: cachedStatus.staged,
       unstaged: cachedStatus.unstaged,
       untracked: cachedStatus.untracked,

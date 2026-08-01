@@ -9,7 +9,11 @@ const BRIDGE_TEMPLATE = (n: number): string =>
 describe("evidence-compact bridge message", () => {
   it("starts with exact preservation prefix (Python-version parity)", () => {
     const m = BRIDGE_TEMPLATE(3);
-    expect(m.startsWith("[Preserved evidence from earlier in the conversation follows.]")).toBe(true);
+    expect(
+      m.startsWith(
+        "[Preserved evidence from earlier in the conversation follows.]",
+      ),
+    ).toBe(true);
   });
   it("uses singular for 1 entry", () => {
     expect(BRIDGE_TEMPLATE(1)).toContain("1 evidence entry remains");

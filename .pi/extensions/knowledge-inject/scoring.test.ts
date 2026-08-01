@@ -23,7 +23,9 @@ function scoreEntry(userText: string, keywords: string[]): number {
 describe("knowledge entry scoring", () => {
   it("scores single word matches at 1.0 each", () => {
     expect(scoreEntry("find the bucket", ["bucket"])).toBe(1.0);
-    expect(scoreEntry("find the bucket and pour", ["bucket", "pour"])).toBe(2.0);
+    expect(scoreEntry("find the bucket and pour", ["bucket", "pour"])).toBe(
+      2.0,
+    );
   });
 
   it("scores bigram/phrase matches at 2.0 each", () => {
@@ -34,7 +36,9 @@ describe("knowledge entry scoring", () => {
   it("combines word + bigram scores", () => {
     const kw = ["bucket", "minimum moves", "pour"];
     // "bucket" word (1.0) + "minimum moves" phrase (2.0) + "pour" word (1.0) = 4.0
-    expect(scoreEntry("bucket pouring problem with minimum moves and pour", kw)).toBe(4.0);
+    expect(
+      scoreEntry("bucket pouring problem with minimum moves and pour", kw),
+    ).toBe(4.0);
   });
 
   it("does not match partial words", () => {
@@ -45,7 +49,9 @@ describe("knowledge entry scoring", () => {
   it("threshold at 2.0 requires at least two signals", () => {
     // The extension's MIN_SCORE_THRESHOLD = 2.0 means one word isn't enough
     expect(scoreEntry("find bucket", ["bucket", "pour"])).toBeLessThan(2.0);
-    expect(scoreEntry("bucket pour together", ["bucket", "pour"])).toBeGreaterThanOrEqual(2.0);
+    expect(
+      scoreEntry("bucket pour together", ["bucket", "pour"]),
+    ).toBeGreaterThanOrEqual(2.0);
   });
 });
 
@@ -56,7 +62,9 @@ describe("knowledge directory loads from repo", () => {
 
   it("knowledge dir has at least 13 files", () => {
     expect(existsSync(kDir)).toBe(true);
-    expect(readdirSync(kDir).filter((f) => f.endsWith(".md")).length).toBeGreaterThanOrEqual(13);
+    expect(
+      readdirSync(kDir).filter((f) => f.endsWith(".md")).length,
+    ).toBeGreaterThanOrEqual(13);
   });
 
   it("protocols dir has 3 files", () => {
@@ -70,12 +78,17 @@ describe("knowledge directory loads from repo", () => {
       const parsed = parseSkillFile(readFileSync(join(kDir, file), "utf-8"));
       expect(parsed, `${file} should parse`).not.toBeNull();
       expect(typeof parsed!.frontmatter.topic).toBe("string");
-      expect(Array.isArray(parsed!.frontmatter.keywords), `${file} keywords`).toBe(true);
+      expect(
+        Array.isArray(parsed!.frontmatter.keywords),
+        `${file} keywords`,
+      ).toBe(true);
     }
   });
 
   it("workspace_docs declares requires_tools", () => {
-    const parsed = parseSkillFile(readFileSync(join(kDir, "workspace_docs.md"), "utf-8"));
+    const parsed = parseSkillFile(
+      readFileSync(join(kDir, "workspace_docs.md"), "utf-8"),
+    );
     expect(parsed!.frontmatter.requires_tools).toEqual(["Read", "Glob"]);
   });
 });

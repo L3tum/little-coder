@@ -8,20 +8,20 @@ This write-up documents the run, the empirical signals that drove the v0.1.4 ret
 
 ## Setup
 
-| | |
-|---|---|
-| little-coder version | [`v0.1.4`](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.4) (commit `f4c1b4e`) |
-| Agent | `little-coder` (pi-coding-agent 0.68.1 + 16 TS extensions) |
-| Model | `llamacpp/qwen3.6-35b-a3b` — Qwen3.6-35B-A3B UD-Q4_K_M (22 GB) |
-| Serving | `llama-server -ngl 99 --n-cpu-moe 999 --flash-attn on --jinja -c 32768` |
-| Hardware | i9-14900HX, 32 GB RAM, RTX 5070 Laptop 8 GB (sm_120), CUDA 13.1 |
-| Dataset | `terminal-bench-core@0.1.1` (80 tasks, commit `91e1045`) |
-| Harness | `terminal-bench` 0.2.18, `--n-concurrent 1`, `--n-attempts 1`, default timeouts |
-| Agent-internal turn cap | 40 per task (v0.1.4 default; see "turn-cap tuning" below) |
-| Thinking budget | 3000 tokens / turn (matches `benchmark_overrides.terminal_bench`) |
-| Temperature | 0.2 |
-| Run id | `leaderboard-2026-04-23__00-14-03` |
-| Started / ended | 2026-04-23 00:14 / 07:05 local |
+|                         |                                                                                               |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| little-coder version    | [`v0.1.4`](https://github.com/itayinbarr/little-coder/releases/tag/v0.1.4) (commit `f4c1b4e`) |
+| Agent                   | `little-coder` (pi-coding-agent 0.68.1 + 16 TS extensions)                                    |
+| Model                   | `llamacpp/qwen3.6-35b-a3b` — Qwen3.6-35B-A3B UD-Q4_K_M (22 GB)                                |
+| Serving                 | `llama-server -ngl 99 --n-cpu-moe 999 --flash-attn on --jinja -c 32768`                       |
+| Hardware                | i9-14900HX, 32 GB RAM, RTX 5070 Laptop 8 GB (sm_120), CUDA 13.1                               |
+| Dataset                 | `terminal-bench-core@0.1.1` (80 tasks, commit `91e1045`)                                      |
+| Harness                 | `terminal-bench` 0.2.18, `--n-concurrent 1`, `--n-attempts 1`, default timeouts               |
+| Agent-internal turn cap | 40 per task (v0.1.4 default; see "turn-cap tuning" below)                                     |
+| Thinking budget         | 3000 tokens / turn (matches `benchmark_overrides.terminal_bench`)                             |
+| Temperature             | 0.2                                                                                           |
+| Run id                  | `leaderboard-2026-04-23__00-14-03`                                                            |
+| Started / ended         | 2026-04-23 00:14 / 07:05 local                                                                |
 
 Launch command:
 
@@ -47,17 +47,17 @@ Wall time         : 6 h 50 min
 
 ### Passed tasks (32)
 
-| Category | Tasks |
-|---|---|
+| Category                | Tasks                                                                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Env / package conflicts | `conda-env-conflict-resolution`, `fix-pandas-version`, `incompatible-python-fasttext`, `incompatible-python-fasttext.base_with_hint`, `modernize-fortran-build` |
-| ML / PyTorch | `cartpole-rl-training`, `eval-mteb`, `eval-mteb.hard`, `pytorch-model-cli.easy` |
-| Data wrangling | `count-dataset-tokens`, `csv-to-parquet`, `grid-pattern-transform`, `heterogeneous-dates`, `processing-pipeline`, `solana-data` |
-| Crypto / security | `crack-7z-hash`, `crack-7z-hash.easy`, `extract-safely`, `openssl-selfsigned-cert`, `sanitize-git-repo` |
-| Cloud / web | `create-bucket`, `simple-sheets-put`, `simple-web-scraper` |
-| Git / dev workflow | `git-workflow-hack`, `tmux-advanced-workflow` |
-| File / permissions | `fix-permissions`, `hello-world` |
-| Theorem / maze | `blind-maze-explorer-5x5`, `prove-plus-comm` |
-| SWE-bench ports | `swe-bench-astropy-1`, `swe-bench-fsspec`, `swe-bench-langcodes` |
+| ML / PyTorch            | `cartpole-rl-training`, `eval-mteb`, `eval-mteb.hard`, `pytorch-model-cli.easy`                                                                                 |
+| Data wrangling          | `count-dataset-tokens`, `csv-to-parquet`, `grid-pattern-transform`, `heterogeneous-dates`, `processing-pipeline`, `solana-data`                                 |
+| Crypto / security       | `crack-7z-hash`, `crack-7z-hash.easy`, `extract-safely`, `openssl-selfsigned-cert`, `sanitize-git-repo`                                                         |
+| Cloud / web             | `create-bucket`, `simple-sheets-put`, `simple-web-scraper`                                                                                                      |
+| Git / dev workflow      | `git-workflow-hack`, `tmux-advanced-workflow`                                                                                                                   |
+| File / permissions      | `fix-permissions`, `hello-world`                                                                                                                                |
+| Theorem / maze          | `blind-maze-explorer-5x5`, `prove-plus-comm`                                                                                                                    |
+| SWE-bench ports         | `swe-bench-astropy-1`, `swe-bench-fsspec`, `swe-bench-langcodes`                                                                                                |
 
 ### Failed tasks (48)
 
@@ -79,11 +79,11 @@ Other: `chess-best-move`, `crack-7z-hash.hard`, `gpt2-codegolf`, `hf-model-infer
 
 ### Failure-mode breakdown (from `results.json`)
 
-| Failure mode | Count |
-|---|---|
-| `unset` (genuine wrong answer — scoring tests failed) | 35 |
-| `agent_timeout` (harness wall-clock exceeded) | 12 |
-| `parse_error` | 1 |
+| Failure mode                                          | Count |
+| ----------------------------------------------------- | ----- |
+| `unset` (genuine wrong answer — scoring tests failed) | 35    |
+| `agent_timeout` (harness wall-clock exceeded)         | 12    |
+| `parse_error`                                         | 1     |
 
 ---
 
@@ -99,7 +99,7 @@ tasks NOT at cap           : 72 / 80
   → pass rate              : 43 %
 ```
 
-88 % of cap-hits still fail — those 8 are genuinely hard tasks where the model is chasing dead ends. But the bump cleared the ~12 tasks that *would* have hit 25 but finish under 40.
+88 % of cap-hits still fail — those 8 are genuinely hard tasks where the model is chasing dead ends. But the bump cleared the ~12 tasks that _would_ have hit 25 but finish under 40.
 
 ### Turn distribution
 
@@ -116,15 +116,15 @@ Passes are fast (median 12 turns); failures cluster near the cap. The modal pass
 
 Fires captured via `ctx.ui.notify` → PiRpc → per-task adapter log:
 
-| Extension | Fires | Tasks | Signal |
-|---|---|---|---|
-| `skill-inject` | 71 | 71 / 80 | Near-ubiquitous — the error-recovery / recency / intent selection fires on almost every task, per-turn. |
-| `knowledge-inject` | 45 | 45 / 80 | More than half of tasks score ≥ 2.0 on at least one algorithm cheat sheet — GAIA / ML / theorem topics especially. |
-| `thinking-budget` | 11 | 11 / 80 | **All 11 tasks that hit the 3000-token thinking budget failed.** See discussion below. |
-| `quality-monitor` | 57 | 28 / 80 | 28 tasks produced at least one empty / looped / hallucinated response. `gpt2-codegolf` alone accounted for 24 corrections. |
-| `turn-cap` | — | 9 / 80 | Notify-reported cap aborts; off by one vs call-count cap hits (8) due to notify-emission timing. |
-| `output-parser` (text-tool rescue) | 0 | 0 / 80 | Qwen3.6-35B-A3B uses native tool calling cleanly — no fenced-block fallback needed. |
-| `evidence-compact` | 0 | 0 / 80 | TB's shell-only toolset means no Evidence use; extension correctly dormant. |
+| Extension                          | Fires | Tasks   | Signal                                                                                                                     |
+| ---------------------------------- | ----- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `skill-inject`                     | 71    | 71 / 80 | Near-ubiquitous — the error-recovery / recency / intent selection fires on almost every task, per-turn.                    |
+| `knowledge-inject`                 | 45    | 45 / 80 | More than half of tasks score ≥ 2.0 on at least one algorithm cheat sheet — GAIA / ML / theorem topics especially.         |
+| `thinking-budget`                  | 11    | 11 / 80 | **All 11 tasks that hit the 3000-token thinking budget failed.** See discussion below.                                     |
+| `quality-monitor`                  | 57    | 28 / 80 | 28 tasks produced at least one empty / looped / hallucinated response. `gpt2-codegolf` alone accounted for 24 corrections. |
+| `turn-cap`                         | —     | 9 / 80  | Notify-reported cap aborts; off by one vs call-count cap hits (8) due to notify-emission timing.                           |
+| `output-parser` (text-tool rescue) | 0     | 0 / 80  | Qwen3.6-35B-A3B uses native tool calling cleanly — no fenced-block fallback needed.                                        |
+| `evidence-compact`                 | 0     | 0 / 80  | TB's shell-only toolset means no Evidence use; extension correctly dormant.                                                |
 
 ### 🚩 The thinking-budget signal
 
@@ -148,7 +148,7 @@ Corrections help the model recover from a bad turn (empty, looped, malformed) bu
 ## Diagnostic gaps (to fix for v0.2 submission)
 
 1. **Token counts unset.** `AgentResult.total_input_tokens` / `total_output_tokens` come through as `0` because the TB adapter doesn't populate them. Fix: expose a token accumulator on `PiRpc` (pi-ai already reports per-request usage) and plumb through. Cosmetic only for leaderboard display but frontier submissions report this.
-2. **Harness agent-timeout vs our `max_turns`.** 12 tasks failed with `agent_timeout` rather than "ran out of turns". Those are tasks where 40 turns *is* fine, but each turn is slow enough that wall clock beats us. Unclear whether this correlates with specific tool patterns (big file reads, installs) — worth a per-task analysis.
+2. **Harness agent-timeout vs our `max_turns`.** 12 tasks failed with `agent_timeout` rather than "ran out of turns". Those are tasks where 40 turns _is_ fine, but each turn is slow enough that wall clock beats us. Unclear whether this correlates with specific tool patterns (big file reads, installs) — worth a per-task analysis.
 3. **`blind-maze-explorer-algorithm` failed all three variants** (easy, hard, base) despite passing the much simpler `blind-maze-explorer-5x5`. Systematic issue with the larger-state maze search — candidate for algorithm-specific knowledge entry in `skills/knowledge/`.
 4. **`gpt2-codegolf` 24 corrections** — classic quality-monitor pathology; the same bad state recurs. Worth logging the exact correction reasons (`empty_response` / `repeated_tool_call` / `unknown_tool`) per task to see the shape.
 
