@@ -184,9 +184,17 @@ this directly.`;
 
       const deepPlanPrompt = `## Deep Plan Pipeline
 
-You are orchestrating a 3-phase deep planning pipeline.
-Run the following phases **sequentially** (wait for each to complete
-before starting the next):
+You are orchestrating a 3-phase deep planning pipeline executed in subagents.
+Each phase runs as an isolated subagent process. You execute them **sequentially**,
+capturing output from each phase and threading it into the next.
+
+### Pipeline architecture
+- **REFINE** (Phase 1) — Clarifies the request, extracts requirements, defines scope.
+  Runs as a subagent. You pass its output into Phase 2.
+- **RESEARCH** (Phase 2) — Explores the codebase, gathers evidence, records findings.
+  Runs as a subagent. You pass its output into Phase 3.
+- **COMPOSE** (Phase 3) — Produces the final markdown specification.
+  Runs as a subagent. Its output becomes the deliverable.
 
 ### Phase 1: REFINE
 Run subagent REFINE with task:
@@ -212,10 +220,10 @@ design, implementation steps, dependencies, risks, and tests needed."
 3. Call \`plannotator_submit_plan\` with the plan file path to enter interactive review mode
 
 ### Important Rules
-- Run each phase **sequentially** — wait for each subagent call to complete
-  before starting the next
-- Pass the output from earlier phases as context to later phases
-- The COMPOSE phase output must be a complete markdown specification with
+- Execute each phase as a subagent call — wait for each subagent to complete
+  before invoking the next phase
+- Thread the full output from each subagent into the next phase's task context
+- The COMPOSE phase subagent output must be a complete markdown specification with
   headings and body content
 - Do NOT skip any phase`;
 
@@ -250,7 +258,8 @@ design, implementation steps, dependencies, risks, and tests needed."
       // Trigger the deep plan pipeline
       pi.sendUserMessage(
         `Execute the deep plan pipeline for: "${prompt}". ` +
-          `Run REFINE → RESEARCH → COMPOSE sequentially, ` +
+          `Run REFINE → RESEARCH → COMPOSE as sequential subagent calls, ` +
+          `threading output from each phase into the next, ` +
           `write the spec to plans/deep-plan-<timestamp>.md, ` +
           `then call plannotator_submit_plan.`,
         { deliverAs: "followUp" },

@@ -120,6 +120,8 @@ export function builtInLittleCoderAgents(): AgentConfig[] {
       filePath,
     },
     // Deep Plan phase agents — specialized for the refine → research → compose pipeline.
+    // Each phase runs as an isolated subagent. The orchestrator (parent agent) executes
+    // the pipeline sequentially and threads output from each phase into the next.
     {
       name: "REFINE",
       description:
@@ -127,6 +129,9 @@ export function builtInLittleCoderAgents(): AgentConfig[] {
       tools: ["read", "findRead", "glob", "grep", "code_search", "lsp"],
       thinking: "medium",
       systemPrompt: `## Deep Plan — Refine Phase
+
+You are Phase 1 of the deep-plan pipeline, running as a subagent. The parent orchestrator
+will execute this phase sequentially, capture your output, and thread it into Phase 2 (RESEARCH).
 
 Clarify the user's request and produce a structured requirements document.
 
@@ -137,9 +142,10 @@ Clarify the user's request and produce a structured requirements document.
 4. Define scope boundaries (what's in scope vs out of scope)
 
 ### Rules
-- Be concise but precise
+- Be concise but precise — your output feeds directly into the RESEARCH subagent
 - Do not implement anything — this is analysis only
-- Use tools (read, grep, code_search) only if needed to understand context`,
+- Use tools (read, grep, code_search) only if needed to understand context
+- End your response with the complete refined requirements — do not trail off into a tool call`,
       source: "user",
       filePath,
     },
@@ -162,6 +168,10 @@ Clarify the user's request and produce a structured requirements document.
       thinking: "medium",
       systemPrompt: `## Deep Plan — Research Phase
 
+You are Phase 2 of the deep-plan pipeline, running as a subagent. You receive refined
+requirements from Phase 1 (REFINE) as task context. The parent orchestrator will execute
+this phase sequentially and thread your findings into Phase 3 (COMPOSE).
+
 Explore the codebase to gather concrete evidence for the plan.
 
 ### Your job
@@ -179,9 +189,10 @@ Explore the codebase to gather concrete evidence for the plan.
 - Potential conflicts or blockers
 
 ### Rules
-- Read actual code, do not guess
+- Read actual code, do not guess — your output feeds the COMPOSE subagent
 - Be specific: file paths, function names, line numbers
-- Stay read-only`,
+- Stay read-only
+- End your response with the complete research findings — do not trail off into a tool call`,
       source: "user",
       filePath,
     },
@@ -193,7 +204,12 @@ Explore the codebase to gather concrete evidence for the plan.
       thinking: "medium",
       systemPrompt: `## Deep Plan — Compose Phase
 
-You are a specification writer. Produce a complete, detailed specification from the refined requirements and research findings provided in the task.
+You are Phase 3 (final phase) of the deep-plan pipeline, running as a subagent. You receive
+refined requirements from Phase 1 (REFINE) and research findings from Phase 2 (RESEARCH)
+as task context. The parent orchestrator will capture your output as the final specification.
+
+You are a specification writer. Produce a complete, detailed specification from the refined
+requirements and research findings provided in the task.
 
 ### Workflow
 1. **Explore** — Use your tools (read, code_search, findRead, grep) to inspect the codebase.
