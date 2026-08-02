@@ -17,6 +17,7 @@ import * as path from "node:path";
 import {
   modePrompt,
   themedReviewPrompts,
+  themedProjectReviewPrompts,
 } from "../mode-commands/mode-prompts.js";
 
 export type AgentScope = "user" | "project" | "both";
@@ -320,6 +321,78 @@ requirements and research findings provided in the task.
       tools: REVIEW_TOOLS,
       thinking: "medium",
       systemPrompt: themedReviewPrompts.ponytail,
+      source: "user",
+      filePath,
+    },
+    // Themed project-wide review agents — specialized subagents for focused
+    // code review across the entire codebase (not just the latest diff).
+    {
+      name: "REVIEW-PROJECT-SECURITY",
+      description:
+        "Security-focused project audit: vulnerabilities across the entire codebase.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedProjectReviewPrompts.security,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PROJECT-ARCHITECTURE",
+      description:
+        "Architecture project audit: patterns, coupling, separation of concerns, scalability across the full codebase.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedProjectReviewPrompts.architecture,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PROJECT-TESTS",
+      description:
+        "Test project audit: coverage gaps, flaky tests, test quality, missing scenarios across the full codebase.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedProjectReviewPrompts.tests,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PROJECT-BUGS",
+      description:
+        "Bug hunting project audit: logic errors, edge cases, race conditions, null handling across the full codebase.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedProjectReviewPrompts.bugs,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PROJECT-PERFORMANCE",
+      description:
+        "Performance project audit: bottlenecks, inefficient algorithms, memory usage across the full codebase.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedProjectReviewPrompts.performance,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PROJECT-LINTING",
+      description:
+        "Linting & style project audit: code quality, formatting, type safety, documentation across the full codebase.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedProjectReviewPrompts.linting,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PROJECT-PONYTAIL",
+      description:
+        "Lazy engineering project audit: over-engineering, boilerplate, unnecessary complexity across the full codebase.",
+      tools: REVIEW_TOOLS,
+      thinking: "medium",
+      systemPrompt: themedProjectReviewPrompts.ponytail,
       source: "user",
       filePath,
     },

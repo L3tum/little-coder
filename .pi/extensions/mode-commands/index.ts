@@ -6,6 +6,7 @@ import {
   executionModePrompt,
   planModePrompt,
   ThemedReviewKey,
+  ProjectThemedReviewKey,
 } from "./mode-prompts.js";
 
 function latestPlan(cwd: string): string | undefined {
@@ -151,6 +152,100 @@ this directly.`;
       // Trigger the review pipeline
       pi.sendUserMessage(
         "Execute the themed review pipeline: run all 7 subagents sequentially, collect findings, and produce a synthesized report with verdict.",
+        { deliverAs: "followUp" },
+      );
+    },
+  });
+
+  pi.registerCommand("review-project", {
+    description:
+      "Run themed project-wide code review across the entire codebase (not just changes)",
+    handler: async (_args, ctx) => {
+      if (process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH) {
+        ctx.ui?.notify?.(
+          "/review-project is interactive-only and is disabled in subagent mode.",
+          "warning",
+        );
+        return;
+      }
+
+      const themes: ProjectThemedReviewKey[] = [
+        "security",
+        "architecture",
+        "tests",
+        "bugs",
+        "performance",
+        "linting",
+        "ponytail",
+      ];
+      const themeAgents: Record<ProjectThemedReviewKey, string> = {
+        security: "REVIEW-PROJECT-SECURITY",
+        architecture: "REVIEW-PROJECT-ARCHITECTURE",
+        tests: "REVIEW-PROJECT-TESTS",
+        bugs: "REVIEW-PROJECT-BUGS",
+        performance: "REVIEW-PROJECT-PERFORMANCE",
+        linting: "REVIEW-PROJECT-LINTING",
+        ponytail: "REVIEW-PROJECT-PONYTAIL",
+      };
+
+      ctx.ui?.notify?.(
+        "Starting themed project-wide code review (7 focused reviews)...",
+        "info",
+      );
+
+      // Build a structured request that tells the main agent to run each themed
+      // subagent sequentially across the entire project. The subagent tool is
+      // the mechanism that actually spawns the isolated review processes.
+      const agentTasks = themes
+        .map((theme, i) => {
+          const agentName = themeAgents[theme];
+          return `Step ${i + 1}: Run subagent ${agentName} with task:\n"Review the entire project codebase. Use code_search and glob to explore the codebase structure, then examine relevant files. Focus specifically on ${theme} concerns and return a structured report with findings sorted by severity."`;
+        })
+        .join("\n\n");
+
+      const projectReviewPrompt = `## Themed Project-Wide Code Review Pipeline
+
+Run the following 7 themed review subagents **sequentially** (wait for each to complete before starting the next):
+
+${agentTasks}
+
+### After all themed reviews complete:
+1. Combine all findings into a single synthesis
+2. Deduplicate overlapping issues across themes
+3. Cross-reference related findings
+4. Render a unified verdict: **approve**, **comment**, or **request_changes**
+
+### Output format — render as raw Markdown, NOT inside a code block
+
+\`\`\`
+## Review Verdict: [approve | comment | request_changes]
+
+### Critical Findings
+- [CRITICAL severity items]
+
+### High Priority
+- [HIGH severity items, deduplicated]
+
+### Medium/Low Priority
+- [Remaining items grouped by category]
+
+### Summary
+[2-3 sentence overall assessment of the project]
+
+### Recommendation
+[What to do next]
+\`\`\`
+
+Important: Output the Markdown above as plain rendered text. Do NOT wrap
+the entire response in a code block (triple backticks). The user will read
+this directly.`;
+
+      // Switch to project-wide review mode with the pipeline instructions
+      switchSystemPrompt(ctx, projectReviewPrompt);
+
+      // Trigger the project-wide review pipeline
+      pi.sendUserMessage(
+        "Execute the themed project-wide review pipeline: run all 7 subagents sequentially, collect findings, and produce a synthesized report with verdict.",
         { deliverAs: "followUp" },
       );
     },
