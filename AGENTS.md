@@ -27,3 +27,12 @@ For non-trivial work, identify inputs, outputs, edge cases, hardest parts, and a
 ## Skill discovery and injected context
 
 At task start, check `skills` for relevant skills. If no suitable skill exists and the user is asking about extending capabilities, use the `find-skills` skill. Per-turn injected tool guidance and knowledge references are selected by little-coder's extension stack; treat them as current task guidance, not permanent global rules.
+
+## History after compaction
+
+When compaction is enabled (pi-vcc), older conversation turns are algorithmically summarized and the raw messages are truncated from the active context. To search pre-compaction history:
+
+- Use `vcc_recall` to search the active lineage (default scope) — e.g. `vcc_recall({ query: "auth bug" })`
+- Run `/pi-vcc-recall <query>` for an interactive search (auto-completes from `/recall`)
+- Use `scope:"all"` to intentionally search across all lineages, not just the active one
+- Use `scope:"compaction:N"` or `scope:"compaction:latest"` to search within a specific compaction segment's original messages

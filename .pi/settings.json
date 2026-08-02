@@ -1,6 +1,9 @@
 {
   "quietStartup": true,
-  "compaction": { "enabled": false },
+  "compaction": {
+    "enabled": true,
+    "compactPercent": 85
+  },
   "retry": { "enabled": true, "maxRetries": 2 },
   "little_coder": {
     "default_model_profile": {
