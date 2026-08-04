@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { fileURLToPath } from "node:url";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import {
@@ -6,7 +5,7 @@ import {
   visibleWidth,
   truncateToWidth,
 } from "@earendil-works/pi-tui";
-import type { KeybindingsManager } from "@earendil-works/pi-coding-agent/dist/core/keybindings.js";
+import type { KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteProvider } from "@earendil-works/pi-tui";
 import { matchesConfiguredShortcut } from "../shortcuts.ts";
 import { getOneOffBashCommandContext } from "./completion.ts";
@@ -155,9 +154,9 @@ export class BashModeEditor extends CustomEditor {
 
     if (
       "cancelAutocomplete" in this &&
-      typeof this.cancelAutocomplete === "function"
+      typeof (this as any).cancelAutocomplete === "function"
     ) {
-      this.cancelAutocomplete();
+      (this as any).cancelAutocomplete();
     }
     this.tui.requestRender();
   }
@@ -189,7 +188,7 @@ export class BashModeEditor extends CustomEditor {
       const oneOffBashCommand = !bashMode && this.isOneOffBashCommandContext();
 
       if (isCommandUndoShortcut(data)) {
-        this.undo();
+        (this as any).undo();
         this.shellHistoryIndex = -1;
         this.shellHistoryItems = [];
         this.shellHistoryDraft = "";

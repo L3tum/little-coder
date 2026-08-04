@@ -1,4 +1,3 @@
-// @ts-nocheck
 export interface RenderScheduler {
   schedule(delayMs?: number): void;
   cancel(): void;

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -539,8 +538,13 @@ export class BashCompletionEngine {
 }
 
 export class BashAutocompleteProvider implements AutocompleteProvider {
-  getSuggestions(): AutocompleteSuggestions | null {
-    return null;
+  getSuggestions(
+    _lines?: string[],
+    _cursorLine?: number,
+    _cursorCol?: number,
+    _options?: { signal: AbortSignal; force?: boolean },
+  ): Promise<AutocompleteSuggestions | null> {
+    return Promise.resolve(null);
   }
 
   applyCompletion(
@@ -593,8 +597,13 @@ function applyExtendedCompletion(
 }
 
 export class OneOffBashAutocompleteProvider implements AutocompleteProvider {
-  getSuggestions(): AutocompleteSuggestions | null {
-    return null;
+  getSuggestions(
+    _lines?: string[],
+    _cursorLine?: number,
+    _cursorCol?: number,
+    _options?: { signal: AbortSignal; force?: boolean },
+  ): Promise<AutocompleteSuggestions | null> {
+    return Promise.resolve(null);
   }
 
   applyCompletion(
@@ -650,7 +659,7 @@ export class ModeAwareAutocompleteProvider implements AutocompleteProvider {
     cursorLine: number,
     cursorCol: number,
     options: { signal: AbortSignal; force?: boolean },
-  ): AutocompleteSuggestions | null | Promise<AutocompleteSuggestions | null> {
+  ): Promise<AutocompleteSuggestions | null> {
     if (this.isBashModeActive()) {
       return this.bashProvider.getSuggestions(
         lines,
@@ -682,7 +691,7 @@ export class ModeAwareAutocompleteProvider implements AutocompleteProvider {
         cursorLine,
         cursorCol,
         options,
-      ) ?? null
+      ) ?? Promise.resolve(null)
     );
   }
 

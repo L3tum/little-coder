@@ -165,4 +165,68 @@ describe("security extension", () => {
       expect(result.reason).toContain("User blocked");
     });
   });
+
+  describe("file_path fallback — direct write/edit to protected paths", () => {
+    beforeEach(() => extension(pi));
+
+    it("blocks write to .env via file_path", async () => {
+      const handler = handlers.get("tool_call")[0];
+      const result = await handler(
+        { toolName: "write", input: { file_path: ".env" } },
+        ctx,
+      );
+      expect(result.block).toBe(true);
+      expect(ctx.ui.notify).toHaveBeenCalled();
+    });
+
+    it("blocks write to .dev.vars via file_path", async () => {
+      const handler = handlers.get("tool_call")[0];
+      const result = await handler(
+        { toolName: "write", input: { file_path: ".dev.vars" } },
+        ctx,
+      );
+      expect(result.block).toBe(true);
+    });
+
+    it("blocks write to .ssh/authorized_keys via file_path", async () => {
+      const handler = handlers.get("tool_call")[0];
+      const result = await handler(
+        { toolName: "write", input: { file_path: "~/.ssh/authorized_keys" } },
+        ctx,
+      );
+      expect(result.block).toBe(true);
+    });
+
+    it("blocks write to node_modules via file_path", async () => {
+      const handler = handlers.get("tool_call")[0];
+      const result = await handler(
+        {
+          toolName: "write",
+          input: { file_path: "node_modules/foo/index.js" },
+        },
+        ctx,
+      );
+      expect(result.block).toBe(true);
+    });
+
+    it("blocks edit to .git/config via file_path", async () => {
+      const handler = handlers.get("tool_call")[0];
+      const result = await handler(
+        { toolName: "edit", input: { file_path: ".git/config" } },
+        ctx,
+      );
+      expect(result.block).toBe(true);
+    });
+
+    it("confirms before modifying package-lock.json via file_path with UI", async () => {
+      confirmMock.mockResolvedValue(true);
+      const handler = handlers.get("tool_call")[0];
+      const result = await handler(
+        { toolName: "write", input: { file_path: "package-lock.json" } },
+        ctx,
+      );
+      expect(ctx.ui.confirm).toHaveBeenCalled();
+      expect(result).toBeUndefined(); // approved, not blocked
+    });
+  });
 });

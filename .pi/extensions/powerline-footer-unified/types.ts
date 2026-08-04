@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 
 // Theme color - either a pi theme color name or a custom hex color

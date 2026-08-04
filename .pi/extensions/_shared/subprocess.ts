@@ -37,18 +37,28 @@ const processes = new Map<number, ManagedSubprocess>();
 const childIds = new WeakMap<ChildProcess, number>();
 
 function unregisterWhenDone(entry: ManagedSubprocess): void {
+  let finalized = false;
+
+  const finalize = () => {
+    if (finalized) return;
+    finalized = true;
+    entry.stoppedAt = Date.now();
+    processes.delete(entry.id);
+  };
+
   entry.child.once("error", (err) => {
     entry.status = "error";
     entry.error = err.message;
-    entry.stoppedAt = Date.now();
-    processes.delete(entry.id);
+    finalize();
   });
+
   entry.child.once("close", (code, signal) => {
-    entry.status = code === 0 ? "exited" : "error";
-    entry.exitCode = code;
-    entry.signal = signal;
-    entry.stoppedAt = Date.now();
-    processes.delete(entry.id);
+    if (!finalized) {
+      entry.status = code === 0 ? "exited" : "error";
+      entry.exitCode = code;
+      entry.signal = signal;
+    }
+    finalize();
   });
 }
 
@@ -117,9 +127,11 @@ export function stopSubprocess(
     entry.child.kill(signal);
     return true;
   } catch (err) {
-    entry.status = "error";
-    entry.error = err instanceof Error ? err.message : String(err);
-    entry.stoppedAt = Date.now();
+    if (!entry.stoppedAt) {
+      entry.status = "error";
+      entry.error = err instanceof Error ? err.message : String(err);
+      entry.stoppedAt = Date.now();
+    }
     processes.delete(id);
     return false;
   }

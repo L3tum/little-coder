@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getLittleCoderOptions } from "../_shared/little-coder-options.ts";
 import { Type } from "@sinclair/typebox";
 import {
   copyFileSync,
@@ -626,10 +627,12 @@ export default function (pi: ExtensionAPI) {
     userTurn += 1;
     loadSkills();
     if (allSkills.length === 0) return;
-    const opts: any = (event as any).systemPromptOptions ?? {};
-    const lc = opts.littleCoder ?? {};
+    const opts = getLittleCoderOptions(
+      (event as unknown as { systemPromptOptions?: Record<string, unknown> })
+        .systemPromptOptions,
+    );
     const basePrompt = event.systemPrompt ?? "";
-    const contextLimit: number = lc.contextLimit ?? 8192;
+    const contextLimit: number = opts.contextLimit ?? 8192;
     if (estimateTokens(basePrompt) > contextLimit * 0.4) {
       try {
         ctx.ui?.notify?.(
@@ -640,7 +643,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    let allowedList: string[] | undefined = lc.allowedTools;
+    let allowedList: string[] | undefined = opts.allowedTools;
     if (!allowedList && process.env.LITTLE_CODER_ALLOWED_TOOLS)
       allowedList = process.env.LITTLE_CODER_ALLOWED_TOOLS.split(",")
         .map((s) => s.trim())
@@ -653,9 +656,9 @@ export default function (pi: ExtensionAPI) {
       ? "review mode code review"
       : "";
     const selectionPrompt = `${prompt}\n${modeHint}`;
-    const refBudget: number = lc.isSubtask
+    const refBudget: number = opts.isSubtask
       ? 0
-      : (lc.knowledgeTokenBudget ??
+      : (opts.knowledgeTokenBudget ??
         persistedBudget("knowledgeTokenBudget") ??
         200);
     const refSelection =
@@ -665,12 +668,12 @@ export default function (pi: ExtensionAPI) {
     const refs = refSelection.selected;
     const requiredTools = Array.from(
       new Set([
-        ...(Array.isArray(lc.requiredTools) ? lc.requiredTools : []),
+        ...(Array.isArray(opts.requiredTools) ? opts.requiredTools : []),
         ...refs.flatMap((s) => s.requiresTools),
       ]),
     );
     const baseToolBudget: number =
-      lc.skillTokenBudget ?? persistedBudget("skillTokenBudget") ?? 300;
+      opts.skillTokenBudget ?? persistedBudget("skillTokenBudget") ?? 300;
     const toolBudget = userTurn === 1 ? baseToolBudget * 2 : baseToolBudget;
     const toolSelection =
       toolBudget > 0

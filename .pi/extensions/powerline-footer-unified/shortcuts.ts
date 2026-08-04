@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { matchesKey } from "@earendil-works/pi-tui";
 
 const SUPER_SHORTCUT_PATTERNS = new Map<string, RegExp>([
@@ -68,5 +67,7 @@ export function matchesConfiguredShortcut(
     return SUPER_SHORTCUT_PATTERNS.get(normalizedShortcut)?.test(data) ?? false;
   }
 
+  // TODO: proper Shortcut type from @earendil-works/pi-tui when available
+  // @ts-expect-error shortcut string is runtime-compatible with matchesKey
   return matchesKey(data, shortcut);
 }

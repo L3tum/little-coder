@@ -3,6 +3,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+interface ToolCallEvent {
+  toolName?: string;
+  input?: Record<string, unknown>;
+  args?: Record<string, unknown>;
+}
+
 // Port of checkpoint/hooks.py. Snapshots a file's contents before a Write
 // or Edit tool modifies it. First-write-wins per session (don't re-backup
 // a file already tracked this session). Backups land in
@@ -57,7 +63,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_call", async (event) => {
-    const name = (event as any).toolName;
+    const name = (event as ToolCallEvent).toolName;
     if (
       name !== "write" &&
       name !== "Write" &&
@@ -66,7 +72,8 @@ export default function (pi: ExtensionAPI) {
     ) {
       return;
     }
-    const input: any = (event as any).input ?? (event as any).args;
+    const input =
+      (event as ToolCallEvent).input ?? (event as ToolCallEvent).args;
     const filePath = input?.file_path;
     if (typeof filePath === "string") {
       backupIfNeeded(currentSessionId, filePath);

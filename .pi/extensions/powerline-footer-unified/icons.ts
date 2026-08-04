@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { loadThemeConfig } from "./theme.ts";
 
 export interface IconSet {
@@ -99,16 +98,17 @@ function sanitizeUserIconOverrides(value: unknown): PartialIconSet {
     return {};
   }
 
-  const sanitized: PartialIconSet = {};
+  const sanitized: Record<string, string> = {};
   const validKeys = Object.keys(NERD_ICONS) as Array<keyof IconSet>;
+  const valueRecord = value as Record<string, unknown>;
   for (const key of validKeys) {
-    const icon = value[key];
+    const icon = valueRecord[key];
     if (typeof icon === "string") {
       sanitized[key] = icon;
     }
   }
 
-  return sanitized;
+  return sanitized as PartialIconSet;
 }
 
 // Separator characters

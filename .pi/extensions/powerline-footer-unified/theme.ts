@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Theme system for powerline-footer
  *

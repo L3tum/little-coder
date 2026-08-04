@@ -1,4 +1,3 @@
-// @ts-nocheck
 // ANSI escape codes for colors
 // Matching oh-my-pi dark theme colors exactly
 

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { LittleCoderOptions } from "../_shared/little-coder-options.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -182,13 +183,15 @@ export default function (pi: ExtensionAPI) {
     const key = `${model.provider}/${model.id}`;
     const profile = resolveProfile(key);
 
-    const opts: any = (event as any).systemPromptOptions ?? {};
-    const existing = opts.littleCoder ?? {};
-    const resolved = toLittleCoderOptions(profile);
+    const eventAny = event as unknown as {
+      systemPromptOptions?: Record<string, any>;
+    };
+    const opts = eventAny.systemPromptOptions ?? {};
+    const resolved = toLittleCoderOptions(profile) as LittleCoderOptions;
 
     // Merge; existing (set by other extensions earlier) wins over defaults
     // from this profile, but undefined existing values fall back.
-    opts.littleCoder = { ...resolved, ...existing };
+    opts.littleCoder = { ...resolved, ...(opts.littleCoder ?? {}) };
     // Re-copy so undefined existing values don't overwrite resolved values
     for (const [k, v] of Object.entries(resolved)) {
       if (opts.littleCoder[k] === undefined) opts.littleCoder[k] = v;

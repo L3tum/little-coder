@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type {
   ColorValue,

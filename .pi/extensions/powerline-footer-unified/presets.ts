@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { ColorScheme, PresetDef, StatusLinePreset } from "./types.ts";
 import { getDefaultColors } from "./theme.ts";
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export const CURSOR_MARKER = "\x1b_pi:c\x07";

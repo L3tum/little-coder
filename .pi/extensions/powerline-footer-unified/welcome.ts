@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { readdirSync, existsSync, statSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir as osHomedir } from "node:os";

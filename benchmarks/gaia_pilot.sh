@@ -36,8 +36,10 @@ fi
 export LLAMACPP_API_KEY="${LLAMACPP_API_KEY:-noop}"
 export OLLAMA_API_KEY="${OLLAMA_API_KEY:-noop}"
 
+PYTHON="${GAIA_PYTHON:-$(command -v python3 || command -v python)}"
+
 cd "$REPO_ROOT"
-exec /home/itay-inbar/miniforge3/envs/local-coder/bin/python benchmarks/gaia.py \
+exec "$PYTHON" benchmarks/gaia.py \
   --split validation \
   --task-ids "${TASKS[@]}" \
   --timeout "$TIMEOUT" \

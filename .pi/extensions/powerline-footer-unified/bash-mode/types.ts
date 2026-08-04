@@ -1,4 +1,3 @@
-// @ts-nocheck
 export interface BashModeSettings {
   toggleShortcut: string;
   transcriptMaxLines: number;

@@ -181,10 +181,14 @@ def _run_exercise(
         if verbose:
             print(f"[{lang}/{ex_name}] {'PASS' if passed else 'FAIL'} in {elapsed:.1f}s on {attempt or 'fail'}")
 
+        total_turns = r1.turn_count
+        if retry and r2:
+            total_turns += r2.turn_count
+
         return {
             "status": attempt or "fail",
             "elapsed_s": round(elapsed, 2),
-            "turn_count": (r1.turn_count + (r2.turn_count if not attempt == "pass_1" and retry else 0)) if attempt else r1.turn_count,
+            "turn_count": total_turns,
         }
 
 

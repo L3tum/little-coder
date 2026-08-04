@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { SeparatorDef, StatusLineSeparatorStyle } from "./types.ts";
 import { getSeparatorChars } from "./icons.ts";
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { hostname as osHostname } from "node:os";
 import { basename } from "node:path";
 import type {
@@ -567,10 +566,10 @@ export function renderSegment(
   ctx: SegmentContext,
 ): RenderedSegment {
   if (id.startsWith("custom:")) {
-    return renderCustomSegment(id, ctx);
+    return renderCustomSegment(id as `custom:${string}`, ctx);
   }
 
-  const segment = SEGMENTS[id];
+  const segment = SEGMENTS[id as BuiltinStatusLineSegmentId];
   if (!segment) {
     return { content: "", visible: false };
   }

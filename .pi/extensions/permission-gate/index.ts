@@ -152,7 +152,7 @@ export function getSafePrefixes(): string[] {
   ];
 }
 
-function hasShellControlOperator(command: string): boolean {
+export function hasShellControlOperator(command: string): boolean {
   return /[;&|`$<>]/.test(command) || /\$\(|\n|\r/.test(command);
 }
 
@@ -175,7 +175,10 @@ function isSafeSingleDiagnosticCommand(command: string): boolean {
 function isSafeDiagnosticCommand(command: string): boolean {
   const c = command.trim().replace(/\s+/g, " ");
   if (isSafeSingleDiagnosticCommand(c)) return true;
-  if (/[;|`$<>]/.test(c) || /\$\(|\n|\r/.test(c)) return false;
+  // Allow && chaining only; reject all other shell operators.
+  // Strip && before checking for other operators (&& contains &).
+  const withoutAndAnd = c.replace(/\s*&&\s*/g, " ");
+  if (hasShellControlOperator(withoutAndAnd)) return false;
   const parts = c.split(/\s+&&\s+/);
   return parts.length > 1 && parts.every(isSafeSingleDiagnosticCommand);
 }
@@ -192,6 +195,9 @@ export function isSafeBash(
 ): boolean {
   const c = command.trim();
   if (isSafeDiagnosticCommand(c)) return true;
+  // Reject commands with shell control operators before prefix matching.
+  // Without this, "ls -la; rm -rf /" passes because it starts with "ls ".
+  if (hasShellControlOperator(c)) return false;
   const normalized = normalizeCargoCommand(c);
   return prefixes.some((p) => c.startsWith(p) || normalized.startsWith(p));
 }

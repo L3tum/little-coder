@@ -1,4 +1,3 @@
-// @ts-nocheck
 export interface WelcomeDismissScheduler<Context> {
   schedule(ctx: Context): void;
   cancel(): void;

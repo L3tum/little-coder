@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   copyToClipboard,
   type ExtensionAPI,
@@ -81,7 +80,10 @@ import {
   requestCodexUsage,
   type UsageSnapshot,
 } from "../../../node_modules/pi-better-openai/src/usage.ts";
-import { renderFixedEditorCluster } from "./fixed-editor/cluster.ts";
+import {
+  renderFixedEditorCluster,
+  type FixedEditorClusterRender,
+} from "./fixed-editor/cluster.ts";
 import {
   emergencyTerminalModeReset,
   TerminalSplitCompositor,
@@ -257,7 +259,7 @@ const APP_RESERVED_SHORTCUTS = [
 ] as const;
 const EXTRA_RESERVED_SHORTCUTS = ["alt+s"] as const;
 const SHORTCUT_MODIFIER_ORDER = ["ctrl", "alt", "super", "shift"] as const;
-const SHORTCUT_MODIFIERS = new Set(SHORTCUT_MODIFIER_ORDER);
+const SHORTCUT_MODIFIERS = new Set<string>(SHORTCUT_MODIFIER_ORDER);
 const SHORTCUT_NAMED_KEYS = new Set([
   "escape",
   "esc",
@@ -879,7 +881,7 @@ function normalizeShortcut(value: string): string {
   const parts = value.trim().toLowerCase().split("+");
   if (parts.length <= 1) return parts[0] ?? "";
 
-  const modifierRank = new Map(
+  const modifierRank = new Map<string, number>(
     SHORTCUT_MODIFIER_ORDER.map((modifier, index) => [modifier, index]),
   );
   const modifiers = parts
@@ -1479,7 +1481,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     items: SelectItem[],
     maxVisible: number,
   ): Promise<SelectItem | null> {
-    return ctx.ui.custom<SelectItem | null>(
+    return ctx.ui.custom(
       (
         tui: any,
         theme: Theme,
@@ -1496,7 +1498,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
           return `${border("│")}${truncateToWidth(text, innerWidth, "…", true)}${border("│")}`;
         };
 
-        selectList.onSelect = (item) => done(item);
+        selectList.onSelect = (item: SelectItem) => done(item);
         selectList.onCancel = () => done(null);
 
         return {
@@ -1534,7 +1536,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
           horizontalAlign: "center",
         }),
       },
-    );
+    ) as Promise<SelectItem | null>;
   }
 
   // Track session start
@@ -1562,8 +1564,8 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     bashCompletionEngine = new BashCompletionEngine();
 
     getThinkingLevelFn =
-      typeof ctx.getThinkingLevel === "function"
-        ? () => ctx.getThinkingLevel()
+      typeof (ctx as any).thinkingLevel !== "undefined"
+        ? () => (ctx as any).thinkingLevel
         : null;
     currentThinkingLevel = getThinkingLevelFn?.() ?? null;
 
@@ -2368,7 +2370,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut(bashModeSettings.toggleShortcut, {
+  pi.registerShortcut(bashModeSettings.toggleShortcut as any, {
     description: "Toggle bash mode",
     handler: async (ctx) => {
       if (!enabled || !ctx.hasUI) return;
@@ -2376,7 +2378,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut("alt+s", {
+  pi.registerShortcut("alt+s" as any, {
     description: "Stash/restore editor text",
     handler: async (ctx) => {
       if (!enabled || !ctx.hasUI) return;
@@ -2384,7 +2386,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut(resolvedShortcuts.stashHistory, {
+  pi.registerShortcut(resolvedShortcuts.stashHistory as any, {
     description: "Open prompt history picker",
     handler: async (ctx) => {
       if (!enabled || !ctx.hasUI) return;
@@ -2392,7 +2394,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut(resolvedShortcuts.copyEditor, {
+  pi.registerShortcut(resolvedShortcuts.copyEditor as any, {
     description: "Copy full editor text",
     handler: async (ctx) => {
       if (!enabled || !ctx.hasUI) return;
@@ -2404,7 +2406,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut(resolvedShortcuts.cutEditor, {
+  pi.registerShortcut(resolvedShortcuts.cutEditor as any, {
     description: "Cut full editor text",
     handler: async (ctx) => {
       if (!enabled || !ctx.hasUI) return;
@@ -2419,7 +2421,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
   });
 
   for (const { shortcutKey, description, action } of CHAT_JUMP_SHORTCUTS) {
-    pi.registerShortcut(resolvedShortcuts[shortcutKey], {
+    pi.registerShortcut(resolvedShortcuts[shortcutKey] as any, {
       description,
       handler: async (ctx) => {
         if (!enabled || !ctx.hasUI) return;
@@ -2907,7 +2909,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
     fixedWidgetContainerBelow =
       tuiChildren[editorContainerMatch.index + 1] ?? null;
 
-    const compositor = new TerminalSplitCompositor({
+    const compositor: TerminalSplitCompositor = new TerminalSplitCompositor({
       tui,
       terminal: tui.terminal,
       mouseScroll: config.mouseScroll,
@@ -2915,18 +2917,21 @@ export default function powerlineFooter(pi: ExtensionAPI) {
         up: resolvedShortcuts.scrollChatUp,
         down: resolvedShortcuts.scrollChatDown,
       },
-      onCopySelection: (text) => copyTextToClipboard(ctx, text),
+      onCopySelection: (text: string) => copyTextToClipboard(ctx, text),
       getShowHardwareCursor: () =>
         typeof tui.getShowHardwareCursor === "function" &&
         tui.getShowHardwareCursor(),
-      renderCluster: (width, terminalRows) => {
+      renderCluster: (
+        width: number,
+        terminalRows: number,
+      ): FixedEditorClusterRender => {
         const theme = currentCtx?.ui?.theme ?? ctx.ui.theme;
-        const statusContainerLines = fixedStatusContainer
+        const statusContainerLines: string[] = fixedStatusContainer
           ? compositor
               .renderHidden(fixedStatusContainer, width)
-              .filter((line) => visibleWidth(line) > 0)
+              .filter((line: string) => visibleWidth(line) > 0)
           : [];
-        const aboveWidgetLines = fixedWidgetContainerAbove
+        const aboveWidgetLines: string[] = fixedWidgetContainerAbove
           ? compositor.renderHidden(fixedWidgetContainerAbove, width)
           : [];
         const belowWidgetLines = fixedWidgetContainerBelow
@@ -3541,7 +3546,7 @@ export default function powerlineFooter(pi: ExtensionAPI) {
             }),
           },
         )
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.debug("[powerline-footer] Welcome overlay failed:", error);
         });
     }, 100);

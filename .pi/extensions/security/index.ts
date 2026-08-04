@@ -47,13 +47,41 @@ export default function (pi: ExtensionAPI) {
     { pattern: /pnpm-lock\.yaml$/, desc: "pnpm-lock.yaml" },
   ];
 
-  const protectedShellPath = String.raw`(?:\.\/)?(?:[^\s;&|<>]*\/)?(?:\.env(?:\.(?!example\b)[^\s;&|<>]+)?|\.dev\.vars(?:\.[^\s;&|<>]+)?|[^\s;&|<>]+\.(?:pem|key))`;
+  // Expanded character class: also exclude quotes, backtick, and $ to prevent
+  // quoting bypasses like: echo x > '.env'  or  echo x > "$HOME/.env"
+  const PROTECTED_CHAR = String.raw`[^\s;&|<>'"` + "`$]";
+  const protectedShellPath =
+    String.raw`(?:\.\/)?(?:` +
+    PROTECTED_CHAR +
+    `*\/)?(?:\.env(?:\.(?!example\b)` +
+    PROTECTED_CHAR +
+    `+)?|\.dev\.vars(?:\.` +
+    PROTECTED_CHAR +
+    `+)?|` +
+    PROTECTED_CHAR +
+    `+\.(?:pem|key))`;
   const dangerousBashWrites = [
     new RegExp(
-      String.raw`(?:>|>>|1>|2>|&>|tee\s+(?:-[a-zA-Z]+\s+)*)\s*${protectedShellPath}`,
+      String.raw`(?:>|>>|1>|2>|&>|tee\s+(?:-[a-zA-Z]+\s+)*)\s*(?:${protectedShellPath}|[\"']\.env\b` +
+        PROTECTED_CHAR +
+        `*[\"']|[\"']` +
+        PROTECTED_CHAR +
+        `+\.(?:pem|key)[\"'])`,
     ),
-    new RegExp(String.raw`\b(?:cp|mv)\b[^;&|]*\s${protectedShellPath}(?:\s|$)`),
-    new RegExp(String.raw`\bcat\b[^;&|]*(?:>|>>)\s*${protectedShellPath}`),
+    new RegExp(
+      String.raw`\b(?:cp|mv)\b[^;&|]*\s(?:${protectedShellPath}|[\"']\.env\b` +
+        PROTECTED_CHAR +
+        `*[\"']|[\"']` +
+        PROTECTED_CHAR +
+        `+\.(?:pem|key)[\"'])(?:\s|$)`,
+    ),
+    new RegExp(
+      String.raw`\bcat\b[^;&|]*(?:>|>>)\s*(?:${protectedShellPath}|[\"']\.env\b` +
+        PROTECTED_CHAR +
+        `*[\"']|[\"']` +
+        PROTECTED_CHAR +
+        `+\.(?:pem|key)[\"'])`,
+    ),
   ];
 
   pi.on("tool_call", async (event, ctx) => {
@@ -88,17 +116,24 @@ export default function (pi: ExtensionAPI) {
     }
 
     if (event.toolName === "write" || event.toolName === "edit") {
-      const filePath = event.input.path as string;
-      const normalizedPath = path.normalize(filePath);
+      const input = event.input as Record<string, unknown>;
+      const rawPath =
+        typeof input.path === "string"
+          ? input.path
+          : typeof input.file_path === "string"
+            ? input.file_path
+            : undefined;
+      if (!rawPath) return undefined;
+      const filePath = path.normalize(rawPath);
       for (const { pattern, desc } of protectedPaths) {
-        if (pattern.test(normalizedPath)) {
+        if (pattern.test(filePath)) {
           if (ctx.hasUI)
             ctx.ui.notify(`Blocked write to ${desc}: ${filePath}`, "warning");
           return { block: true, reason: `Protected path: ${desc}` };
         }
       }
       for (const { pattern, desc } of softProtectedPaths) {
-        if (pattern.test(normalizedPath)) {
+        if (pattern.test(filePath)) {
           if (!ctx.hasUI)
             return { block: true, reason: `Protected path (no UI): ${desc}` };
           const ok = await ctx.ui.confirm(

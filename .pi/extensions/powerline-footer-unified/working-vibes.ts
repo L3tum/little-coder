@@ -1,10 +1,10 @@
-// @ts-nocheck
 // working-vibes.ts
 // AI-generated contextual working messages that match a user's preferred theme/vibe.
 // Uses module-level state (matching powerline-footer pattern).
 
-import { complete, type Context } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { complete } from "@earendil-works/pi-ai/compat";
+import type { Context as AiContext } from "@earendil-works/pi-ai";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
@@ -386,7 +386,7 @@ function parseVibeResponse(response: string, fallback: string): string {
   return vibe;
 }
 
-function buildAiContext(prompt: string): Context {
+function buildAiContext(prompt: string): AiContext {
   return {
     systemPrompt: VIBE_SYSTEM_PROMPT,
     messages: [
@@ -724,11 +724,11 @@ export async function generateVibesBatch(
     }
 
     // Parse response: one vibe per line
-    const vibes = textContent.text
+    const vibes: string[] = textContent.text
       .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => {
+      .map((line: string) => line.trim())
+      .filter((line: string) => line.length > 0)
+      .map((line: string) => {
         // Clean up each line
         let vibe = line.replace(/^["'\d.\-)\s]+/, "").trim(); // Remove leading quotes, numbers, bullets
         vibe = vibe.replace(/["']$/g, ""); // Remove trailing quotes
@@ -737,7 +737,7 @@ export async function generateVibesBatch(
         }
         return vibe;
       })
-      .filter((vibe) => vibe.length > 3 && vibe !== "..."); // Filter invalid
+      .filter((vibe: string) => vibe.length > 3 && vibe !== "..."); // Filter invalid
 
     if (vibes.length === 0) {
       return {

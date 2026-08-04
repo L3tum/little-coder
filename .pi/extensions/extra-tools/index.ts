@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { globFiles, renderGlobOutcome } from "./glob.ts";
@@ -306,29 +307,35 @@ export default function (pi: ExtensionAPI) {
 
         const capped = matches;
         const truncated: string[] = [];
-
         const parts: string[] = [];
-        for (const abs of capped) {
-          const rel = abs.startsWith(base + "/")
-            ? abs.slice(base.length + 1)
-            : abs;
-          if (!existsSync(abs)) {
-            parts.push(`--- ${abs} ---\n[File not found]`);
-            continue;
-          }
-          try {
-            const buf = readFileSync(abs);
-            let text = buf.toString("utf-8");
-            if (charLimit > 0 && text.length > charLimit) {
-              text = text.slice(0, charLimit);
-              truncated.push(rel);
-            }
-            parts.push(`--- ${abs} ---\n${text}`);
-          } catch (e) {
-            parts.push(
-              `--- ${abs} ---\n[Error reading: ${(e as Error).message}]`,
-            );
-          }
+
+        // Read files with bounded concurrency to avoid blocking the event loop.
+        // Each batch processes up to CONCURRENCY files in parallel.
+        const CONCURRENCY = 5;
+        for (let i = 0; i < capped.length; i += CONCURRENCY) {
+          const batch = capped.slice(i, i + CONCURRENCY);
+          const batchResults = await Promise.all(
+            batch.map(async (abs) => {
+              const rel = abs.startsWith(base + "/")
+                ? abs.slice(base.length + 1)
+                : abs;
+              if (!existsSync(abs)) {
+                return `--- ${abs} ---\n[File not found]`;
+              }
+              try {
+                const buf = await readFile(abs);
+                let text = buf.toString("utf-8");
+                if (charLimit > 0 && text.length > charLimit) {
+                  text = text.slice(0, charLimit);
+                  truncated.push(rel);
+                }
+                return `--- ${abs} ---\n${text}`;
+              } catch (e) {
+                return `--- ${abs} ---\n[Error reading: ${(e as Error).message}]`;
+              }
+            }),
+          );
+          parts.push(...batchResults);
         }
 
         const suffix: string[] = [];

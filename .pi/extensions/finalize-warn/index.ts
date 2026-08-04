@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { harnessIntervention } from "../_shared/intervention.ts";
+import { getLittleCoderOptions } from "../_shared/little-coder-options.ts";
 
 // Pre-cap finalize-warn: when the agent has WARN_REMAINING turns left
 // (this turn included), inject a follow-up user message reminding it to
@@ -37,8 +38,11 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
     turnsThisRun = 0;
     warnedThisRun = false;
-    const opts: any = (event as any).systemPromptOptions ?? {};
-    const lcCap = Number(opts?.littleCoder?.maxTurns);
+    const opts = getLittleCoderOptions(
+      (event as unknown as { systemPromptOptions?: Record<string, unknown> })
+        .systemPromptOptions,
+    );
+    const lcCap = Number(opts.maxTurns);
     capForRun = Number.isFinite(lcCap) && lcCap > 0 ? lcCap : envCap();
   });
 

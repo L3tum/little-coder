@@ -27,7 +27,9 @@ fi
 
 DIR="$RUNS_DIR/$RUN_ID"
 
-/home/itay-inbar/miniforge3/envs/local-coder/bin/python - "$RUN_ID" "$DIR" <<'PY'
+PYTHON="${GAIA_PYTHON:-$(command -v python3 || command -v python)}"
+
+"$PYTHON" - "$RUN_ID" "$DIR" <<'PY'
 import json, os, sys, time, subprocess, statistics, datetime
 from pathlib import Path
 
