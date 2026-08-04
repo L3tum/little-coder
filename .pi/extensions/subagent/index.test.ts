@@ -94,6 +94,17 @@ describe("subagent agent discovery", () => {
       discovery.discovery.agents.some((agent) => agent.name === "PLAN"),
     ).toBe(true);
   });
+
+  it("formats agent list from discoverAgents via formatSubagentsList", () => {
+    const project = join(tmp, "repo");
+    mkdirSync(project, { recursive: true });
+    const discovery = discoverAgents(project, "both");
+    const output = __subagentTest.formatSubagentsList(discovery.agents);
+    expect(output).toContain("Available subagents");
+    expect(output).toContain("PLAN");
+    expect(output).toContain("RESEARCH");
+    expect(output).toContain("COMPOSE");
+  });
 });
 
 describe("subagent project-agent trust helpers", () => {

@@ -320,7 +320,8 @@ design, implementation steps, dependencies, risks, and tests needed."
 - Thread the full output from each subagent into the next phase's task context
 - The COMPOSE phase subagent output must be a complete markdown specification with
   headings and body content
-- Do NOT skip any phase`;
+- Do NOT skip any phase
+- Use \`tools\` to list all available tools and \`subagents\` to list available subagents if needed`;
 
       // Enter plannotator's planning phase so plannotator_submit_plan is
       // registered. If the plannotator extension is not active this is a

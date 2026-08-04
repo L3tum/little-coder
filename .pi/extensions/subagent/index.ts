@@ -19,7 +19,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { z } from "zod";
-import { type AgentConfig, discoverAgentsWithStarter } from "./agents.js";
+import {
+  type AgentConfig,
+  discoverAgents,
+  discoverAgentsWithStarter,
+} from "./agents.js";
 import { type RenderTheme, renderCall, renderResult } from "./render.js";
 import { getResultSummaryText } from "./runner-events.js";
 import { mapConcurrent, runAgent } from "./runner.js";
@@ -182,9 +186,19 @@ function subagentThinking(agent: string): SubagentLevel | undefined {
   return settings[agent] ?? settings.all;
 }
 function steeringForLevel(level: SubagentLevel): string {
-  return level === "off"
-    ? ""
-    : `\n\n## Delegation guidance\n\nSubagent level is ${level}. Use the subagent tool for well-scoped independent work when it improves reliability. Higher levels should delegate more proactively; minimal/low levels should delegate only when clearly useful.`;
+  const guidance: Record<SubagentLevel, string> = {
+    off: "",
+    minimal:
+      "\nOnly delegate to subagents when the task is clearly well-scoped and independent.",
+    low: "\nDelegate to subagents for clearly independent, well-scoped tasks when it saves effort.",
+    medium:
+      "\nDelegate to subagents for independent subtasks where parallelism or isolation helps.",
+    high: "\nDelegate to subagents proactively where possible; prefer parallel delegation for independent work.",
+    xhigh:
+      "\nDelegate aggressively — run independent work in parallel subagents whenever feasible.",
+    max: "\nMaximize delegation — always delegate to subagents when the task can be isolated, and prefer parallel execution.",
+  };
+  return guidance[level];
 }
 
 // ---------------------------------------------------------------------------
@@ -776,55 +790,18 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // Inject available agents into the system prompt
+  // Inform the agent about available subagent tools without bloating the prompt
   pi.on("before_agent_start", async (event) => {
     if (!canUseSubagentTool) return;
     if (discoveredAgents.length === 0) return;
 
-    projectAgentsTrustedForPrompt = areProjectAgentsTrusted(
-      readSettings(),
-      discoveredProjectAgentsDir,
-    );
-    const agentList = agentsForPrompt(
-      discoveredAgents,
-      projectAgentsTrustedForPrompt,
-    )
-      .map((a) => `- **${a.name}**: ${a.description}`)
-      .join("\n");
     return {
       systemPrompt:
         event.systemPrompt +
-        `\n\n## Available Subagents
+        `\n\n## Subagent tools
 
-The following subagents are available via the \`subagent\` tool:
-
-${agentList}
-
-### How to call the subagent tool
-
-Each subagent runs in an **isolated process**.
-
-Context behavior is controlled by optional 'mode':
-- 'spawn' (default): child receives only the provided task prompt. Best for isolated, reproducible tasks with lower token/cost and less context leakage.
-- 'fork': child receives a forked snapshot of current session context plus the task prompt. Best for follow-up tasks that rely on prior context; usually higher token/cost and may include sensitive context.
-
-**Single mode** — delegate one task:
-\`\`\`json
-{ "agent": "agent-name", "task": "Detailed task...", "mode": "spawn" }
-\`\`\`
-
-**Parallel mode** — run multiple tasks concurrently (do NOT also set agent/task):
-\`\`\`json
-{ "tasks": [{ "agent": "agent-name", "task": "..." }, { "agent": "other-agent", "task": "..." }], "mode": "fork" }
-\`\`\`
-
-Use single mode for one task, parallel mode when tasks are independent and can run simultaneously.
-
-### Runtime delegation guards
-
-- Max depth: current depth ${currentDepth}, max depth ${maxDepth}
-- Cycle prevention: ${preventCycles ? "enabled" : "disabled"}
-- Current delegation stack: ${ancestorAgentStack.length > 0 ? ancestorAgentStack.join(" -> ") : "(root)"}
+- **\`subagents\`** — call this tool to list all available subagents (names, descriptions, sources).
+- **\`subagent\`** — delegate work to a subagent by name. Use single mode for one task or parallel mode for independent tasks. Context modes: \`spawn\` (isolated) or \`fork\` (inherits session context).
 ${steeringForLevel(configuredLevel)}
 `,
     };
@@ -1044,6 +1021,24 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
           renderContext,
         ),
     });
+
+    // Register the subagents tool (lists available subagents)
+    pi.registerTool({
+      name: "subagents",
+      label: "Subagents",
+      description: "List all available subagents.",
+      promptSnippet: "subagents(): list available subagents.",
+      parameters: Type.Object({}),
+      async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+        const discovery = discoverAgents(ctx.cwd, "both");
+        return {
+          content: [
+            { type: "text", text: __formatSubagentsList(discovery.agents) },
+          ],
+          details: {},
+        };
+      },
+    });
   }
 
   async function executeSingle(
@@ -1198,6 +1193,15 @@ function __resetSettingsCache(): void {
   settingsCache = null;
 }
 
+function __formatSubagentsList(agents: AgentConfig[]): string {
+  if (agents.length === 0) return "No subagents available.";
+  const lines = [`Available subagents (${agents.length}):`];
+  for (const a of agents) {
+    lines.push(`- **${a.name}** (${a.source}) — ${a.description}`);
+  }
+  return lines.join("\n");
+}
+
 export const __subagentTest = {
   parseDelegationMode,
   buildForkSessionSnapshotJsonl,
@@ -1210,4 +1214,5 @@ export const __subagentTest = {
   readSettings,
   writeSettings,
   __resetSettingsCache,
+  formatSubagentsList: __formatSubagentsList,
 };

@@ -146,6 +146,7 @@ Clarify the user's request and produce a structured requirements document.
 - Be concise but precise — your output feeds directly into the RESEARCH subagent
 - Do not implement anything — this is analysis only
 - Use tools (read, grep, code_search) only if needed to understand context
+- Use \`tools\` to list all available tools if you're unsure which tool to use
 - End your response with the complete refined requirements — do not trail off into a tool call`,
       source: "user",
       filePath,
@@ -193,6 +194,7 @@ Explore the codebase to gather concrete evidence for the plan.
 - Read actual code, do not guess — your output feeds the COMPOSE subagent
 - Be specific: file paths, function names, line numbers
 - Stay read-only
+- Use \`tools\` to list all available tools if you're unsure which tool to use
 - End your response with the complete research findings — do not trail off into a tool call`,
       source: "user",
       filePath,
@@ -222,6 +224,7 @@ requirements and research findings provided in the task.
 - Your FINAL message MUST be the complete markdown specification below.
 - Do NOT end your turn with a tool call. Always end with the spec text.
 - Do NOT write files. Stay read-only.
+- Use \`tools\` to list all available tools if you're unsure which tool to use.
 - Be specific: file paths, function names, line numbers.
 
 ### Output Format — produce this exact structure

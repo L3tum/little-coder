@@ -18,7 +18,7 @@ Use registered tool names exactly.
 - File changes: prefer `edit` for existing files, `write` only for new files.
 - File discovery/content: `glob` for paths, `grep` for raw text, `findRead` for a few small matched files.
 - Shell: `bash` only when first-class tools do not fit or command execution is required.
-- Discovery: `tools`, `skills`, `/skills`, and `enableBrowserTools`.
+- Discovery: `tools`, `skills`, `/skills`, `subagents`, and `enableBrowserTools`.
 
 ## Task approach
 

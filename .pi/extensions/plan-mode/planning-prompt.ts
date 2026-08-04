@@ -17,6 +17,11 @@ Prefer high-signal tools before broad text/file sweeps:
 4. Use targeted read only after narrowing to specific files/ranges.
 5. Avoid broad grep/find/read sweeps unless code-aware tools cannot answer the question.
 
+### Tool and subagent discovery
+
+- Use \`tools\` to list all available tools when unsure which tool fits.
+- Use \`subagents\` to list available subagents when considering delegation.
+
 ### Evidence and external research
 
 - Use EvidenceAdd for any factual claim the final plan will cite. Keep one fact per entry and preserve the source identifier/URL.
