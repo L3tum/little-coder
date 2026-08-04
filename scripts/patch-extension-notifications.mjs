@@ -2,6 +2,49 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// File-stub patches: replace entire file contents (no oldText matching needed).
+// These fix .ts source files shipped in node_modules that have missing dev deps,
+// causing tsc errors. TypeScript's skipLibCheck only applies to .d.ts files.
+const FILE_STUBS = [
+  {
+    name: "tsc stub: claude-agent-sdk (missing @anthropic-ai/claude-agent-sdk types)",
+    path: [
+      "node_modules",
+      "@plannotator",
+      "pi-extension",
+      "generated",
+      "ai",
+      "providers",
+      "claude-agent-sdk.ts",
+    ],
+    content: `export const query = {} as any;\nexport const ClaudeAgentSDK = {} as any;\nexport default {} as any;\n`,
+  },
+  {
+    name: "tsc stub: opencode-sdk (missing @opencode-ai/sdk types)",
+    path: [
+      "node_modules",
+      "@plannotator",
+      "pi-extension",
+      "generated",
+      "ai",
+      "providers",
+      "opencode-sdk.ts",
+    ],
+    content: `export const OpencodeClient = {} as any;\nexport default {} as any;\n`,
+  },
+  {
+    name: "tsc stub: html-to-markdown (missing turndown types)",
+    path: [
+      "node_modules",
+      "@plannotator",
+      "pi-extension",
+      "generated",
+      "html-to-markdown.ts",
+    ],
+    content: `export const TurndownService = class {} as any;\nexport const htmlToMarkdown = function () {} as any;\nexport default {} as any;\n`,
+  },
+];
+
 export const PATCHES = [
   {
     name: "plannotator /plan canonical command shim",
@@ -133,6 +176,16 @@ export function applyTextPatch(current, patch) {
 }
 
 export function applyPostinstallPatches(root = process.cwd()) {
+  // Apply full file stubs (e.g. tsc type stubs for generated files)
+  for (const stub of FILE_STUBS) {
+    const file = join(root, ...stub.path);
+    if (!existsSync(file)) continue;
+    const current = readFileSync(file, "utf8");
+    if (current === stub.content) continue; // already patched
+    writeFileSync(file, stub.content);
+  }
+
+  // Apply text patches
   for (const patch of PATCHES) {
     const file = join(root, ...patch.path);
     if (!existsSync(file)) continue;

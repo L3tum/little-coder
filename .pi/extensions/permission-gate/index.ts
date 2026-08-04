@@ -15,6 +15,7 @@ import { homedir, tmpdir } from "node:os";
 import { normalizeWritePath } from "../write-guard/index.ts";
 
 const BUILTIN_SAFE_PREFIXES: readonly string[] = [
+  // Read-only commands
   "ls",
   "cat",
   "head",
@@ -31,6 +32,7 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "uname",
   "whoami",
   "id",
+  // Git read-only
   "git log",
   "git status",
   "git diff",
@@ -54,22 +56,36 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "git cherry",
   "git bisect log",
   "git worktree list",
+  // Search / find
   "find ",
   "grep ",
   "rg ",
   "ag ",
   "fd ",
   "sed ",
+  // Interpreters
   "python ",
   "python3 ",
   "node ",
   "ruby ",
   "perl ",
+  // Test runners (diagnostic only)
+  "pytest",
+  "pytest ",
+  "jest",
+  "jest ",
+  // Package managers
   "pip show",
   "pip list",
   "npm list",
   "npx skills",
+  // Compilers
+  "tsc",
+  "tsc ",
+  // Cargo
   "cargo metadata",
+  "cargo build",
+  "cargo build ",
   "cargo check",
   "cargo check ",
   "cargo test",
@@ -80,6 +96,7 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "cargo fmt --check ",
   "cargo miri test",
   "cargo miri test ",
+  // System info
   "df ",
   "du ",
   "free ",
@@ -87,10 +104,30 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "ps ",
   "curl -I",
   "curl --head",
+  // File inspection (read-only)
+  "file ",
+  "stat ",
+  "sha256sum ",
+  "md5sum ",
+  "diff ",
+  // Filesystem scaffolding
   "cp ",
   "mv ",
   "mkdir ",
   "touch ",
+  // rmdir (removes only empty directories)
+  "rmdir ",
+  // Path utilities (read-only resolution)
+  "basename ",
+  "dirname ",
+  "realpath ",
+  "readlink ",
+  // Text utilities (transform-only)
+  "cut ",
+  "sort ",
+  "uniq ",
+  "tr ",
+  "comm ",
 ];
 
 export type ExternalFilePolicy = "deny" | "ask" | "accept";
@@ -195,9 +232,16 @@ export function isSafeBash(
 ): boolean {
   const c = command.trim();
   if (isSafeDiagnosticCommand(c)) return true;
+  // Strip safe stderr redirections before checking for control operators.
+  // "2>/dev/null" and "2>&1" are standard patterns to suppress/merge stderr.
+  // They are safe because: 2>/dev/null discards stderr to a fixed safe path,
+  // and 2>&1 merges stderr into stdout (no new file creation or data loss).
+  const withoutStderrRedirect = c
+    .replace(/\s*2>\s*\/dev\/null/g, "")
+    .replace(/\s*2>&1/g, "");
   // Reject commands with shell control operators before prefix matching.
   // Without this, "ls -la; rm -rf /" passes because it starts with "ls ".
-  if (hasShellControlOperator(c)) return false;
+  if (hasShellControlOperator(withoutStderrRedirect)) return false;
   const normalized = normalizeCargoCommand(c);
   return prefixes.some((p) => c.startsWith(p) || normalized.startsWith(p));
 }
@@ -444,7 +488,7 @@ export default function (pi: ExtensionAPI) {
             }
             return {
               block: true,
-              reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES`,
+              reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES. Ask the user to execute this command instead.`,
             };
           }
         }

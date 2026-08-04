@@ -19,18 +19,31 @@ describe("isSafeBash", () => {
     expect(isSafeBash("grep -r pattern .")).toBe(true);
     expect(isSafeBash("rg pattern src/")).toBe(true);
     expect(isSafeBash("sed -n '1,20p' file.ts")).toBe(true);
+    // file inspection
+    expect(isSafeBash("file src/main.ts")).toBe(true);
+    expect(isSafeBash("stat /tmp/output")).toBe(true);
+    expect(isSafeBash("sha256sum Cargo.lock")).toBe(true);
+    expect(isSafeBash("md5sum dist/bundle.js")).toBe(true);
+    expect(isSafeBash("diff a.txt b.txt")).toBe(true);
   });
-  it("allows routine filesystem scaffolding (cp/mv/mkdir/touch)", () => {
+  it("allows routine filesystem scaffolding (cp/mv/mkdir/touch/rmdir)", () => {
     expect(isSafeBash("cp a b")).toBe(true);
     expect(isSafeBash("mv old new")).toBe(true);
     expect(isSafeBash("mkdir -p sub/dir")).toBe(true);
     expect(isSafeBash("touch foo.md")).toBe(true);
+    expect(isSafeBash("rmdir empty_dir")).toBe(true);
   });
   it("preserves trailing-whitespace word boundary on fs prefixes", () => {
     expect(isSafeBash("cpufetch")).toBe(false);
     expect(isSafeBash("mvtool")).toBe(false);
     expect(isSafeBash("mkdiroops")).toBe(false);
     expect(isSafeBash("touchscreen")).toBe(false);
+    // new space-prefixed entries also enforce word boundaries
+    expect(isSafeBash("difficult")).toBe(false);
+    expect(isSafeBash("filetool")).toBe(false);
+    expect(isSafeBash("stattool")).toBe(false);
+    // no-space prefixes (like ls, tsc, pytest, jest) have no word boundary
+    // this is consistent with the existing behavior of ls/cat/etc.
   });
   it("allows npm/npx test diagnostics", () => {
     expect(isSafeBash("npm test")).toBe(true);
@@ -70,6 +83,45 @@ describe("isSafeBash", () => {
     expect(isSafeBash("make test", extra)).toBe(true);
     expect(isSafeBash("docker compose ps", extra)).toBe(true);
     expect(isSafeBash("docker compose down", extra)).toBe(false);
+  });
+  it("allows compilers and test runners", () => {
+    expect(isSafeBash("tsc")).toBe(true);
+    expect(isSafeBash("tsc --noEmit")).toBe(true);
+    expect(isSafeBash("pytest tests/")).toBe(true);
+    expect(isSafeBash("pytest -v test_main.py")).toBe(true);
+    expect(isSafeBash("jest")).toBe(true);
+    expect(isSafeBash("jest --coverage src/")).toBe(true);
+    expect(isSafeBash("cargo build")).toBe(true);
+    expect(isSafeBash("cargo build --release")).toBe(true);
+  });
+  it("allows safe stderr redirections (2>/dev/null and 2>&1)", () => {
+    // stderr-only redirects are stripped before the control operator check
+    expect(isSafeBash("cargo check 2>/dev/null")).toBe(true);
+    expect(isSafeBash("cargo test 2>/dev/null")).toBe(true);
+    expect(isSafeBash("cargo check 2>&1")).toBe(true);
+    expect(isSafeBash("cargo test 2>&1")).toBe(true);
+    expect(isSafeBash("cargo build 2>/dev/null")).toBe(true);
+    expect(isSafeBash("tsc --noEmit 2>/dev/null")).toBe(true);
+    expect(isSafeBash("pytest tests/ 2>&1")).toBe(true);
+    // still blocks dangerous redirects
+    expect(isSafeBash("cat /etc/passwd > /tmp/leaked")).toBe(false);
+    expect(isSafeBash("ls 1>output.txt")).toBe(false);
+  });
+  it("blocks awk and timeout which can execute arbitrary commands", () => {
+    expect(isSafeBash("awk '{print}' file.txt")).toBe(false);
+    expect(isSafeBash("timeout 30 npm test")).toBe(false);
+    expect(isSafeBash("timeout 10 ls")).toBe(false);
+  });
+  it("allows path utilities and text processing commands", () => {
+    expect(isSafeBash("basename /path/to/file.txt")).toBe(true);
+    expect(isSafeBash("dirname /path/to/file.txt")).toBe(true);
+    expect(isSafeBash("realpath ./file.txt")).toBe(true);
+    expect(isSafeBash("readlink /proc/self/exe")).toBe(true);
+    expect(isSafeBash("cut -d, -f1 data.csv")).toBe(true);
+    expect(isSafeBash("sort file.txt")).toBe(true);
+    expect(isSafeBash("uniq file.txt")).toBe(true);
+    expect(isSafeBash("tr 'A-Z' 'a-z' file.txt")).toBe(true);
+    expect(isSafeBash("comm file1.txt file2.txt")).toBe(true);
   });
 });
 
