@@ -10,6 +10,7 @@ describe("mode-commands command registration", () => {
     expect(commands).toContain("plan-prompt");
     expect(commands).toContain("execute");
     expect(commands).toContain("review");
+    expect(commands).toContain("review-focused");
     expect(commands).toContain("review-project");
   });
 });
