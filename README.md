@@ -2,28 +2,31 @@
 
 # little-coder
 
-**L3tum's fork of little-coder: a coding agent tuned for small local models, built on top of [pi](https://pi.dev).**
-
-> **Fork note.** Maintained by **L3tum**. Historical paper / benchmark results in this README remain attributed to Itay Inbar's original little-coder work. Fork-era benchmarks: **TBD**.
-
-The research story behind all this — why scaffold–model fit matters, how a 9.7 B Qwen beat frontier entries on Aider Polyglot, and what the load-bearing mechanisms actually do — is written up on Substack: **[_Honey, I Shrunk the Coding Agent_](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**. Start there if you want the "why"; stay here for the "how".
+**This is a fork of the original little-coder by itayinbarr introduced in [_Honey, I Shrunk the Coding Agent_](https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent)**. If you want to read some background, start there.
 
 ## Highlights
 
-- Carries forward recent little-coder work: pi-based scaffold, benchmark harness, Browser / Evidence tool families, GAIA / Terminal-Bench / Aider support, read guard, bounded glob, and live llama.cpp context-window detection.
-- Fork additions on top of upstream: agent-callable `tools` / `skills`, on-demand Browser tool loading via `enableBrowserTools`, extra compatibility repair for malformed tool calls, `bash` `cwd` support plus no-op `cd` handling, external-file access prompts, and `findRead` single-file character caps.
-- Fork packaging/tooling: L3tum install paths, direct codebase-memory integration, bundled pi-extension loading from `package.json`, pi-inspect support, and fork-owned GitHub Actions/site publishing.
-- Benchmarks for this fork: **TBD**.
+- Built on [pi](https://pi.dev) as the minimal core -- supports any pi extensions for customization
+- Efficient System Prompt -- standard system prompt [AGENTS.md](./AGENTS.md) clocks in at only ~3000 characters, including dynamic steering. At ~4 characters per token, that's only ~750 tokens!
+- Subagent support -- Select the model (`/subagent-model [subagent] [model]` or for all subagents `/subagent-model-all [model]`) and improve your context efficiency
+- Dynamic Subagent Steering -- automatically injects a notice for subagent use depending on the selected level `/subagent-level (off|low|medium|high|xhigh)`
+- Dynamic Skill Steering -- reads frontmatter entries from skill files, including tools like [bash](./skills/tools/bash.md), to remind the agent how to do things
+- Extra-tooling support -- Lots of agents will try to `cd [cwd]` at the start of bash commands. The `bash` tool supports an optional `cwd` parameter that some agents may use for a more structured approach
+- Dynamic Tool Loading -- Dynamic Skill Steering automatically loads the skill for a tool, but if the agent wants to know what's available, it can execute `tools` or `skills` to get a list and short descriptions for each loaded tool. No context bloat at start loading in 500 skills and tools that you installed "just in case"
+- LSP support -- building on top of [pi-hooks/lsp](https://github.com/prateekmedia/pi-hooks/tree/main/lsp) with some minor updates like C#/.NET support
+- Breadcrumbs -- Search through old sessions
+- Efficient Browsing Tools -- Browsing Tools are disabled by default (except for webfetch/websearch) to not bloat context and confuse the agent. Can just be enabled by the agent if needed
+- Tuned for small models -- Failed tool call steering, Write Guards, CWD Guards, Looser Parameter Enforcement, Heuristical Improvements, etc.
+- Efficient Planning & Reviewing -- Two commands, `/deep-plan` and `/review` start subagent-focused pipelines that avoid many pitfalls
+- Efficient Context Compression (Experimental) -- Integration of pi-vcc for more efficient context compressions. Needs some tuning I think.
+- Bundled extensions -- [Ponytail](./skills/ponytail.md), [pi-powerline-footer](./), [pi-insights](./), [pi-inspect](./), [plannotator](./), [pi-better-openai](./), [pi-ask-user](./), [pi-vcc](./)
 
-## How it relates to pi
 
-[pi](https://pi.dev) is the minimal substrate — agent loop, multi-provider API, TUI, session tree, compaction, extension model. Four built-in tools (read / write / edit / bash) and a ~1000-token system prompt.
-
-little-coder is **pi + 20 extensions + 30 skill markdown files + a Python benchmark harness**. It doesn't fork pi or shadow its CLI — pi is a plain dependency in `package.json`, and everything little-coder-specific lives under `.pi/extensions/`, `skills/`, and `benchmarks/`. The launcher runs pi with `--no-extensions` and wires in exactly the bundled set, so you add your own extension by dropping a directory into `.pi/extensions/` (or passing `little-coder -e /path/to/ext/index.ts` at launch) and remove one of ours by deleting its directory. Note this also means a globally `pi install`'d package won't load inside little-coder — `pi install` registers into pi's settings, which `--no-extensions` skips.
-
-If you've never used pi, it's useful to skim [pi.dev](https://pi.dev) first — the rest of this doc assumes pi's model of `--agent-import-path`, `--mode rpc`, and `.pi/extensions/` auto-discovery.
+Want to read more? The easiest way is to read the source code, but just open an issue with any questions you have. There's also still plenty of experimental features in this repo that aren't mentioned. Any suggestions are welcome :)
 
 ## Install
+
+If you've never used pi, it's useful to skim [pi.dev](https://pi.dev) first.
 
 One-line install (Node.js 22.19+ required):
 
@@ -70,7 +73,9 @@ The agent uses the directory you launched it from as its working directory — `
 
 In the TUI you can use `/tools` to list loaded tools and `/skills` to list available skills. The agent can also call `tools`, `skills`, and `enableBrowserTools` directly.
 
-Use `/plan` to enter browser-reviewed planning mode before implementation. The legacy `/plannotator` command is kept as a compatibility shim but `/plan` is canonical. See `docs/planning-mode.md` for the planning workflow, `ask_user` behavior, and issue-agent `/answer ...` clarification flow.
+Use `/plan` to enter browser-reviewed planning mode before implementation.
+Use `/deep-plan` for a subagent focused planning pipeline of REFINE, RESEARCH, COMPOSE.
+Use `/review` (changes only), `/review-project` or `/review-focused` for a subagent focused reviewing pipeline including 7 different subagents.
 
 little-coder uses reflection-generated skills and breadcrumbs for reusable session learning. Use `/reflect`, `/reflect-review`, `/breadcrumbs`, `/skills`, and `/promote-user-skill` to draft, review, search, load, and promote reusable guidance. Reflection writes accepted drafts to user-level `~/.pi/skills/<skill>/SKILL.md`; `/promote-user-skill [skill]` copies stable user skills into repo `skills/user/<skill>/` after duplicate checks so they can be packaged.
 
@@ -87,81 +92,6 @@ export LMSTUDIO_API_KEY=noop
 `LLAMACPP_BASE_URL`, `OLLAMA_BASE_URL`, and `LMSTUDIO_BASE_URL` override the defaults (`http://127.0.0.1:8888/v1`, `http://127.0.0.1:11434/v1`, `http://127.0.0.1:1234/v1`).
 
 For cloud providers, set the standard env (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) and pi will discover it.
-
-## Local model setup (optional)
-
-Skip this section if you're using a cloud model.
-
-**Option A — llama.cpp** (fastest for local; supports Qwen3.6-35B-A3B MoE):
-
-```bash
-# One-time: build llama.cpp with CUDA (sm_XXX = your GPU arch; Blackwell = 120)
-git clone https://github.com/ggml-org/llama.cpp && cd llama.cpp
-cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=120 -DLLAMA_CURL=ON
-cmake --build build --config Release -j
-
-# Fetch the model GGUF and the matching vision projector.
-# The mmproj (~900 MB) is what lets the model see attached screenshots.
-pip install -U "huggingface_hub[cli]"
-hf download unsloth/Qwen3.6-35B-A3B-GGUF Qwen3.6-35B-A3B-UD-Q4_K_M.gguf --local-dir ~/models
-hf download unsloth/Qwen3.6-35B-A3B-GGUF mmproj-F16.gguf            --local-dir ~/models
-
-# Serve it (MoE trick: experts in RAM, attention on GPU → 22 GB model on 8 GB VRAM)
-build/bin/llama-server -m ~/models/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf \
-   --mmproj ~/models/mmproj-F16.gguf \
-   --host 127.0.0.1 --port 8888 --jinja \
-   -c 16384 -ngl 99 --n-cpu-moe 999 --flash-attn on
-```
-
-If you only need text and want to skip the projector download, drop the second `hf download` line and the `--mmproj` flag — little-coder still works text-only, but the TUI's image attachment will be rejected by the server with a 4xx.
-
-**Option B — Ollama** (simpler, but slower on MoE):
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen3.5        # 9.7B — the paper's model
-# or: ollama pull qwen3.6-35b-a3b
-```
-
-**Option C — LM Studio** (GUI; OpenAI-compatible server on port 1234):
-
-1. Install [LM Studio](https://lmstudio.ai/) and download a model (e.g. Qwen3.6 35B A3B GGUF).
-2. Open the **Developer** / **Local Server** tab, load the model, and click **Start Server** (default `http://127.0.0.1:1234`).
-3. Run little-coder:
-   ```bash
-   export LMSTUDIO_API_KEY=noop
-   little-coder --model lmstudio/local-model
-   ```
-   The shipped `lmstudio/local-model` id routes to whatever model LM Studio currently has loaded — no extra config needed for the single-model case. If you serve on a non-default port, set `LMSTUDIO_BASE_URL=http://127.0.0.1:<port>/v1`. To target a specific model when you have several loaded, add an entry to `~/.config/little-coder/models.json` (see **Configuring models** below).
-
-**Serving from another machine on your LAN.** Each provider's `*_BASE_URL` env var accepts any host, not just `127.0.0.1`, so you can run inference on a beefier box and connect from a laptop or another device on the same WiFi.
-
-On the **server** (the box with the GPU):
-
-- _llama.cpp_: start `llama-server` with `--host 0.0.0.0` (or your specific LAN interface) instead of `127.0.0.1`. Everything else from Option A unchanged.
-- _LM Studio_: in the Server tab, enable **Serve on local network** so it binds `0.0.0.0:1234` instead of `127.0.0.1:1234`.
-- _Ollama_: `OLLAMA_HOST=0.0.0.0:11434 ollama serve` (or set `OLLAMA_HOST=0.0.0.0` in the user systemd unit).
-- If `ufw` / `firewalld` is active, allow your LAN subnet to the relevant port (e.g. `sudo ufw allow from 192.168.0.0/16 to any port 8888 proto tcp`).
-- Find the LAN IP with `hostname -I` (Linux) or `ipconfig getifaddr en0` (macOS).
-
-On the **client** (the machine running little-coder):
-
-```bash
-# Pick the env vars matching whichever provider is running on the server
-export LLAMACPP_API_KEY=noop
-export LLAMACPP_BASE_URL=http://<server-lan-ip>:8888/v1
-
-# Sanity check reachability before launching the agent
-curl -s http://<server-lan-ip>:8888/v1/models | head
-
-little-coder --model llamacpp/qwen3.6-35b-a3b
-```
-
-The streaming chat-completions adapter works over a local network the same way it does over loopback — no client code change, no proxy needed. The per-model profile in `.pi/settings.json` (context/thinking-budget/temperature) still applies because it's keyed by `<provider>/<model-id>`, which the client picks regardless of where the server lives.
-
-All small-model-specific extensions auto-disable for large/cloud models so they don't interfere.
-
----
 
 ## Configuring models
 
@@ -250,20 +180,6 @@ All runs used a consumer laptop: i9-14900HX, 32 GB RAM, **8 GB VRAM** on RTX 507
 
 ---
 
-## Roadmap
-
-Current fork direction under **L3tum**:
-
-1. Keep source project's benchmark-backed scaffold intact while tightening runtime/tooling behavior.
-2. Land fork-specific quality-of-life changes first: compatibility cleanup, safer file access defaults, better tool loading, better CI automation.
-3. Re-run benchmarks only after this fork stabilizes enough for numbers to mean something.
-
-4. Keep tracking upstream's current knowledge-base-oriented work and pull in the pieces that fit this fork.
-
-**Benchmarks:** TBD.
-
----
-
 ## Troubleshooting
 
 **`little-coder: command not found`** — npm's global bin directory isn't on your PATH. Run `npm config get prefix` to see where it installed; add `<prefix>/bin` to your PATH. Or reinstall with `sudo` if your prefix needs root.
@@ -302,82 +218,7 @@ The benchmarks harness (`benchmarks/`) is dev-only and not shipped with the npm 
 
 ---
 
-## Architecture
-
-````
-little-coder/
-├── .pi/
-│   ├── settings.json               # per-model profiles + benchmark_overrides (terminal_bench, gaia)
-│   └── extensions/                 # TypeScript extensions, auto-discovered by pi
-│       ├── branding/               # little-coder startup header + terminal title (replaces pi's built-in)
-│       ├── llama-cpp-provider/     # data-driven provider registration from models.json — ships llamacpp, ollama, lmstudio (+ user override file)
-│       ├── write-guard/            # Write refuses on existing files; rewrites root-bare /foo.md paths to cwd
-│       ├── read-guard/             # trims a Read that would overflow the context window to its first 30 lines + a search-instead directive
-│       ├── extra-tools/            # glob, webfetch, websearch (pi ships grep/find)
-│       ├── skill-inject/           # per-turn tool-skill selection (error > recency > intent)
-│       ├── knowledge-inject/       # algorithm cheat-sheet scoring (word=1.0, bigram=2.0, threshold=2.0)
-│       ├── output-parser/          # repair malformed ```tool, <tool_call>, bare JSON
-│       ├── quality-monitor/        # empty / hallucinated / loop detection + correction follow-up
-│       ├── thinking-budget/        # cap thinking tokens per turn, retry with thinking off
-│       ├── permission-gate/        # bash whitelist (ls, cat, git log/status/diff, etc.)
-│       ├── checkpoint/             # snapshot files before Write/Edit
-│       ├── tool-gating/            # enforces _allowed_tools at exec + schema levels
-│       ├── turn-cap/               # max_turns abort (Polyglot unbounded, TB 40, GAIA 30)
-│       ├── benchmark-profiles/     # reads settings.json → systemPromptOptions + sets temperature
-│       ├── browser/                # Playwright BrowserNavigate/Click/Type/Scroll/Extract/Back/History
-│       ├── evidence/               # EvidenceAdd/Get/List — per-session store, 1 KB snippet cap
-│       └── evidence-compact/       # preserves evidence across pi's auto-compaction
-├── skills/                         # markdown files the extensions inject on demand
-│   ├── tools/*.md                  #   tool-usage cards
-│   ├── knowledge/*.md              #   13 algorithm cheat sheets
-│   └── protocols/*.md              #    3 research/cite/decomposition workflows
-├── benchmarks/
-│   ├── rpc_client.py               # PiRpc — spawns `pi --mode rpc`, demuxes events + UI requests
-│   ├── aider_polyglot.py           # Polyglot driver with per-language transforms
-│   ├── tb_adapter/                 # Terminal-Bench 1.0 BaseAgent (tmux-proxy)
-│   ├── harbor_adapter/             # Terminal-Bench 2.0 BaseAgent (async env.exec proxy)
-│   ├── tb_pilot.sh / harbor_pilot.sh
-│   ├── tb_status.sh / harbor_status.sh
-│   └── test_rpc_client.py
-├── AGENTS.md                       # project system prompt (pi discovers it automatically)
-├── models.json                     # canonical provider registration (loaded by llama-cpp-provider; user override at $XDG_CONFIG_HOME/little-coder/models.json)
-└── docs/
-    ├── benchmark-*.md              # per-benchmark narratives
-    └── architecture.md             # v0.0.5-era Python architecture (historical)
-````
-
 **Key invariant.** pi is a minimal base by design. Every little-coder mechanism ships as a pi extension that hooks pi's lifecycle events (`before_agent_start`, `context`, `before_provider_request`, `tool_call`, `tool_result`, `turn_end`, `session_compact`). Extensions are independent: the launcher discovers every `.pi/extensions/*/index.ts` and loads it explicitly with `--extension`, and pi runs with `--no-extensions`, so the bundled set is exactly what loads — no more, no less. If you don't want one, delete its directory; if you want to add another, drop it next to the existing ones (or pass `-e <path>` at launch).
-
----
-
-## Reproducing the paper (v0.0.2)
-
-For exact paper-era code, use upstream repository and tags:
-
-```bash
-git clone https://github.com/itayinbarr/little-coder.git
-cd little-coder
-git checkout v0.0.2
-# Follow that version's README for its Python setup (pip install -e .)
-```
-
-The paper ran `ollama/qwen3.5` through the Python little-coder at commit **`1d62bde`** (tag [`v0.0.2`](https://github.com/itayinbarr/little-coder/releases/tag/v0.0.2)). The 45.56 % mean figure is the average of two full 225-exercise runs on that exact codebase. For the 78.67 % headline, check out tag [`v0.0.5`](https://github.com/itayinbarr/little-coder/releases/tag/v0.0.5) — both are pre-pi Python and follow the pre-pi setup.
-
----
-
-## Citation
-
-```bibtex
-@misc{inbar2026littlecoder,
-  title        = {little-coder: A Coding Agent Optimized for Small Local Language Models},
-  subtitle     = {Architectural Adaptation Lets a 9.7B Model Outperform Frontier Models on Aider Polyglot},
-  author       = {Inbar, Itay},
-  year         = {2026},
-  month        = apr,
-  howpublished = {\url{https://open.substack.com/pub/itayinbarr/p/honey-i-shrunk-the-coding-agent}},
-  note         = {White paper}
-}
-```
 
 ---
 
