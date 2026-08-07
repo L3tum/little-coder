@@ -21,7 +21,6 @@
 - Efficient Context Compression (Experimental) -- Integration of pi-vcc for more efficient context compressions. Needs some tuning I think.
 - Bundled extensions -- [Ponytail](./skills/ponytail.md), [pi-powerline-footer](./), [pi-insights](./), [pi-inspect](./), [plannotator](./), [pi-better-openai](./), [pi-ask-user](./), [pi-vcc](./)
 
-
 Want to read more? The easiest way is to read the source code, but just open an issue with any questions you have. There's also still plenty of experimental features in this repo that aren't mentioned. Any suggestions are welcome :)
 
 ## Install

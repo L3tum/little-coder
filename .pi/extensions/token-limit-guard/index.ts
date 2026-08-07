@@ -1,6 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { harnessIntervention } from "../_shared/intervention.ts";
 
+// Dynamic import to check if compaction is enabled — avoids hard dependency
+// on pi-vcc. When pi-vcc is not installed, compaction is always disabled.
+let isPiCoreCompactionEnabled: ((cwd?: string) => boolean) | undefined;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const vccSettings = require("@monotykamary/pi-vcc/src/core/settings");
+  isPiCoreCompactionEnabled = vccSettings.isPiCoreCompactionEnabled;
+} catch {
+  // pi-vcc not installed — compaction always disabled (existing behavior)
+}
+
 // Detects token limit errors and prevents pointless auto-retry.
 //
 // When a model hits its max output token limit, Pi's built-in retry logic
@@ -60,6 +71,17 @@ export default function (pi: ExtensionAPI) {
     // Mark as handled so other extensions (compatibility, quality-monitor)
     // know to skip their steer/correction logic for this turn.
     tokenLimitHandled = true;
+
+    // If compaction is enabled (pi-vcc installed with compaction on),
+    // pi-vcc will handle recovery on agent_end (which fires AFTER turn_end).
+    // Don't abort — let the compaction-driven recovery proceed.
+    if (isPiCoreCompactionEnabled?.(ctx.sessionManager?.getCwd?.())) {
+      harnessIntervention(
+        ctx,
+        "the model hit its maximum output token limit — compaction will recover from this.",
+      );
+      return;
+    }
 
     harnessIntervention(
       ctx,

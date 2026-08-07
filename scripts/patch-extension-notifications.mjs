@@ -151,6 +151,66 @@ export const PATCHES = [
   return items;`,
   },
   {
+    name: "pi-vcc: defensive budget check + deferred invisible continue",
+    path: [
+      "node_modules",
+      "@monotykamary",
+      "pi-vcc",
+      "src",
+      "hooks",
+      "before-compact.ts",
+    ],
+    alreadyAppliedText: [
+      "Defer continue with setImmediate to avoid nested _runAgentPrompt",
+    ],
+    oldText: `      // Queue through Pi's native follow-up path so a concurrent user prompt
+      // wins cleanly instead of racing a low-level Agent.prompt([]) call.
+      triggerInvisibleContinue(pi);
+    } catch {
+      // Non-critical — if context inspection fails, don't block compaction
+    }
+  });
+};`,
+    newText: `      // Defer continue with setImmediate to avoid nested _runAgentPrompt.
+      // The session_compact handler runs synchronously inside the compaction
+      // flow; triggering sendMessage synchronously creates a nested agent loop
+      // that fails with the same over-context error. setImmediate defers past
+      // the current event handler so the outer call stack has unwound.
+      //
+      // Also check budget: if context is still too full after compaction,
+      // a retry would just overflow again. Skip the continue in that case.
+      setImmediate(() => {
+        // Safety: session may have ended during the defer window
+        if (ctx.isIdle() && !completion.willRetry) return;
+
+        // Budget check: ensure context is small enough for the model to produce output
+        const usage = ctx.getContextUsage?.();
+        if (usage?.tokens != null) {
+          const contextWindow = (ctx as any).model?.contextWindow ?? 0;
+          const maxTokens = (ctx as any).model?.maxTokens ?? 0;
+          const overhead = contextWindow > 0
+            ? Math.min(32768, Math.floor(contextWindow * 0.2)) : 32768;
+          const safeBudget = contextWindow - maxTokens - overhead;
+          if (usage.tokens > safeBudget) {
+            try {
+              ctx.ui?.notify?.(
+                \`pi-vcc: skipping continue — context (\${formatTokens(usage.tokens)} tok) exceeds safe budget (\${formatTokens(safeBudget)} tok)\`,
+                "warning",
+              );
+            } catch {}
+            return;
+          }
+        }
+
+        triggerInvisibleContinue(pi);
+      });
+    } catch {
+      // Non-critical — if context inspection fails, don't block compaction
+    }
+  });
+};`,
+  },
+  {
     name: "plannotator preserve user model after plan approval",
     path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
     oldText: `\tasync function applyPhaseConfig(ctx: ExtensionContext, opts: { restoreSavedState?: boolean } = {}): Promise<void> {\n\t\tconst profile = getPhaseProfile();\n\t\tif (opts.restoreSavedState !== false && savedState) {\n\t\t\tawait restoreSavedState(ctx);\n\t\t}\n\n\t\tif (phase === "planning" || phase === "executing") {`,
