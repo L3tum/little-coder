@@ -213,4 +213,119 @@ describe("token-limit-guard extension behavior", () => {
     // Should not throw even if abort fails
     await expect(turnEndHandler(event, ctx)).resolves.not.toThrow();
   });
+
+  it("treats a length stop as a token limit turn (local openai-completions)", async () => {
+    const harnessInterventionSpy = vi.fn();
+    const abortSpy = vi.fn();
+
+    vi.doMock("../_shared/intervention.ts", () => ({
+      harnessIntervention: harnessInterventionSpy,
+    }));
+
+    vi.resetModules();
+
+    handlers = new Map();
+    pi = {
+      on: vi.fn((event, handler) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+      }),
+    };
+
+    const mod = await import("./index.js");
+    extension = mod.default;
+    extension(pi);
+
+    const turnEndHandler = handlers.get("turn_end")[0];
+
+    const ctx = { abort: abortSpy };
+    const event = {
+      message: {
+        stopReason: "length",
+        // A single token printed before the output cap was hit
+        content: [{ type: "text", text: "I" }],
+      },
+    };
+
+    await turnEndHandler(event, ctx);
+
+    expect(harnessInterventionSpy).toHaveBeenCalledWith(
+      ctx,
+      expect.stringContaining("maximum output token limit"),
+    );
+    expect(abortSpy).toHaveBeenCalled();
+  });
+
+  it("treats an empty length stop as a token limit turn", async () => {
+    const harnessInterventionSpy = vi.fn();
+    const abortSpy = vi.fn();
+
+    vi.doMock("../_shared/intervention.ts", () => ({
+      harnessIntervention: harnessInterventionSpy,
+    }));
+
+    vi.resetModules();
+
+    handlers = new Map();
+    pi = {
+      on: vi.fn((event, handler) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+      }),
+    };
+
+    const mod = await import("./index.js");
+    extension = mod.default;
+    extension(pi);
+
+    const turnEndHandler = handlers.get("turn_end")[0];
+
+    const ctx = { abort: abortSpy };
+    const event = {
+      message: {
+        stopReason: "length",
+        content: [],
+      },
+    };
+
+    await turnEndHandler(event, ctx);
+
+    expect(harnessInterventionSpy).toHaveBeenCalled();
+    expect(abortSpy).toHaveBeenCalled();
+  });
+
+  it("does not treat a normal stop as a token limit turn", async () => {
+    const harnessInterventionSpy = vi.fn();
+    const abortSpy = vi.fn();
+
+    vi.doMock("../_shared/intervention.ts", () => ({
+      harnessIntervention: harnessInterventionSpy,
+    }));
+
+    vi.resetModules();
+
+    handlers = new Map();
+    pi = {
+      on: vi.fn((event, handler) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+      }),
+    };
+
+    const mod = await import("./index.js");
+    extension = mod.default;
+    extension(pi);
+
+    const turnEndHandler = handlers.get("turn_end")[0];
+
+    const ctx = { abort: abortSpy };
+    const event = {
+      message: {
+        stopReason: "stop",
+        content: [{ type: "text", text: "done" }],
+      },
+    };
+
+    await turnEndHandler(event, ctx);
+
+    expect(harnessInterventionSpy).not.toHaveBeenCalled();
+    expect(abortSpy).not.toHaveBeenCalled();
+  });
 });

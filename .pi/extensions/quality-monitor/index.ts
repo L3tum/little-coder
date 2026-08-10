@@ -22,6 +22,15 @@ let previousTurnErrorTools = new Set<string>();
 let consecutiveFailures = 0;
 const MAX_CONSECUTIVE_CORRECTIONS = 2; // stop nudging after 2 failed corrections
 
+// Set on session_compact and consumed by the next completed turn. Right after a
+// compaction the model is asked to continue from a rebuilt context; its first
+// reply is often empty (no fresh prompt, trailing assistant/tool messages).
+// Steering "STOP: your previous response was empty" then burns the tail the
+// compaction just preserved and can cascade into more token-limit failures.
+// Skip one empty_response correction so the resume (or the user) drives the
+// next turn instead.
+let suppressEmptyResponseAfterCompaction = false;
+
 export default function (pi: ExtensionAPI) {
   // Seed known tools from the active tool registry (same source as /tools).
   // This ensures hallucination detection works from the very first turn,
@@ -47,6 +56,14 @@ export default function (pi: ExtensionAPI) {
     previousToolCalls = [];
     previousTurnErrorTools = new Set();
     consecutiveFailures = 0;
+    suppressEmptyResponseAfterCompaction = false;
+  });
+
+  // After any compaction completes, the next completed turn may come back
+  // empty (the resume mechanism continues from a rebuilt context without a
+  // fresh user prompt). Don't treat that as a model failure.
+  pi.on("session_compact", async () => {
+    suppressEmptyResponseAfterCompaction = true;
   });
 
   pi.on("turn_end", async (event, ctx) => {
@@ -56,10 +73,13 @@ export default function (pi: ExtensionAPI) {
     // Skip turns that were interrupted/aborted — by the user pressing ESC OR by
     // a harness abort (thinking-budget, turn-cap). Their content is
     // legitimately partial/empty, so assessing them spuriously fires
-    // `empty_response`. Also clear the rolling state so the next completed turn
-    // doesn't inherit stale repeat-loop context from an interrupted one.
+    // `empty_response`. A `length` stop is also an interruption: the model hit
+    // its max output tokens, often with an empty or 1-token reply; steering
+    // "respond now" at that point is noise and wastes the preserved tail.
+    // Also clear the rolling state so the next completed turn doesn't inherit
+    // stale repeat-loop context from an interrupted one.
     const stopReason = (message as any).stopReason;
-    if (stopReason === "aborted") {
+    if (stopReason === "aborted" || stopReason === "length") {
       previousToolCalls = [];
       previousTurnErrorTools = new Set();
       consecutiveFailures = 0;
@@ -119,8 +139,24 @@ export default function (pi: ExtensionAPI) {
 
     if (verdict.ok) {
       consecutiveFailures = 0;
+      suppressEmptyResponseAfterCompaction = false;
       return;
     }
+
+    // One-turn grace after compaction: an empty first reply is the resume
+    // mechanism's degenerate output, not a correction-worthy failure. Skip the
+    // steering and let the resume loop (or the user) provide the next prompt.
+    // The flag is consumed here regardless of verdict, so it cannot suppress
+    // legitimate corrections on later turns.
+    if (
+      verdict.reason === "empty_response" &&
+      suppressEmptyResponseAfterCompaction
+    ) {
+      suppressEmptyResponseAfterCompaction = false;
+      consecutiveFailures = 0;
+      return;
+    }
+    suppressEmptyResponseAfterCompaction = false;
 
     // Cap corrections so we don't burn turns in a correction loop
     consecutiveFailures++;

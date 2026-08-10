@@ -30,9 +30,15 @@ describe("postinstall node_modules patches", () => {
         canApply || alreadyApplied,
         `${patch.name} target should contain oldText or patched text`,
       ).toBe(true);
-      expect(applyTextPatch(current, patch), patch.name).toContain(
-        patch.newText,
-      );
+      // After (re)applying, the patcher must consider the patch present. This
+      // tolerates patches that extend a region a later patch also modifies
+      // (the later patch breaks the earlier newText's exact contiguity while
+      // keeping its markers intact), while still failing if a patch's own
+      // transform is broken.
+      expect(
+        isPatchApplied(applyTextPatch(current, patch), patch),
+        patch.name,
+      ).toBe(true);
     }
   });
 

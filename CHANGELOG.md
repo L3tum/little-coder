@@ -27,6 +27,13 @@ All notable changes to little-coder are documented here. The format follows [Kee
 - Removed the `memory-context` extension and stale memory docs/references. Reflection skills and breadcrumbs replace that workflow.
 - Removed `@observal/pi-insights` from package dependencies and external package loading now that the extension is vendored.
 
+### Fixed
+
+- **Compaction cascade no longer spams errors after a compaction.** When an agent action overwhelmed the context, pi-vcc's proactive trigger raced pi-core's own threshold compaction on the same `agent_end`: pi-core appended its compaction entry first, then the manual `ctx.compact()` resumed into `Compaction failed: Already compacted`. The proactive trigger now (a) defers to pi-core when pi-core's `reserveTokens` threshold is crossed, (b) skips when the branch still ends with a compaction entry, and (c) treats `Already compacted` / `Nothing to compact` / `Compaction cancelled` as benign no-ops instead of surfacing error lines.
+- **Post-compaction resume turns no longer trigger the "STOP: Your previous response was empty" steer.** The resume mechanism continues from a rebuilt context without a fresh user prompt, so the model's first reply is often empty; steering it just burned the preserved tail. `quality-monitor` now grants one-turn grace after `session_compact` for `empty_response`, and treats `stopReason === "length"` (max output tokens) as an interruption like `aborted` instead of a failure.
+- **The deferred post-compaction resume is now immune to a stale extension context.** pi-vcc schedules the resume `setImmediate` after compaction completes; if the session was replaced/reloaded (`newSession`/`fork`/`switchSession`/`reload`) in that window, every ctx accessor throws `This extension ctx is stale...` and the uncaught error crashed the run. The resume callback is now wrapped so a stale context is treated as a best-effort no-op instead of an uncaught exception.
+- **token-limit-guard now recognizes `stopReason === "length"`** — the way local openai-completions/llama.cpp models report hitting max output tokens — as a token-limit turn alongside `stopReason === "error"`, so retries are avoided and compaction is the recovery path.
+
 ## [v1.8.1] — 2026-05-23
 
 ### Fixed

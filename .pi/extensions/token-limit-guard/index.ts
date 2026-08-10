@@ -41,6 +41,12 @@ export function isTokenLimitError(message: string | undefined | null): boolean {
 function isTokenLimitTurn(event: any): boolean {
   const message = event?.message;
   if (!message) return false;
+  // Length stops mean the model consumed its max output tokens. The TUI
+  // renders these as "Error: Model stopped because it reached the maximum
+  // output token limit". Local openai-completions/llama.cpp models surface
+  // this as stopReason "length" (not "error"), so treat it the same way:
+  // retrying is pointless and compaction is the only recovery.
+  if (message.stopReason === "length") return true;
   if (message.stopReason !== "error") return false;
   // Check the errorMessage field if present
   if (isTokenLimitError(message.errorMessage)) return true;
