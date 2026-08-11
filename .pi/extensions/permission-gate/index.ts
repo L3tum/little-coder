@@ -226,24 +226,193 @@ function normalizeCargoCommand(c: string): string {
   return c.replace(/\bcargo\s+\+\w+\s+/g, "cargo ");
 }
 
-export function isSafeBash(
-  command: string,
-  prefixes: readonly string[] = getSafePrefixes(),
+function firstToken(command: string): string {
+  return command.trim().split(/\s+/)[0] || command.trim();
+}
+
+function isSafePrefixCommand(
+  segment: string,
+  prefixes: readonly string[],
 ): boolean {
+  if (isSafeSingleDiagnosticCommand(segment)) return true;
+  const normalized = normalizeCargoCommand(segment);
+  if (
+    prefixes.some((p) => segment.startsWith(p)) ||
+    prefixes.some((p) => normalized.startsWith(p))
+  )
+    return true;
+  // Space-terminated prefixes (e.g. "sort ") also allow the bare command name
+  // (e.g. "sort") — the idiomatic pipeline tail — without matching longer
+  // words like "sortsomething", preserving the word-boundary convention.
+  return prefixes.some((p) => p.endsWith(" ") && segment === p.trim());
+}
+
+/**
+ * Split a command into top-level segments joined by `&&` or `|` that appear
+ * OUTSIDE quoted strings, so `grep -E "a|b" file`, `grep 'a&&b' file`, and
+ * `grep foo | head -20` are all understood correctly.
+ *
+ * Returns null when a shell control operator appears outside quotes
+ * (`;`, bare `&`, `||`, backtick, `$`, `<`, `>`, newline), when `$`/backtick
+ * appears inside double quotes (command substitution), or when a segment would
+ * be empty (e.g. `ls |`). Characters inside single quotes are always literal.
+ */
+export function scanBashSegments(command: string): string[] | null {
+  const segments: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  const n = command.length;
+
+  const isOuterMeta = (ch: string) =>
+    ch === ";" ||
+    ch === "&" ||
+    ch === "`" ||
+    ch === "$" ||
+    ch === "<" ||
+    ch === ">" ||
+    ch === "\n" ||
+    ch === "\r";
+  const isDoubleQuoteMeta = (ch: string) =>
+    ch === "`" || ch === "$" || ch === "\n" || ch === "\r";
+
+  const flush = () => {
+    segments.push(current);
+    current = "";
+  };
+
+  for (let i = 0; i < n; i++) {
+    const ch = command[i];
+    if (escaped) {
+      current += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      if (quote === "'") {
+        // Backslash is literal inside single quotes.
+        current += ch;
+        continue;
+      }
+      // Escaped metacharacters outside quotes are still treated as dangerous
+      // (e.g. `find . -exec rm {} \;` must not pass via a literal `;`).
+      const next = command[i + 1];
+      if (next !== undefined && isOuterMeta(next)) return null;
+      escaped = true;
+      continue;
+    }
+    if (quote === "'") {
+      if (ch === "'") quote = null;
+      else current += ch;
+      continue;
+    }
+    if (quote === '"') {
+      if (ch === '"') quote = null;
+      else if (isDoubleQuoteMeta(ch)) return null;
+      else current += ch;
+      continue;
+    }
+    // Outside quotes.
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === "&" && command[i + 1] === "&") {
+      flush();
+      i += 1;
+      continue;
+    }
+    if (ch === "|") {
+      if (command[i + 1] === "|") return null; // `||` short-circuit is not allowed
+      flush();
+      continue;
+    }
+    if (isOuterMeta(ch)) return null;
+    current += ch;
+  }
+  flush();
+
+  const trimmed = segments.map((s) => s.trim());
+  if (trimmed.some((s) => s.length === 0)) return null;
+  return trimmed;
+}
+
+/**
+ * For a command that starts with `cd`, return the command chained after the
+ * leading cd target and its `&&`/`;` separator ("" for a bare `cd`), or ""
+ * when the cd line cannot be parsed as a plain path chain.
+ */
+function stripLeadingCdChain(command: string): string {
+  const m = command
+    .trim()
+    .match(/^cd(?:\s+([^;&|`$<>]+))?(?:\s*(?:&&|;)\s*(.*))?$/);
+  return m?.[2] ?? "";
+}
+
+interface BashGateResult {
+  safe: boolean;
+  segment: string;
+}
+
+function evaluateBash(
+  command: string,
+  prefixes: readonly string[],
+  cwd?: string,
+): BashGateResult {
   const c = command.trim();
-  if (isSafeDiagnosticCommand(c)) return true;
-  // Strip safe stderr redirections before checking for control operators.
+  if (isSafeDiagnosticCommand(c)) return { safe: true, segment: "" };
+
+  // `cd <target> && …` / `cd <target> ; …` is allowed only when the cd target
+  // itself contains no shell metacharacters, resolves inside the workspace,
+  // and the chained command is itself safe. Without the chain check, any
+  // `cd subdir && …` bypasses the whitelist entirely.
+  if (cwd && /^cd(\s|$)/.test(c)) {
+    const cdHead = c.split(/\s*(?:&&|;)/)[0];
+    const cdSegments = scanBashSegments(cdHead);
+    if (cdSegments !== null && cdSegments.length === 1 && isNoopCd(c, cwd)) {
+      const remainder = stripLeadingCdChain(c);
+      if (remainder.trim() === "") return { safe: true, segment: "" };
+      return evaluateBash(remainder, prefixes, cwd);
+    }
+  }
+
+  // Strip safe stderr redirections before scanning for control operators.
   // "2>/dev/null" and "2>&1" are standard patterns to suppress/merge stderr.
   // They are safe because: 2>/dev/null discards stderr to a fixed safe path,
   // and 2>&1 merges stderr into stdout (no new file creation or data loss).
   const withoutStderrRedirect = c
     .replace(/\s*2>\s*\/dev\/null/g, "")
     .replace(/\s*2>&1/g, "");
-  // Reject commands with shell control operators before prefix matching.
-  // Without this, "ls -la; rm -rf /" passes because it starts with "ls ".
-  if (hasShellControlOperator(withoutStderrRedirect)) return false;
-  const normalized = normalizeCargoCommand(c);
-  return prefixes.some((p) => c.startsWith(p) || normalized.startsWith(p));
+  const segments = scanBashSegments(withoutStderrRedirect);
+  if (segments === null || segments.length === 0) {
+    // A shell control operator appeared outside quotes (for example
+    // "ls -la; rm -rf /"), or the command is empty.
+    return { safe: false, segment: firstToken(c) };
+  }
+  for (const segment of segments) {
+    if (!isSafePrefixCommand(segment, prefixes)) {
+      return { safe: false, segment };
+    }
+  }
+  return { safe: true, segment: "" };
+}
+
+export function isSafeBash(
+  command: string,
+  prefixes: readonly string[] = getSafePrefixes(),
+  cwd?: string,
+): boolean {
+  return evaluateBash(command, prefixes, cwd).safe;
+}
+
+export function bashBlockReason(
+  command: string,
+  prefixes: readonly string[] = getSafePrefixes(),
+  cwd?: string,
+): string | null {
+  const result = evaluateBash(command, prefixes, cwd);
+  if (result.safe) return null;
+  return `bash whitelist: "${result.segment}" is not in SAFE_PREFIXES. Ask the user to execute this command instead.`;
 }
 
 function getPermissionMode(): "auto" | "accept-all" | "manual" {
@@ -476,20 +645,18 @@ export default function (pi: ExtensionAPI) {
       if (toolName === "bash" || toolName === "Bash") {
         const cmd = input?.command;
         if (typeof cmd === "string") {
-          if (/^cd(\s|$)/.test(cmd.trim()) && isNoopCd(cmd, ctx.cwd)) {
-            return;
-          }
-          if (!isSafeBash(cmd)) {
-            if (mode === "manual") {
+          if (mode === "manual") {
+            if (!isSafeBash(cmd, getSafePrefixes(), ctx.cwd)) {
               return {
                 block: true,
                 reason: "manual permission mode: bash command not pre-approved",
               };
             }
-            return {
-              block: true,
-              reason: `bash whitelist: "${cmd.split(/\s+/)[0]}" is not in SAFE_PREFIXES. Ask the user to execute this command instead.`,
-            };
+          } else {
+            const reason = bashBlockReason(cmd, getSafePrefixes(), ctx.cwd);
+            if (reason !== null) {
+              return { block: true, reason };
+            }
           }
         }
       }

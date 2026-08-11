@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  bashBlockReason,
   getExternalWorkspaceAccess,
   getSafePrefixes,
   hasParentTraversal,
@@ -8,6 +9,7 @@ import {
   isWithinWorkspace,
   parseExtraPrefixes,
   resolveWorkspacePath,
+  scanBashSegments,
 } from "./index.ts";
 import { homedir, tmpdir } from "node:os";
 
@@ -122,6 +124,100 @@ describe("isSafeBash", () => {
     expect(isSafeBash("uniq file.txt")).toBe(true);
     expect(isSafeBash("tr 'A-Z' 'a-z' file.txt")).toBe(true);
     expect(isSafeBash("comm file1.txt file2.txt")).toBe(true);
+  });
+  it("allows quoted metacharacters in arguments (grep patterns etc.)", () => {
+    // `|`, `&`, `;`, `$` inside quotes are literals, not shell operators
+    expect(isSafeBash('grep -E "foo|bar" file.txt')).toBe(true);
+    expect(isSafeBash("grep -E 'foo|bar' file.txt")).toBe(true);
+    expect(isSafeBash("grep -n 'a;b' file.txt")).toBe(true);
+    expect(isSafeBash("grep -n 'a&b' file.txt")).toBe(true);
+    expect(isSafeBash("grep '\\$HOME' script.sh")).toBe(true);
+    expect(isSafeBash('grep "a && b" file.txt')).toBe(true);
+    expect(isSafeBash('echo "hello && world"')).toBe(true);
+  });
+  it("allows && chains and | pipelines where every segment is safe", () => {
+    expect(isSafeBash("grep -rn foo . | head -20")).toBe(true);
+    expect(isSafeBash("ls -la && git status")).toBe(true);
+    expect(isSafeBash("git log --oneline | head -5")).toBe(true);
+    expect(isSafeBash("grep foo bar && grep baz qux")).toBe(true);
+    expect(isSafeBash("cat a.txt | sort | uniq")).toBe(true);
+    expect(isSafeBash("npm test | tail -10")).toBe(true);
+  });
+  it("blocks chains and pipelines containing unsafe segments", () => {
+    expect(isSafeBash("grep foo | rm -rf /")).toBe(false);
+    expect(isSafeBash("ls && rm -rf .")).toBe(false);
+    expect(isSafeBash("grep foo || echo hi")).toBe(false);
+    expect(isSafeBash("grep foo ; ls")).toBe(false);
+    expect(isSafeBash("ls |")).toBe(false);
+    expect(isSafeBash('grep "$(ls)" file.txt')).toBe(false);
+    // escaped metacharacters do not smuggle operators through
+    expect(isSafeBash("find . -exec rm {} \\;")).toBe(false);
+  });
+  it("allows cd chains only when the remainder is safe (with cwd)", () => {
+    const cwd = "/home/me/proj";
+    expect(isSafeBash("cd . && grep -E 'a|b' . | head", undefined, cwd)).toBe(
+      true,
+    );
+    expect(isSafeBash("cd subdir && ls -la", undefined, cwd)).toBe(true);
+    expect(isSafeBash("cd subdir ; ls -la", undefined, cwd)).toBe(true);
+    expect(isSafeBash("cd /home/me/proj && git status", undefined, cwd)).toBe(
+      true,
+    );
+    // the old isNoopCd early-return let these bypass the whitelist
+    expect(isSafeBash("cd subdir && rm -rf .", undefined, cwd)).toBe(false);
+    expect(isSafeBash("cd . ; rm -rf /", undefined, cwd)).toBe(false);
+    expect(isSafeBash("cd $(rm -rf /) && ls", undefined, cwd)).toBe(false);
+    expect(isSafeBash("cd /tmp && ls", undefined, cwd)).toBe(false);
+  });
+});
+
+describe("scanBashSegments", () => {
+  it("splits on top-level && and | but not inside quotes", () => {
+    expect(scanBashSegments("ls -la && git status")).toEqual([
+      "ls -la",
+      "git status",
+    ]);
+    expect(scanBashSegments("grep foo | head -5")).toEqual([
+      "grep foo",
+      "head -5",
+    ]);
+    expect(scanBashSegments('grep -E "a|b" file.txt')).toEqual([
+      "grep -E a|b file.txt",
+    ]);
+    expect(scanBashSegments("grep -E 'a&&b' file.txt")).toEqual([
+      "grep -E a&&b file.txt",
+    ]);
+    expect(scanBashSegments("cd subdir && ls")).toEqual(["cd subdir", "ls"]);
+  });
+  it("rejects control operators outside quotes", () => {
+    expect(scanBashSegments("ls ; rm -rf /")).toBeNull();
+    expect(scanBashSegments("ls |")).toBeNull();
+    expect(scanBashSegments("grep foo || echo hi")).toBeNull();
+    expect(scanBashSegments("grep foo & echo hi")).toBeNull();
+    expect(scanBashSegments('echo "$(ls)"')).toBeNull();
+    expect(scanBashSegments("echo `ls`")).toBeNull();
+    expect(scanBashSegments("ls > out.txt")).toBeNull();
+  });
+});
+
+describe("bashBlockReason", () => {
+  const cwd = "/home/me/proj";
+  it("returns null for safe commands", () => {
+    expect(bashBlockReason("ls -la")).toBeNull();
+    expect(bashBlockReason("grep foo | head -5")).toBeNull();
+    expect(bashBlockReason("cd subdir && ls", undefined, cwd)).toBeNull();
+  });
+  it("names the failing segment instead of the first token", () => {
+    expect(bashBlockReason("grep foo | rm -rf /")).toContain("rm -rf /");
+    expect(bashBlockReason("ls -la && rm -rf .")).toContain("rm -rf .");
+    expect(bashBlockReason("cd subdir && rm -rf .", undefined, cwd)).toContain(
+      "rm -rf .",
+    );
+  });
+  it("keeps the standard advisory suffix", () => {
+    expect(bashBlockReason("sudo rm -rf /")).toContain(
+      "Ask the user to execute this command instead.",
+    );
   });
 });
 
