@@ -629,6 +629,74 @@ const hasCurrentModelIdentity = (message: unknown, model: any): boolean => {`,
       });`,
   },
   {
+    name: "pi-vcc: resume on generic context-overflow errors after compaction",
+    path: [
+      "node_modules",
+      "@monotykamary",
+      "pi-vcc",
+      "src",
+      "hooks",
+      "before-compact.ts",
+    ],
+    alreadyAppliedText: ["isContextOverflow(lastMsg)"],
+    oldText: `  if (message.stopReason === "error") {
+    return allowCodexRecovery && (
+      isCodexOutputLimitError(lastMsg) ||
+      isCodexContextOverflowError(lastMsg)
+    );
+  }
+  return true;
+};`,
+    newText: `  if (message.stopReason === "error") {
+    if (allowCodexRecovery && (
+      isCodexOutputLimitError(lastMsg) ||
+      isCodexContextOverflowError(lastMsg)
+    )) {
+      return true;
+    }
+    // little-coder: a generic context-overflow / input-too-long error should
+    // re-enter the agent loop after compaction (pi-core's overflow path does
+    // not drive the resume when pi-vcc owns compaction).
+    if (isContextOverflow(lastMsg)) return true;
+    return false;
+  }
+  return true;
+};`,
+  },
+  {
+    name: "pi-vcc: import isContextOverflow for resume detection",
+    path: [
+      "node_modules",
+      "@monotykamary",
+      "pi-vcc",
+      "src",
+      "hooks",
+      "before-compact.ts",
+    ],
+    alreadyAppliedText: [
+      'import { isContextOverflow } from "@earendil-works/pi-ai/compat";',
+    ],
+    oldText: `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { writeFileSync } from "fs";`,
+    newText: `import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isContextOverflow } from "@earendil-works/pi-ai/compat";
+import { writeFileSync } from "fs";`,
+  },
+  {
+    name: "pi-ai: detect truncated input-length overflow error",
+    path: [
+      "node_modules",
+      "@earendil-works",
+      "pi-ai",
+      "dist",
+      "utils",
+      "overflow.js",
+    ],
+    alreadyAppliedText: ["Input length exceeds the maximum allowed length"],
+    oldText: `    /exceeds (?:the )?maximum allowed input length of [\\d,]+ tokens?/i, // OpenRouter/Poolside`,
+    newText: `    /exceeds (?:the )?maximum allowed (?:input )?length(?: of [\\d,]+ tokens?)?/i, // OpenRouter/Poolside (incl. truncated \"Input length exceeds the maximum allowed length\" variant)`,
+  },
+  {
     name: "plannotator preserve user model after plan approval",
     path: ["node_modules", "@plannotator", "pi-extension", "index.ts"],
     oldText: `\tasync function applyPhaseConfig(ctx: ExtensionContext, opts: { restoreSavedState?: boolean } = {}): Promise<void> {\n\t\tconst profile = getPhaseProfile();\n\t\tif (opts.restoreSavedState !== false && savedState) {\n\t\t\tawait restoreSavedState(ctx);\n\t\t}\n\n\t\tif (phase === "planning" || phase === "executing") {`,
