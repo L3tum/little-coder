@@ -326,7 +326,7 @@ this directly.`;
 
   pi.registerCommand("deep-plan", {
     description:
-      "Run a deep planning pipeline: refine → research → compose, then deliver spec for review",
+      "Run a deep planning pipeline: research → compose → review, then deliver reviewed spec for execution",
     handler: async (args, ctx) => {
       if (process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH) {
         ctx.ui?.notify?.(
@@ -357,42 +357,47 @@ Each phase runs as an isolated subagent process. You execute them **sequentially
 capturing output from each phase and threading it into the next.
 
 ### Pipeline architecture
-- **REFINE** (Phase 1) — Clarifies the request, extracts requirements, defines scope.
+- **RESEARCH** (Phase 1) — Explores the codebase, gathers evidence, records findings.
   Runs as a subagent. You pass its output into Phase 2.
-- **RESEARCH** (Phase 2) — Explores the codebase, gathers evidence, records findings.
+- **COMPOSE** (Phase 2) — Produces the markdown specification draft.
   Runs as a subagent. You pass its output into Phase 3.
-- **COMPOSE** (Phase 3) — Produces the final markdown specification.
-  Runs as a subagent. Its output becomes the deliverable.
+- **REVIEW-PLAN** (Phase 3) — Adversarially reviews the plan: verifies all claims,
+  facts, code references, and feasibility assertions.
+  Runs as a subagent. Its output becomes the final reviewed deliverable.
 
-### Phase 1: REFINE
-Run subagent REFINE with task:
-"Refine this request: '${prompt}'. Clarify requirements, extract key goals,
-identify ambiguities, and define scope boundaries."
-
-### Phase 2: RESEARCH
+### Phase 1: RESEARCH
 Run subagent RESEARCH with task:
-"Research the codebase for this request: '${prompt}'. Use the refined
-requirements from Phase 1 as context. Explore relevant files, understand
-architecture, identify integration points, and record all factual findings."
+"Research the codebase for this request: '${prompt}'. Explore relevant files,
+understand architecture, identify integration points, and record all factual
+findings with EvidenceAdd."
 
-### Phase 3: COMPOSE
+### Phase 2: COMPOSE
 Run subagent COMPOSE with task:
 "Compose a detailed specification for this request: '${prompt}'. Use the
-refined requirements from Phase 1 and research findings from Phase 2.
-Produce a complete markdown specification with problem statement, context,
-design, implementation steps, dependencies, risks, and tests needed."
+research findings from Phase 1. Produce a complete markdown specification
+with problem statement, context, design, implementation steps, dependencies,
+risks, and tests needed."
+
+### Phase 3: REVIEW-PLAN
+Run subagent REVIEW-PLAN with task:
+"Adversarially review the composed specification for: '${prompt}'. Verify
+all code references (file paths, function names, symbols), factual claims,
+architecture assertions, and implementation feasibility. Produce a structured
+review report with verified claims, incorrect claims, missing context, and
+a confidence rating."
 
 ### After all phases complete:
-1. Extract the specification produced by the COMPOSE subagent
-2. Write the specification to a markdown file in the \`plans/\` directory with name \`deep-plan-${Date.now()}.md\`
+1. Combine the specification from COMPOSE with the review from REVIEW-PLAN
+2. Write the final specification (incorporating review feedback) to a markdown
+   file in the \`plans/\` directory with name \`deep-plan-${Date.now()}.md\`
 3. Call \`plannotator_submit_plan\` with the plan file path to enter interactive review mode
 
 ### Important Rules
 - Execute each phase as a subagent call — wait for each subagent to complete
   before invoking the next phase
 - Thread the full output from each subagent into the next phase's task context
-- The COMPOSE phase subagent output must be a complete markdown specification with
-  headings and body content
+- The COMPOSE phase must produce a complete markdown specification
+- The REVIEW-PLAN phase must verify code references against the actual codebase
 - Do NOT skip any phase
 - Use \`tools\` to list all available tools and \`subagents\` to list available subagents if needed`;
 
@@ -427,9 +432,9 @@ design, implementation steps, dependencies, risks, and tests needed."
       // Trigger the deep plan pipeline
       pi.sendUserMessage(
         `Execute the deep plan pipeline for: "${prompt}". ` +
-          `Run REFINE → RESEARCH → COMPOSE as sequential subagent calls, ` +
+          `Run RESEARCH → COMPOSE → REVIEW-PLAN as sequential subagent calls, ` +
           `threading output from each phase into the next, ` +
-          `write the spec to plans/deep-plan-<timestamp>.md, ` +
+          `write the reviewed spec to plans/deep-plan-<timestamp>.md, ` +
           `then call plannotator_submit_plan.`,
         { deliverAs: "followUp" },
       );

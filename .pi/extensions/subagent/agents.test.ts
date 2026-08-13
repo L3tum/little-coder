@@ -15,9 +15,9 @@ describe("built-in agents", () => {
     expect(names).toContain("REVIEW");
     expect(names).toContain("EXPLORE");
     // Deep plan phase agents
-    expect(names).toContain("REFINE");
     expect(names).toContain("RESEARCH");
     expect(names).toContain("COMPOSE");
+    expect(names).toContain("REVIEW-PLAN");
     // Themed review agents
     expect(names).toContain("REVIEW-SECURITY");
     expect(names).toContain("REVIEW-ARCHITECTURE");
@@ -56,17 +56,7 @@ describe("built-in agents", () => {
 });
 
 describe("deep plan phase agents", () => {
-  it("has REFINE agent with medium thinking and read-only tools", () => {
-    const agents = builtInLittleCoderAgents();
-    const refine = agents.find((a) => a.name === "REFINE");
-    expect(refine).toBeDefined();
-    expect(refine!.thinking).toBe("medium");
-    expect(refine!.tools).toContain("read");
-    expect(refine!.tools).toContain("code_search");
-    expect(refine!.systemPrompt).toContain("Deep Plan — Refine Phase");
-  });
-
-  it("has RESEARCH agent with medium thinking and evidence tools", () => {
+  it("has RESEARCH agent with medium thinking and evidence tools (Phase 1)", () => {
     const agents = builtInLittleCoderAgents();
     const research = agents.find((a) => a.name === "RESEARCH");
     expect(research).toBeDefined();
@@ -75,20 +65,37 @@ describe("deep plan phase agents", () => {
     expect(research!.tools).toContain("EvidenceAdd");
     expect(research!.tools).toContain("websearch");
     expect(research!.systemPrompt).toContain("Deep Plan — Research Phase");
+    expect(research!.systemPrompt).toContain("Phase 1");
   });
 
-  it("has COMPOSE agent with medium thinking and specification prompt", () => {
+  it("has COMPOSE agent with medium thinking and specification prompt (Phase 2)", () => {
     const agents = builtInLittleCoderAgents();
     const compose = agents.find((a) => a.name === "COMPOSE");
     expect(compose).toBeDefined();
     expect(compose!.thinking).toBe("medium");
     expect(compose!.systemPrompt).toContain("Deep Plan — Compose Phase");
+    expect(compose!.systemPrompt).toContain("Phase 2");
     expect(compose!.systemPrompt).toContain("Implementation Steps");
+  });
+
+  it("has REVIEW-PLAN agent with high thinking for adversarial review (Phase 3)", () => {
+    const agents = builtInLittleCoderAgents();
+    const reviewPlan = agents.find((a) => a.name === "REVIEW-PLAN");
+    expect(reviewPlan).toBeDefined();
+    expect(reviewPlan!.thinking).toBe("high");
+    expect(reviewPlan!.tools).toContain("read");
+    expect(reviewPlan!.tools).toContain("code_search");
+    expect(reviewPlan!.tools).toContain("EvidenceAdd");
+    expect(reviewPlan!.tools).toContain("EvidenceList");
+    expect(reviewPlan!.systemPrompt).toContain("Deep Plan — Review Phase");
+    expect(reviewPlan!.systemPrompt).toContain("Phase 3");
+    expect(reviewPlan!.systemPrompt).toContain("Verify code references");
+    expect(reviewPlan!.systemPrompt).toContain("Confidence Rating");
   });
 
   it("phase agents are read-only (no write/edit tools)", () => {
     const agents = builtInLittleCoderAgents();
-    for (const name of ["REFINE", "RESEARCH", "COMPOSE"]) {
+    for (const name of ["RESEARCH", "COMPOSE", "REVIEW-PLAN"]) {
       const agent = agents.find((a) => a.name === name);
       expect(agent).toBeDefined();
       expect(agent!.tools).not.toContain("write");

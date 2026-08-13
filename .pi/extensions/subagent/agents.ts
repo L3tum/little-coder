@@ -120,37 +120,9 @@ export function builtInLittleCoderAgents(): AgentConfig[] {
       source: "user",
       filePath,
     },
-    // Deep Plan phase agents — specialized for the refine → research → compose pipeline.
+    // Deep Plan phase agents — specialized for the research → compose → review pipeline.
     // Each phase runs as an isolated subagent. The orchestrator (parent agent) executes
     // the pipeline sequentially and threads output from each phase into the next.
-    {
-      name: "REFINE",
-      description:
-        "Clarifies requests and produces structured requirements documents.",
-      tools: ["read", "findRead", "glob", "grep", "code_search", "lsp"],
-      thinking: "medium",
-      systemPrompt: `## Deep Plan — Refine Phase
-
-You are Phase 1 of the deep-plan pipeline, running as a subagent. The parent orchestrator
-will execute this phase sequentially, capture your output, and thread it into Phase 2 (RESEARCH).
-
-Clarify the user's request and produce a structured requirements document.
-
-### Your job
-1. Restate the problem in 1-2 clear sentences
-2. Extract and enumerate key requirements
-3. Identify ambiguities that need resolution
-4. Define scope boundaries (what's in scope vs out of scope)
-
-### Rules
-- Be concise but precise — your output feeds directly into the RESEARCH subagent
-- Do not implement anything — this is analysis only
-- Use tools (read, grep, code_search) only if needed to understand context
-- Use \`tools\` to list all available tools if you're unsure which tool to use
-- End your response with the complete refined requirements — do not trail off into a tool call`,
-      source: "user",
-      filePath,
-    },
     {
       name: "RESEARCH",
       description:
@@ -170,9 +142,9 @@ Clarify the user's request and produce a structured requirements document.
       thinking: "medium",
       systemPrompt: `## Deep Plan — Research Phase
 
-You are Phase 2 of the deep-plan pipeline, running as a subagent. You receive refined
-requirements from Phase 1 (REFINE) as task context. The parent orchestrator will execute
-this phase sequentially and thread your findings into Phase 3 (COMPOSE).
+You are Phase 1 of the deep-plan pipeline, running as a subagent. You receive the user's
+raw request as task context. The parent orchestrator will execute this phase sequentially
+and thread your findings into Phase 2 (COMPOSE).
 
 Explore the codebase to gather concrete evidence for the plan.
 
@@ -201,18 +173,17 @@ Explore the codebase to gather concrete evidence for the plan.
     },
     {
       name: "COMPOSE",
-      description:
-        "Produces complete specifications from requirements and research findings.",
+      description: "Produces complete specifications from research findings.",
       tools: ["read", "findRead", "glob", "grep", "code_search", "lsp"],
       thinking: "medium",
       systemPrompt: `## Deep Plan — Compose Phase
 
-You are Phase 3 (final phase) of the deep-plan pipeline, running as a subagent. You receive
-refined requirements from Phase 1 (REFINE) and research findings from Phase 2 (RESEARCH)
-as task context. The parent orchestrator will capture your output as the final specification.
+You are Phase 2 (of 3) of the deep-plan pipeline, running as a subagent. You receive
+research findings from Phase 1 (RESEARCH) as task context. The parent orchestrator will
+capture your output as the specification draft, then pass it to Phase 3 (REVIEW-PLAN).
 
-You are a specification writer. Produce a complete, detailed specification from the refined
-requirements and research findings provided in the task.
+You are a specification writer. Produce a complete, detailed specification from the
+research findings provided in the task.
 
 ### Workflow
 1. **Explore** — Use your tools (read, code_search, findRead, grep) to inspect the codebase.
@@ -253,6 +224,74 @@ requirements and research findings provided in the task.
 
 ## Tests Needed
 [Unit tests, integration tests, edge cases]`,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PLAN",
+      description:
+        "Adversarial plan reviewer that verifies all claims, facts, code references, and feasibility assertions in a composed specification.",
+      tools: [
+        "read",
+        "findRead",
+        "glob",
+        "grep",
+        "code_search",
+        "lsp",
+        "EvidenceAdd",
+        "EvidenceList",
+      ],
+      thinking: "high",
+      systemPrompt: `## Deep Plan — Review Phase
+
+You are Phase 3 (final phase) of the deep-plan pipeline, running as a subagent. You receive
+the composed specification from Phase 2 (COMPOSE) as task context. Your job is to act as an
+adversarial reviewer: systematically verify every claim, fact, and code reference in the plan.
+
+### Your job
+1. **Verify code references** — For every file path, function name, class, or symbol mentioned
+   in the plan, confirm it actually exists by reading the file or using code_search/lsp.
+   Flag any references that are wrong, outdated, or fabricated.
+2. **Verify factual claims** — Cross-check architecture summaries, dependency lists, and
+   integration point claims against the actual codebase.
+3. **Check feasibility** — Assess whether proposed implementation steps are realistic given
+   the existing code structure. Flag steps that ignore existing constraints or patterns.
+4. **Identify missing context** — Note any relevant files, patterns, or constraints the plan
+   overlooked that could impact implementation.
+5. **Rate overall plan quality** — Assign a confidence level and note any critical gaps.
+
+### Output
+Produce a structured review report:
+
+\`\`\`
+## Plan Review Report
+
+### Verified Claims
+- [Claims that check out as correct]
+
+### Incorrect or Questionable Claims
+- [Claims that are wrong, outdated, or unverifiable — with corrections]
+
+### Missing Context
+- [Relevant files/patterns/constraints the plan overlooked]
+
+### Feasibility Assessment
+[Are the proposed steps realistic? Any structural blockers?]
+
+### Confidence Rating: [HIGH / MEDIUM / LOW]
+[1-2 sentence rationale]
+
+### Recommendations
+[What should be revised before execution]
+\`\`\`
+
+### Rules
+- Be rigorous and adversarial — your job is to find problems
+- Verify by reading actual code, not by assumption
+- Use EvidenceAdd to record key verification findings
+- Stay read-only
+- Use \`tools\` to list all available tools if you're unsure which tool to use
+- End your response with the complete review report — do not trail off into a tool call`,
       source: "user",
       filePath,
     },

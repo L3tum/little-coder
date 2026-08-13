@@ -120,7 +120,7 @@ describe("formatUsage", () => {
 describe("formatSubagentResult", () => {
   it("formats a successful result with status icon and agent name", () => {
     const result = makeResult({
-      agent: "REFINE",
+      agent: "RESEARCH",
       exitCode: 0,
       sawAgentEnd: true,
       messages: [
@@ -129,7 +129,7 @@ describe("formatSubagentResult", () => {
       usage: { ...emptyUsage(), turns: 2, input: 1000, output: 500 },
     });
     const output = formatSubagentResult(result);
-    expect(output).toContain("✓ [REFINE] completed");
+    expect(output).toContain("✓ [RESEARCH] completed");
     expect(output).toContain("Output text");
     expect(output).toContain("2 turns");
   });
@@ -211,29 +211,20 @@ describe("formatSubagentResults", () => {
       {
         label: "Phase 1",
         result: makeResult({
-          agent: "REFINE",
+          agent: "RESEARCH",
           exitCode: 0,
           sawAgentEnd: true,
           messages: [
-            { role: "assistant", content: [{ type: "text", text: "Refined" }] },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Researched" }],
+            },
           ],
           usage: { ...emptyUsage(), turns: 2, input: 1000, output: 500 },
         }),
       },
       {
         label: "Phase 2",
-        result: makeResult({
-          agent: "RESEARCH",
-          exitCode: 0,
-          sawAgentEnd: true,
-          messages: [
-            { role: "assistant", content: [{ type: "text", text: "Found" }] },
-          ],
-          usage: { ...emptyUsage(), turns: 3, input: 2000, output: 800 },
-        }),
-      },
-      {
-        label: "Phase 3",
         result: makeResult({
           agent: "COMPOSE",
           exitCode: 0,
@@ -244,15 +235,30 @@ describe("formatSubagentResults", () => {
               content: [{ type: "text", text: "Composed" }],
             },
           ],
+          usage: { ...emptyUsage(), turns: 3, input: 2000, output: 800 },
+        }),
+      },
+      {
+        label: "Phase 3",
+        result: makeResult({
+          agent: "REVIEW-PLAN",
+          exitCode: 0,
+          sawAgentEnd: true,
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Reviewed" }],
+            },
+          ],
           usage: { ...emptyUsage(), turns: 4, input: 3000, output: 1200 },
         }),
       },
     ];
     const output = formatSubagentResults(phases);
     expect(output).toContain("✓ parallel 3/3 completed");
-    expect(output).toContain("Phase 1 [REFINE] completed");
-    expect(output).toContain("Phase 2 [RESEARCH] completed");
-    expect(output).toContain("Phase 3 [COMPOSE] completed");
+    expect(output).toContain("Phase 1 [RESEARCH] completed");
+    expect(output).toContain("Phase 2 [COMPOSE] completed");
+    expect(output).toContain("Phase 3 [REVIEW-PLAN] completed");
     expect(output).toContain("Total:");
   });
 
@@ -261,7 +267,7 @@ describe("formatSubagentResults", () => {
       {
         label: "Phase 1",
         result: makeResult({
-          agent: "REFINE",
+          agent: "RESEARCH",
           exitCode: 0,
           sawAgentEnd: true,
           messages: [
@@ -273,7 +279,7 @@ describe("formatSubagentResults", () => {
       {
         label: "Phase 2",
         result: makeResult({
-          agent: "RESEARCH",
+          agent: "COMPOSE",
           exitCode: 1,
           stopReason: "error",
         }),
@@ -281,8 +287,8 @@ describe("formatSubagentResults", () => {
     ];
     const output = formatSubagentResults(phases);
     expect(output).toContain("◐ parallel 1/2 completed (1 failed)");
-    expect(output).toContain("Phase 1 [REFINE] completed");
-    expect(output).toContain("Phase 2 [RESEARCH] failed");
+    expect(output).toContain("Phase 1 [RESEARCH] completed");
+    expect(output).toContain("Phase 2 [COMPOSE] failed");
   });
 
   it("aggregates total usage across phases", () => {
@@ -597,20 +603,20 @@ describe("normalizeCompletedResult", () => {
 describe("formatSubagentResult snapshots", () => {
   it("successful result", () => {
     const result = makeResult({
-      agent: "REFINE",
+      agent: "RESEARCH",
       exitCode: 0,
       sawAgentEnd: true,
       messages: [
         {
           role: "assistant",
-          content: [{ type: "text", text: "Refined requirements." }],
+          content: [{ type: "text", text: "Research findings." }],
         },
       ],
       usage: { ...emptyUsage(), turns: 2, input: 1000, output: 500 },
     });
     expect(formatSubagentResult(result)).toMatchInlineSnapshot(`
-      "✓ [REFINE] completed
-      Refined requirements.
+      "✓ [RESEARCH] completed
+      Research findings.
       2 turns ↑1.0k ↓500"
     `);
   });
@@ -631,11 +637,14 @@ describe("formatSubagentResult snapshots", () => {
       {
         label: "Phase 1",
         result: makeResult({
-          agent: "REFINE",
+          agent: "RESEARCH",
           exitCode: 0,
           sawAgentEnd: true,
           messages: [
-            { role: "assistant", content: [{ type: "text", text: "Refined" }] },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Researched" }],
+            },
           ],
           usage: { ...emptyUsage(), turns: 2, input: 1000, output: 500 },
         }),
@@ -643,11 +652,14 @@ describe("formatSubagentResult snapshots", () => {
       {
         label: "Phase 2",
         result: makeResult({
-          agent: "RESEARCH",
+          agent: "COMPOSE",
           exitCode: 0,
           sawAgentEnd: true,
           messages: [
-            { role: "assistant", content: [{ type: "text", text: "Found" }] },
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "Composed" }],
+            },
           ],
           usage: { ...emptyUsage(), turns: 3, input: 2000, output: 800 },
         }),
@@ -656,12 +668,12 @@ describe("formatSubagentResult snapshots", () => {
     expect(formatSubagentResults(phases)).toMatchInlineSnapshot(`
       "✓ parallel 2/2 completed
 
-      ✓ Phase 1 [REFINE] completed
-      Refined
+      ✓ Phase 1 [RESEARCH] completed
+      Researched
       2 turns ↑1.0k ↓500
 
-      ✓ Phase 2 [RESEARCH] completed
-      Found
+      ✓ Phase 2 [COMPOSE] completed
+      Composed
       3 turns ↑2.0k ↓800
 
       Total: 5 turns ↑3.0k ↓1.3k"

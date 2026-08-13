@@ -73,7 +73,7 @@ The agent uses the directory you launched it from as its working directory — `
 In the TUI you can use `/tools` to list loaded tools and `/skills` to list available skills. The agent can also call `tools`, `skills`, and `enableBrowserTools` directly.
 
 Use `/plan` to enter browser-reviewed planning mode before implementation.
-Use `/deep-plan` for a subagent focused planning pipeline of REFINE, RESEARCH, COMPOSE.
+Use `/deep-plan` for a subagent focused planning pipeline of RESEARCH, COMPOSE, REVIEW.
 Use `/review` (changes only), `/review-project` or `/review-focused` for a subagent focused reviewing pipeline including 7 different subagents.
 
 little-coder uses reflection-generated skills and breadcrumbs for reusable session learning. Use `/reflect`, `/reflect-review`, `/breadcrumbs`, `/skills`, and `/promote-user-skill` to draft, review, search, load, and promote reusable guidance. Reflection writes accepted drafts to user-level `~/.pi/skills/<skill>/SKILL.md`; `/promote-user-skill [skill]` copies stable user skills into repo `skills/user/<skill>/` after duplicate checks so they can be packaged.
