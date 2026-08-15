@@ -226,10 +226,6 @@ function normalizeCargoCommand(c: string): string {
   return c.replace(/\bcargo\s+\+\w+\s+/g, "cargo ");
 }
 
-function firstToken(command: string): string {
-  return command.trim().split(/\s+/)[0] || command.trim();
-}
-
 function isSafePrefixCommand(
   segment: string,
   prefixes: readonly string[],
@@ -248,16 +244,31 @@ function isSafePrefixCommand(
 }
 
 /**
- * Split a command into top-level segments joined by `&&` or `|` that appear
+ * Detailed result of scanning a bash command for shell control operators.
+ * - `segments`: the command split on top-level `&&`, `||`, and `|`
+ * - `forbidden`: a disallowed shell operator appeared outside quotes
+ * - `malformed`: a segment would be empty (e.g. `ls |`)
+ */
+export type BashSegmentScan =
+  | { kind: "segments"; segments: string[] }
+  | { kind: "forbidden"; operator: string }
+  | { kind: "malformed" };
+
+/**
+ * Scan a command for top-level `&&`, `||`, and `|` separators that appear
  * OUTSIDE quoted strings, so `grep -E "a|b" file`, `grep 'a&&b' file`, and
  * `grep foo | head -20` are all understood correctly.
  *
- * Returns null when a shell control operator appears outside quotes
- * (`;`, bare `&`, `||`, backtick, `$`, `<`, `>`, newline), when `$`/backtick
- * appears inside double quotes (command substitution), or when a segment would
- * be empty (e.g. `ls |`). Characters inside single quotes are always literal.
+ * `||` is treated like `&&`: it only runs the segments that are listed, and
+ * each segment is still checked against the safe prefix list, so
+ * `cargo clippy 2>&1 | grep -i supply || echo none` is as safe as the
+ * equivalent `&&`/`|` chain.
+ *
+ * Forbidden outside quotes: `;`, bare `&` (backgrounding), backtick, `$`,
+ * `<`, `>`, newline — and `$`/backtick inside double quotes (command
+ * substitution). Characters inside single quotes are always literal.
  */
-export function scanBashSegments(command: string): string[] | null {
+function scanBashSegmentsDetailed(command: string): BashSegmentScan {
   const segments: string[] = [];
   let current = "";
   let quote: "'" | '"' | null = null;
@@ -275,6 +286,8 @@ export function scanBashSegments(command: string): string[] | null {
     ch === "\r";
   const isDoubleQuoteMeta = (ch: string) =>
     ch === "`" || ch === "$" || ch === "\n" || ch === "\r";
+  const operatorName = (ch: string) =>
+    ch === "\n" || ch === "\r" ? "newline" : ch;
 
   const flush = () => {
     segments.push(current);
@@ -297,7 +310,8 @@ export function scanBashSegments(command: string): string[] | null {
       // Escaped metacharacters outside quotes are still treated as dangerous
       // (e.g. `find . -exec rm {} \;` must not pass via a literal `;`).
       const next = command[i + 1];
-      if (next !== undefined && isOuterMeta(next)) return null;
+      if (next !== undefined && isOuterMeta(next))
+        return { kind: "forbidden", operator: operatorName(next) };
       escaped = true;
       continue;
     }
@@ -308,7 +322,8 @@ export function scanBashSegments(command: string): string[] | null {
     }
     if (quote === '"') {
       if (ch === '"') quote = null;
-      else if (isDoubleQuoteMeta(ch)) return null;
+      else if (isDoubleQuoteMeta(ch))
+        return { kind: "forbidden", operator: operatorName(ch) };
       else current += ch;
       continue;
     }
@@ -323,18 +338,31 @@ export function scanBashSegments(command: string): string[] | null {
       continue;
     }
     if (ch === "|") {
-      if (command[i + 1] === "|") return null; // `||` short-circuit is not allowed
+      // Both `|` (pipeline) and `||` (short-circuit) split segments; every
+      // resulting segment is still checked against the safe prefix list.
+      if (command[i + 1] === "|") i += 1;
       flush();
       continue;
     }
-    if (isOuterMeta(ch)) return null;
+    if (isOuterMeta(ch))
+      return { kind: "forbidden", operator: operatorName(ch) };
     current += ch;
   }
   flush();
 
   const trimmed = segments.map((s) => s.trim());
-  if (trimmed.some((s) => s.length === 0)) return null;
-  return trimmed;
+  if (trimmed.some((s) => s.length === 0)) return { kind: "malformed" };
+  return { kind: "segments", segments: trimmed };
+}
+
+/**
+ * Split a command into top-level `&&`/`||`/`|` segments, or return null when
+ * a forbidden shell control operator appears outside quotes or a segment
+ * would be empty (e.g. `ls |`).
+ */
+export function scanBashSegments(command: string): string[] | null {
+  const result = scanBashSegmentsDetailed(command);
+  return result.kind === "segments" ? result.segments : null;
 }
 
 /**
@@ -349,9 +377,11 @@ function stripLeadingCdChain(command: string): string {
   return m?.[2] ?? "";
 }
 
+const ADVISORY_SUFFIX = "Ask the user to execute this command instead.";
+
 interface BashGateResult {
   safe: boolean;
-  segment: string;
+  reason: string | null;
 }
 
 function evaluateBash(
@@ -360,7 +390,7 @@ function evaluateBash(
   cwd?: string,
 ): BashGateResult {
   const c = command.trim();
-  if (isSafeDiagnosticCommand(c)) return { safe: true, segment: "" };
+  if (isSafeDiagnosticCommand(c)) return { safe: true, reason: null };
 
   // `cd <target> && …` / `cd <target> ; …` is allowed only when the cd target
   // itself contains no shell metacharacters, resolves inside the workspace,
@@ -371,7 +401,7 @@ function evaluateBash(
     const cdSegments = scanBashSegments(cdHead);
     if (cdSegments !== null && cdSegments.length === 1 && isNoopCd(c, cwd)) {
       const remainder = stripLeadingCdChain(c);
-      if (remainder.trim() === "") return { safe: true, segment: "" };
+      if (remainder.trim() === "") return { safe: true, reason: null };
       return evaluateBash(remainder, prefixes, cwd);
     }
   }
@@ -383,18 +413,30 @@ function evaluateBash(
   const withoutStderrRedirect = c
     .replace(/\s*2>\s*\/dev\/null/g, "")
     .replace(/\s*2>&1/g, "");
-  const segments = scanBashSegments(withoutStderrRedirect);
-  if (segments === null || segments.length === 0) {
-    // A shell control operator appeared outside quotes (for example
-    // "ls -la; rm -rf /"), or the command is empty.
-    return { safe: false, segment: firstToken(c) };
+  const scan = scanBashSegmentsDetailed(withoutStderrRedirect);
+  if (scan.kind === "forbidden") {
+    // Name the offending operator instead of blaming the first command
+    // (e.g. "cargo clippy ... || echo none" must not report on "cargo").
+    return {
+      safe: false,
+      reason: `bash whitelist: shell operator "${scan.operator}" is not allowed in pre-approved bash commands. ${ADVISORY_SUFFIX}`,
+    };
   }
-  for (const segment of segments) {
+  if (scan.kind === "malformed" || scan.segments.length === 0) {
+    return {
+      safe: false,
+      reason: `bash whitelist: command has an empty segment after a shell operator. ${ADVISORY_SUFFIX}`,
+    };
+  }
+  for (const segment of scan.segments) {
     if (!isSafePrefixCommand(segment, prefixes)) {
-      return { safe: false, segment };
+      return {
+        safe: false,
+        reason: `bash whitelist: "${segment}" is not in SAFE_PREFIXES. ${ADVISORY_SUFFIX}`,
+      };
     }
   }
-  return { safe: true, segment: "" };
+  return { safe: true, reason: null };
 }
 
 export function isSafeBash(
@@ -411,8 +453,7 @@ export function bashBlockReason(
   cwd?: string,
 ): string | null {
   const result = evaluateBash(command, prefixes, cwd);
-  if (result.safe) return null;
-  return `bash whitelist: "${result.segment}" is not in SAFE_PREFIXES. Ask the user to execute this command instead.`;
+  return result.safe ? null : result.reason;
 }
 
 function getPermissionMode(): "auto" | "accept-all" | "manual" {

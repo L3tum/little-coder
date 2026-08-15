@@ -135,18 +135,26 @@ describe("isSafeBash", () => {
     expect(isSafeBash('grep "a && b" file.txt')).toBe(true);
     expect(isSafeBash('echo "hello && world"')).toBe(true);
   });
-  it("allows && chains and | pipelines where every segment is safe", () => {
+  it("allows && chains, || fallbacks, and | pipelines where every segment is safe", () => {
     expect(isSafeBash("grep -rn foo . | head -20")).toBe(true);
     expect(isSafeBash("ls -la && git status")).toBe(true);
     expect(isSafeBash("git log --oneline | head -5")).toBe(true);
     expect(isSafeBash("grep foo bar && grep baz qux")).toBe(true);
     expect(isSafeBash("cat a.txt | sort | uniq")).toBe(true);
     expect(isSafeBash("npm test | tail -10")).toBe(true);
+    // `A || B` can only run the listed safe segments (same as `&&`)
+    expect(isSafeBash("grep foo || echo hi")).toBe(true);
+    expect(
+      isSafeBash(
+        "cargo clippy --all-targets 2>&1 | grep -i supply || echo none",
+      ),
+    ).toBe(true);
   });
   it("blocks chains and pipelines containing unsafe segments", () => {
     expect(isSafeBash("grep foo | rm -rf /")).toBe(false);
     expect(isSafeBash("ls && rm -rf .")).toBe(false);
-    expect(isSafeBash("grep foo || echo hi")).toBe(false);
+    expect(isSafeBash("ls || rm -rf /")).toBe(false);
+    expect(isSafeBash("rm -rf / || ls")).toBe(false);
     expect(isSafeBash("grep foo ; ls")).toBe(false);
     expect(isSafeBash("ls |")).toBe(false);
     expect(isSafeBash('grep "$(ls)" file.txt')).toBe(false);
@@ -189,10 +197,20 @@ describe("scanBashSegments", () => {
     ]);
     expect(scanBashSegments("cd subdir && ls")).toEqual(["cd subdir", "ls"]);
   });
+  it("splits on top-level || like &&", () => {
+    expect(scanBashSegments("grep foo || echo hi")).toEqual([
+      "grep foo",
+      "echo hi",
+    ]);
+    expect(scanBashSegments("ls || grep foo | head -5")).toEqual([
+      "ls",
+      "grep foo",
+      "head -5",
+    ]);
+  });
   it("rejects control operators outside quotes", () => {
     expect(scanBashSegments("ls ; rm -rf /")).toBeNull();
     expect(scanBashSegments("ls |")).toBeNull();
-    expect(scanBashSegments("grep foo || echo hi")).toBeNull();
     expect(scanBashSegments("grep foo & echo hi")).toBeNull();
     expect(scanBashSegments('echo "$(ls)"')).toBeNull();
     expect(scanBashSegments("echo `ls`")).toBeNull();
@@ -217,6 +235,16 @@ describe("bashBlockReason", () => {
   it("keeps the standard advisory suffix", () => {
     expect(bashBlockReason("sudo rm -rf /")).toContain(
       "Ask the user to execute this command instead.",
+    );
+  });
+  it("names the forbidden shell operator instead of the first token", () => {
+    expect(bashBlockReason("ls ; rm -rf /")).toContain('";"');
+    expect(bashBlockReason("grep $(ls) x")).toContain('"$"');
+    expect(bashBlockReason("ls > out.txt")).toContain('">"');
+    expect(bashBlockReason("ls & echo hi")).toContain('"&"');
+    // a failing || chain must blame the unsafe segment, not the first command
+    expect(bashBlockReason("cargo clippy 2>&1 | grep x || rm -rf /")).toContain(
+      "rm -rf /",
     );
   });
 });
