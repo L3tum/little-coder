@@ -1,5 +1,10 @@
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
+// pi-powerline-footer is a LOAD-BEARING direct dependency, not a phantom: this
+// extension imports pi-powerline-footer/welcome.ts at top level. The footer
+// RENDERED at runtime is the vendored .pi/extensions/powerline-footer-unified/,
+// but the npm package is still required for the welcome header — do not prune
+// it from package.json (would break branding at launch). See CHANGELOG.
 import {
   WelcomeHeader,
   discoverLoadedCounts,

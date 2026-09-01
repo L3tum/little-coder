@@ -15,6 +15,8 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { atomicWriteJson } from "../_shared/settings-write.mjs";
+import { littleCoderCacheDir } from "../_shared/cache-path.mjs";
 
 export interface ProviderModelEntry {
   id: string;
@@ -228,7 +230,10 @@ export async function probeContextWindow(
 ): Promise<number | undefined> {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const url = deps.url ?? propsUrlFor(baseUrl);
-  const timeoutMs = deps.timeoutMs ?? 1500;
+  // 500 ms default (was 1500): a local/LAN llama.cpp server answers in tens
+  // of ms; the remaining budget only serves to stall startup when the server
+  // is down. LITTLE_CODER_CTX_PROBE_TIMEOUT_MS still overrides via ProbeDeps.
+  const timeoutMs = deps.timeoutMs ?? 500;
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -239,5 +244,216 @@ export async function probeContextWindow(
     return undefined;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// ── /props cache: keep the probed window across launches ─────────────────────
+// A live server's n_ctx is stable across launches (it changes only when the
+// user restarts the server with a different -c). Caching the probe result
+// removes the fetch from the launch critical path on warm launches; a
+// background re-probe refreshes the cache for the NEXT launch (a stale
+// cache value only affects the displayed/budgeted window, never correctness).
+//
+// There is NO TTL/expiry: a warm launch uses whatever is cached (fresh or
+// stale) immediately and the never-awaited background re-probe refreshes it
+// for the next launch. Expiry would only re-introduce a blocking probe on
+// the launch path, which the cache exists to remove.
+
+// Bounded staleness: a cached window older than this triggers a
+// re-probe ATTEMPT before use on the warm path (the stale value is kept only
+// if the re-probe fails). Consecutive re-probe failures are counted in the
+// cache; at this threshold we warn loudly (the registered window is very
+// stale and cannot be refreshed — the server is likely unreachable).
+export const CTX_PROBE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+export const CTX_PROBE_FAIL_WARN_AT = 3;
+
+interface CtxProbeCacheFile {
+  contextWindow: number;
+  probedAt: number;
+  baseUrl: string;
+  /** consecutive re-probe failures for a stale cache (0/absent = none). */
+  probeFailCount?: number;
+}
+
+/** Sanitize a URL host (e.g. "localhost:8080") into a safe file-name key. */
+export function ctxProbeHostKey(baseUrl: string): string | null {
+  try {
+    return new URL(baseUrl).host.replace(/[^a-z0-9.:-]/gi, "_");
+  } catch {
+    return null;
+  }
+}
+
+/** XDG-aware cache path: $XDG_CACHE_HOME/little-coder/ctx-window-<host>.json,
+ *  else ~/.cache/little-coder/... (same convention as the version-check
+ *  cache). null when the baseUrl has no parseable host (callers no-op). */
+export function ctxProbeCachePath(
+  baseUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  const host = ctxProbeHostKey(baseUrl);
+  if (!host) return null;
+  // The absolute-home + XDG-cache-base ladder lives in the shared
+  // cache-path.mjs (previously duplicated verbatim in bin/update-check.mjs).
+  // A relative/empty HOME or XDG_CACHE_HOME override falls back (loud) to the
+  // platform defaults instead of writing ./cache under the process cwd.
+  return join(littleCoderCacheDir(env), `ctx-window-${host}.json`);
+}
+
+/** Read the disk-cached context window (NO TTL gate — a warm launch uses any
+ *  cached value immediately; a background re-probe on each launch refreshes
+ *  the cache for the next launch). Parse + validate the cache file for a
+ *  baseUrl; null on any failure: missing file, malformed JSON, non-positive
+ *  number, missing probedAt, bad path, or a stored baseUrl that does not
+ *  match (the host key alone can collide between different paths on the same
+ *  host). */
+export function readCtxProbeCache(
+  baseUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): {
+    contextWindow: number;
+    probedAt: number;
+    probeFailCount: number;
+  } | null {
+  const path = ctxProbeCachePath(baseUrl, env);
+  if (!path || !existsSync(path)) return null;
+  try {
+    const data = JSON.parse(readFileSync(path, "utf-8")) as CtxProbeCacheFile;
+    if (
+      typeof data?.contextWindow !== "number" ||
+      !Number.isFinite(data.contextWindow) ||
+      data.contextWindow <= 0 ||
+      typeof data?.probedAt !== "number" ||
+      typeof data?.baseUrl !== "string" ||
+      data.baseUrl !== baseUrl
+    ) {
+      return null;
+    }
+    return {
+      contextWindow: data.contextWindow,
+      probedAt: data.probedAt,
+      probeFailCount:
+        typeof data?.probeFailCount === "number" &&
+        Number.isFinite(data.probeFailCount) &&
+        data.probeFailCount >= 0
+          ? Math.floor(data.probeFailCount)
+          : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Decision for the warm (cached) ctx-probe path. Pure + injectable so
+ *  it is unit-testable without a live server:
+ *  - fresh (age <= maxAgeMs): return the cached window as-is, mode "fresh"
+ *    (the caller fires a background re-probe to self-correct next launch);
+ *  - stale (age > maxAgeMs): await the injected re-probe; on success return
+ *    the fresh window (failCount reset, mode "reprobed"), on failure return
+ *    the stale window with failCount+1 (original probedAt preserved so the
+ *    cache stays stale) and a loud warning once failCount reaches warnAt.
+ * @returns the window to register + the cache fields to persist + an optional
+ *   warning message.
+ */
+export interface CtxProbeWarmDecision {
+  contextWindow: number;
+  probedAt: number;
+  probeFailCount: number;
+  warn: string | null;
+  /** "fresh" = caller should fire a background re-probe; "reprobed" = the
+   *  re-probe was already awaited (no background re-probe needed). */
+  mode: "fresh" | "reprobed";
+}
+
+export async function resolveWarmCtxWindow(opts: {
+  baseUrl: string;
+  cached: { contextWindow: number; probedAt: number; probeFailCount: number };
+  now: number;
+  /** Injected re-probe (returns the window, or null/undefined on failure). */
+  probe: () => Promise<number | null | undefined>;
+  maxAgeMs?: number;
+  warnAt?: number;
+}): Promise<CtxProbeWarmDecision> {
+  const {
+    baseUrl,
+    cached,
+    now,
+    probe,
+    maxAgeMs = CTX_PROBE_CACHE_MAX_AGE_MS,
+    warnAt = CTX_PROBE_FAIL_WARN_AT,
+  } = opts;
+  const age = now - cached.probedAt;
+  if (age <= maxAgeMs) {
+    return {
+      contextWindow: cached.contextWindow,
+      probedAt: cached.probedAt,
+      probeFailCount: cached.probeFailCount,
+      warn: null,
+      mode: "fresh",
+    };
+  }
+  const fresh = await probe();
+  if (typeof fresh === "number" && Number.isFinite(fresh) && fresh > 0) {
+    return {
+      contextWindow: fresh,
+      probedAt: now,
+      probeFailCount: 0,
+      warn: null,
+      mode: "reprobed",
+    };
+  }
+  const failCount = cached.probeFailCount + 1;
+  const days = Math.max(1, Math.round(age / 86400000));
+  const warn =
+    failCount >= warnAt
+      ? `llama-cpp ctx-probe: cached context window for ${baseUrl} is ~${days}d old and the re-probe has failed ${failCount}x in a row — the registered window may be stale. Is the server reachable? Set LITTLE_CODER_NO_CTX_PROBE=1 to disable probing.`
+      : null;
+  return {
+    contextWindow: cached.contextWindow,
+    probedAt: cached.probedAt,
+    probeFailCount: failCount,
+    warn,
+    mode: "reprobed",
+  };
+}
+
+/** Parse the LITTLE_CODER_CTX_PROBE_TIMEOUT_MS env override for the
+ *  /props probe. Empty/invalid/0 or negative → undefined, which
+ *  probeContextWindow maps to its 500 ms default (deps.timeoutMs ?? 500).
+ *  Exported for unit-testing without env mutation. */
+export function ctxProbeTimeoutMs(
+  envValue: string | undefined,
+): number | undefined {
+  if (envValue === undefined || envValue.trim() === "") return undefined;
+  const n = Number(envValue);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** Write the probed window to the cache. No-op on any failure (read-only
+ *  HOME, bad path, serialization error) — caching is best-effort. The write
+ *  is ATOMIC (shared settings-write.mjs: 0600 temp + rename), so a reader
+ *  never sees a torn cache file. */
+export function writeCtxProbeCache(
+  baseUrl: string,
+  contextWindow: number,
+  opts: {
+    probedAt?: number;
+    env?: NodeJS.ProcessEnv;
+    probeFailCount?: number;
+  } = {},
+): void {
+  const { probedAt = Date.now(), env = process.env, probeFailCount = 0 } = opts;
+  const path = ctxProbeCachePath(baseUrl, env);
+  if (!path) return;
+  try {
+    const data: CtxProbeCacheFile = {
+      contextWindow,
+      probedAt,
+      baseUrl,
+      probeFailCount,
+    };
+    atomicWriteJson(path, data);
+  } catch {
+    // best-effort; the next launch simply re-probes
   }
 }

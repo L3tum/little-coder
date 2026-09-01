@@ -43,6 +43,11 @@ debug_payload.json
 brainstorm_outputs/
 .pi/memory/supersedes.json
 
-# Auto-generated plan artifacts (deep-plan pipeline output)
-plans/deep-plan-*.md
+# Local runtime cache (historical artifact of the (now fixed) relative-cache
+# bug — kept as belt-and-suspenders so a stray write can never pollute the
+# working tree)
+cache/
+
+# Auto-generated plan artifacts (deep-plan pipeline output, review-synthesis, etc.)
+plans/
 PLAN.md

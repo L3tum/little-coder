@@ -15,6 +15,7 @@ import {
   discoverBundledExtensionArgs,
   shouldAppendSystemPrompt,
   isBrandingExtensionPath,
+  formatLaunchTiming,
 } from "./launcher-helpers.mjs";
 
 function makeExt(root, name) {
@@ -186,6 +187,22 @@ describe("launcher helpers", () => {
     }
   });
 
+  // `_`-prefixed dirs are support/shared code, never loadable
+  // extensions — a stray `_shared/index.ts` must not become a --extension arg.
+  it("skips `_`-prefixed dirs while a normal sibling is still discovered", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "lc-launcher-test-"));
+    try {
+      const extDir = join(tmp, ".pi", "extensions");
+      makeExt(extDir, "_shared");
+      makeExt(extDir, "real-ext");
+      const args = discoverBundledExtensionArgs(extDir);
+      expect(args.join("\n")).toContain("real-ext/index.ts");
+      expect(args.join("\n")).not.toContain("_shared");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   // ---- applySubAgentEnv edge cases ----
 
   it("mutates environment in place (same reference)", () => {
@@ -226,5 +243,49 @@ describe("launcher helpers", () => {
     expect(
       isBrandingExtensionPath("/home/user/.pi/extensions/branding/main.ts"),
     ).toBe(false);
+  });
+});
+
+// ---- formatLaunchTiming (LITTLE_CODER_TIMING=1) ----
+
+describe("formatLaunchTiming", () => {
+  it("renders all phases in a single line", () => {
+    const line = formatLaunchTiming({
+      discovery: 3.4,
+      updatecheck: 0.1,
+      updateprompt: 0.1,
+      settings: 1.9,
+      spawn: 5.2,
+      total: 12.7,
+    });
+    expect(line).toBe(
+      "little-coder launch timing: " +
+        "discovery=3ms updatecheck=0ms updateprompt=0ms settings=2ms spawn=5ms total=13ms",
+    );
+  });
+
+  it("clamps negative/float values to whole milliseconds", () => {
+    const line = formatLaunchTiming({
+      discovery: -1,
+      updatecheck: 0.4,
+      updateprompt: 0.6,
+      settings: 0.6,
+      spawn: 1,
+      total: 2.49,
+    });
+    expect(line).toBe(
+      "little-coder launch timing: " +
+        "discovery=0ms updatecheck=0ms updateprompt=1ms settings=1ms spawn=1ms total=2ms",
+    );
+  });
+
+  // a missing/non-finite mark must render as 0ms, never "NaNms".
+  it("renders 0ms for missing/non-finite marks (no NaN)", () => {
+    const line = formatLaunchTiming({ discovery: 1, spawn: 2 });
+    expect(line).toBe(
+      "little-coder launch timing: " +
+        "discovery=1ms updatecheck=0ms updateprompt=0ms settings=0ms spawn=2ms total=0ms",
+    );
+    expect(line).not.toContain("NaN");
   });
 });

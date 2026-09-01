@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import childProcess from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Mock the TypeScript dependency before importing the preload module
 vi.mock("./subprocess.ts", () => ({
@@ -129,5 +131,78 @@ describe("subprocess-preload", () => {
     } catch {
       expect(registerChildProcess).toHaveBeenCalled();
     }
+  });
+});
+
+// P1: real integration test for the preload timing line — no mock,
+// a fresh `node --import` process must emit the preload=Nms stderr line.
+describe("subprocess-preload launch timing (integration)", () => {
+  it("LITTLE_CODER_TIMING=1 emits preload=<N>ms on stderr", async () => {
+    const preloadPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "subprocess-preload.mjs",
+    );
+    let killTimer;
+    const result = await new Promise((resolvePromise) => {
+      const child = childProcess.spawn(
+        process.execPath,
+        ["--import", preloadPath, "-e", "0"],
+        {
+          stdio: ["ignore", "ignore", "pipe"],
+          env: { ...process.env, LITTLE_CODER_TIMING: "1" },
+        },
+      );
+      let stderr = "";
+      child.stderr.on("data", (d) => {
+        stderr += d;
+      });
+      // Kill-on-timeout guard; cleared on close so it can't outlive the test
+      // (a pending 15 s timer would keep the worker alive and stall the run).
+      killTimer = setTimeout(() => {
+        child.kill();
+        resolvePromise({ code: -1, stderr });
+      }, 15_000);
+      child.on("close", () => {
+        clearTimeout(killTimer);
+        resolvePromise({ code: child.exitCode, stderr });
+      });
+    });
+    clearTimeout(killTimer); // defensive: already cleared in the close handler
+    expect(result.code).toBe(0);
+    expect(result.stderr).toMatch(/preload=\d+ms/);
+  });
+
+  it("stays silent without LITTLE_CODER_TIMING", async () => {
+    const preloadPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "subprocess-preload.mjs",
+    );
+    const env = { ...process.env };
+    delete env.LITTLE_CODER_TIMING;
+    let killTimer;
+    const result = await new Promise((resolvePromise) => {
+      const child = childProcess.spawn(
+        process.execPath,
+        ["--import", preloadPath, "-e", "0"],
+        { stdio: ["ignore", "ignore", "pipe"], env },
+      );
+      let stderr = "";
+      child.stderr.on("data", (d) => {
+        stderr += d;
+      });
+      // Kill-on-timeout guard; cleared on close so it can't outlive the test
+      // (a pending 15 s timer would keep the worker alive and stall the run).
+      killTimer = setTimeout(() => {
+        child.kill();
+        resolvePromise({ code: -1, stderr });
+      }, 15_000);
+      child.on("close", () => {
+        clearTimeout(killTimer);
+        resolvePromise({ code: child.exitCode, stderr });
+      });
+    });
+    clearTimeout(killTimer); // defensive: already cleared in the close handler
+    expect(result.code).toBe(0);
+    expect(result.stderr).not.toContain("launch timing");
   });
 });

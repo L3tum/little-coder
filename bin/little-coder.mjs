@@ -4,13 +4,19 @@
 // wired in — works from any working directory.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkForUpdate } from "./update-check.mjs";
+import {
+  checkForUpdate,
+  refreshUpdateCache,
+  readCacheAllowStale,
+  isValidSemver,
+} from "./update-check.mjs";
 import {
   discoverBundledExtensionArgs,
+  formatLaunchTiming,
   shouldAppendSystemPrompt,
 } from "./launcher-helpers.mjs";
 import {
@@ -18,7 +24,33 @@ import {
   readJson,
   resolveExtensionEntry,
   setPkgRoot,
+  updateSettingsFile,
 } from "./launcher-internal.mjs";
+
+// ---- 0. Optional launch timing (LITTLE_CODER_TIMING=1) ----
+// Phase marks on the launcher's critical path; one stderr line after spawn.
+// The child side emits per-extension load timings from
+// _shared/subprocess-preload.mjs under the same env var. See
+// docs/startup-performance.md.
+const LAUNCH_TIMING = process.env.LITTLE_CODER_TIMING === "1";
+const TIMING = {
+  t0: performance.now(),
+  discovery: 0,
+  updatecheck: 0,
+  updateprompt: 0,
+  settings: 0,
+  spawn: 0,
+};
+// recordPhase stores ABSOLUTE performance.now() marks (elapsed since process
+// start). The emit near the end converts successive marks into PER-PHASE
+// durations (discovery, updatecheck−discovery, updateprompt−updatecheck,
+// settings−updateprompt, spawn−settings) so the phases sum to ≈ total.
+// Every mark is recorded unconditionally — a phase whose work is skipped
+// (e.g. LITTLE_CODER_NO_UPDATE_CHECK=1 or a missing/invalid version) still
+// records its mark, so skipped work simply shows as a ≈0 ms phase.
+const recordPhase = (name) => {
+  TIMING[name] = performance.now();
+};
 
 // ---- 1. Node version preflight (>= 22.19.0, matching pi.dev) ----
 const MIN_NODE = [22, 19, 0];
@@ -61,22 +93,36 @@ const piPkgRoot = join(
   "pi-coding-agent",
 );
 let piEntry;
-try {
-  const piPkgJson = JSON.parse(
-    readFileSync(join(piPkgRoot, "package.json"), "utf-8"),
-  );
-  const binRel =
-    typeof piPkgJson?.bin === "string" ? piPkgJson.bin : piPkgJson?.bin?.pi;
-  if (typeof binRel !== "string")
-    throw new Error("pi package.json has no bin.pi entry");
-  piEntry = resolve(piPkgRoot, binRel);
-} catch (err) {
-  console.error(
-    `little-coder: cannot resolve pi cli entry under ${piPkgRoot}.\n` +
-      `Underlying error: ${err?.message ?? err}\n` +
-      `Try reinstalling: npm install -g github:L3tum/little-coder`,
-  );
-  process.exit(1);
+let piPkgVersion;
+// Test/debug hook: LITTLE_CODER_PI_ENTRY overrides the resolved pi entry (a
+// stub child script for the hermetic signal-propagation test, or a custom pi
+// entry). Bypasses the node_modules resolution entirely.
+const piEntryOverride = process.env.LITTLE_CODER_PI_ENTRY;
+if (piEntryOverride) {
+  piEntry = resolve(piEntryOverride);
+  piPkgVersion = ""; // not a real bundled pi; version is unused for a stub
+} else {
+  try {
+    const piPkgJson = JSON.parse(
+      readFileSync(join(piPkgRoot, "package.json"), "utf-8"),
+    );
+    const binRel =
+      typeof piPkgJson?.bin === "string" ? piPkgJson.bin : piPkgJson?.bin?.pi;
+    if (typeof binRel !== "string")
+      throw new Error("pi package.json has no bin.pi entry");
+    piEntry = resolve(piPkgRoot, binRel);
+    // Captured here (not re-read in step 8) so the bundled pi version comes
+    // from the very package.json we resolved piEntry from — no second parse.
+    if (typeof piPkgJson?.version === "string")
+      piPkgVersion = piPkgJson.version;
+  } catch (err) {
+    console.error(
+      `little-coder: cannot resolve pi cli entry under ${piPkgRoot}.\n` +
+        `Underlying error: ${err?.message ?? err}\n` +
+        `Try reinstalling: npm install -g github:L3tum/little-coder`,
+    );
+    process.exit(1);
+  }
 }
 if (!existsSync(piEntry)) {
   console.error(
@@ -99,15 +145,45 @@ const extArgs = discoverBundledExtensionArgs(extDir, {
   resolveExtensionEntry,
 });
 const packageArgs = bundledPackageArgs(rootPkgJson, { subagentMode });
+recordPhase("discovery");
 
-// ---- 5. Update check (best-effort, blocks on TTY prompt only) ----
-const currentVersion =
-  typeof rootPkgJson?.version === "string" ? rootPkgJson.version : "0.0.0";
-const exitAfterCheck = await checkForUpdate(currentVersion);
-if (exitAfterCheck) {
-  // Successful update happened; user needs to re-run the new binary.
-  process.exit(0);
+// ---- 5. Update check (cache-only on the critical path) ----
+// checkForUpdate no longer touches the network: it compares against the
+// (possibly stale) local cache, so an offline launch costs 0 ms here. The
+// fetch that keeps the cache current runs fire-and-forget and writes the
+// cache for the NEXT launch — the update notice reflects the last successful
+// online refresh (see update-check.mjs / docs/startup-performance.md).
+// The update check needs a valid semver version in the root
+// package.json. A missing/malformed version (corrupt root package.json)
+// means we skip the check, refresh, and notice entirely rather than
+// comparing against a bogus "latest".
+const hasVersion = isValidSemver(rootPkgJson?.version);
+const currentVersion = hasVersion ? rootPkgJson.version : "0.0.0";
+if (hasVersion) {
+  // Read the update cache ONCE and share the snapshot with both callers:
+  // refreshUpdateCache applies the TTL gate to it (fetch if stale) and
+  // checkForUpdate compares it (allowStale). readCacheAllowStale never throws.
+  // A single read also means both see the same snapshot (no torn read between
+  // two separate file reads).
+  let cachedUpdate = null;
+  try {
+    cachedUpdate = readCacheAllowStale();
+  } catch {
+    cachedUpdate = null;
+  }
+  void refreshUpdateCache({ cache: cachedUpdate }); // never rejects
+  const exitAfterCheck = await checkForUpdate(currentVersion, {
+    cache: cachedUpdate,
+    // Mark the end of the (fast) decision so the awaited TTY prompt below is
+    // billed to its own "updateprompt" phase, not "updatecheck".
+    onDecide: () => recordPhase("updatecheck"),
+  });
+  if (exitAfterCheck) {
+    // Successful update happened; user needs to re-run the new binary.
+    process.exit(0);
+  }
 }
+recordPhase("updateprompt");
 
 // ---- 6. Compose pi argv ----
 // --no-context-files : disable pi's automatic AGENTS.md / CLAUDE.md loading
@@ -166,6 +242,20 @@ if (process.env.PI_SKIP_VERSION_CHECK === undefined) {
 //
 // Existing keys are preserved. We only write when the desired value differs
 // from what's already on disk, so this is a no-op on warm launches.
+//
+// The write goes through updateSettingsFile (the ONE shared writer in
+// _shared/settings-write.mjs): atomic (0600 temp + rename) AND under the same
+// proper-lockfile lock that updateGlobalSettings takes for /allow and /deny
+// (async lock, no busy-wait). The idempotent mutations are applied to a FRESH
+// under-lock read, so a concurrent /allow made since our earlier read is not
+// clobbered. A malformed existing file is REFUSED by the shared writer (never
+// clobbered); the per-write refusal check below names the full path and the
+// spawn proceeds.
+// Residual race: pi itself can write settings.json without our lock — accepted
+// (pi's own writer is the same user; a collision loses at most one stamp, and
+// the next launch re-stamps). Best-effort: write failures (read-only HOME,
+// lock contention) are logged and never block the spawn; the outer try/catch
+// guards the remaining steps.
 try {
   const agentDirEnv = process.env.PI_CODING_AGENT_DIR;
   let agentDir;
@@ -181,77 +271,107 @@ try {
   }
   mkdirSync(agentDir, { recursive: true });
   const globalSettingsPath = join(agentDir, "settings.json");
-  let globalSettings = {};
+  // Pre-read: used ONLY to compute the no-op guard (skip a pointless lock +
+  // write when the stamps are already current). The actual write re-reads
+  // under the lock and applies the idempotent mutations to that fresh doc.
+  // A malformed file makes the guard unknown (→ attempt the write); the
+  // shared writer re-reads under the lock, REFUSES the malformed file
+  // (never clobbers it), and the catch below names the full path. This
+  // parse-no-refuse duplication is deliberate: the launcher can only
+  // import the shared .mjs writer, and the refusal message must name the
+  // user's full path.
+  let globalSettings; // undefined = missing file / malformed / non-object
   if (existsSync(globalSettingsPath)) {
     try {
       const parsed = JSON.parse(readFileSync(globalSettingsPath, "utf-8"));
-      if (parsed && typeof parsed === "object") globalSettings = parsed;
+      if (parsed && typeof parsed === "object") {
+        globalSettings = parsed;
+      }
     } catch {
-      // Corrupted JSON — start fresh rather than throw. Pi would have rejected it too.
-      globalSettings = {};
+      // corrupted JSON or non-object root: guard unknown, force the write
     }
   }
 
-  // Read the bundled pi version. We resolve via the same package.json we used
-  // to find piEntry, so this stays consistent with whichever pi we actually
-  // spawn — no second source of truth.
-  let bundledPiVersion;
-  try {
-    const piPkgJson = JSON.parse(
-      readFileSync(join(piPkgRoot, "package.json"), "utf-8"),
-    );
-    if (typeof piPkgJson?.version === "string")
-      bundledPiVersion = piPkgJson.version;
-  } catch {
-    // If we can't read pi's version, fall back to leaving lastChangelogVersion
-    // alone — pi will then show its own changelog on the next launch. Better
-    // than writing garbage into the user's settings.
-  }
+  // Read the bundled pi version — reuses the package.json parsed in step 3
+  // (same file we resolved piEntry from), so no second readFileSync.
+  const bundledPiVersion = piPkgVersion;
 
-  let mutated = false;
-  if (globalSettings.quietStartup !== true) {
-    globalSettings.quietStartup = true;
-    mutated = true;
-  }
-  if (
-    bundledPiVersion &&
-    globalSettings.lastChangelogVersion !== bundledPiVersion
-  ) {
-    globalSettings.lastChangelogVersion = bundledPiVersion;
-    mutated = true;
-  }
+  const mutated =
+    !globalSettings ||
+    globalSettings.quietStartup !== true ||
+    (bundledPiVersion &&
+      globalSettings.lastChangelogVersion !== bundledPiVersion);
   if (mutated) {
-    writeFileSync(globalSettingsPath, JSON.stringify(globalSettings, null, 2));
+    // Async: the shared writer's ELOCKED retry loop must not
+    // busy-wait the event loop. Best-effort — a refusal leaves the file
+    // untouched and startup continues.
+    const result = await updateSettingsFile(globalSettingsPath, (doc) => {
+      doc.quietStartup = true;
+      if (bundledPiVersion) {
+        doc.lastChangelogVersion = bundledPiVersion;
+      }
+    });
+    if (!result.ok) {
+      // Write-only refusal: the corrupt/locked file is left untouched and
+      // startup continues. The writer's message is basename-only (it serves
+      // any settings file), so name the full path here.
+      console.error(
+        "little-coder: " +
+          globalSettingsPath +
+          " — " +
+          result.error +
+          " (file left untouched). Fix it manually.",
+      );
+    }
   }
 
   const extensionsDir = join(agentDir, "extensions");
   mkdirSync(extensionsDir, { recursive: true });
   const betterOpenAIConfigPath = join(extensionsDir, "pi-better-openai.json");
-  let betterOpenAIConfig = {};
+  // Pre-read: no-op guard only (skip the write when footer.mode is already
+  // off). A malformed file makes the guard unknown (→ attempt the write);
+  // the shared writer re-reads under the lock and REFUSES a malformed file
+  // (never clobbers it) — same protocol as settings.json.
+  let betterOpenAIConfig; // undefined = missing file / malformed / non-object
   if (existsSync(betterOpenAIConfigPath)) {
     try {
       const parsed = JSON.parse(readFileSync(betterOpenAIConfigPath, "utf-8"));
-      if (parsed && typeof parsed === "object") betterOpenAIConfig = parsed;
+      if (parsed && typeof parsed === "object") {
+        betterOpenAIConfig = parsed;
+      }
     } catch {
-      betterOpenAIConfig = {};
+      // corrupted JSON or non-object root: guard unknown, force the write
     }
   }
   const footerConfig =
-    betterOpenAIConfig.footer && typeof betterOpenAIConfig.footer === "object"
+    betterOpenAIConfig?.footer && typeof betterOpenAIConfig.footer === "object"
       ? betterOpenAIConfig.footer
       : {};
-  if (footerConfig.mode !== "off") {
-    betterOpenAIConfig.footer = { ...footerConfig, mode: "off" };
-    writeFileSync(
-      betterOpenAIConfigPath,
-      JSON.stringify(betterOpenAIConfig, null, 2),
-    );
+  if (!betterOpenAIConfig || footerConfig.mode !== "off") {
+    const result = await updateSettingsFile(betterOpenAIConfigPath, (doc) => {
+      const footer =
+        doc.footer && typeof doc.footer === "object" ? doc.footer : {};
+      if (footer.mode !== "off") doc.footer = { ...footer, mode: "off" };
+    });
+    if (!result.ok) {
+      // Write-only refusal: the corrupt/locked file is left untouched and
+      // startup continues. The writer's message is basename-only (it serves
+      // any settings file), so name the full path here.
+      console.error(
+        "little-coder: " +
+          betterOpenAIConfigPath +
+          " — " +
+          result.error +
+          " (file left untouched). Fix it manually.",
+      );
+    }
   }
 } catch {
   // Best-effort. If we can't write the settings (read-only HOME, etc.) pi
   // falls back to its built-in defaults — the [Extensions] block will show
   // but everything else still works.
 }
+recordPhase("settings");
 
 // ---- 9. Spawn pi in the user's cwd ----
 // `process.execPath` is the same Node binary that's running this launcher, so
@@ -261,11 +381,38 @@ try {
 const nodeArgs = existsSync(subprocessPreload)
   ? ["--import", subprocessPreload, piEntry, ...piArgs]
   : [piEntry, ...piArgs];
+// One knob drives both sides: with LITTLE_CODER_TIMING=1 the child also gets
+// PI_TIMING=1 (pi's own per-extension load timings — module import +
+// factory per extension — reported on stderr). Only set if not already
+// chosen by the user.
+const childEnv =
+  LAUNCH_TIMING && !process.env.PI_TIMING
+    ? { ...process.env, PI_TIMING: "1" }
+    : process.env;
 const child = spawn(process.execPath, nodeArgs, {
   stdio: subagentMode ? ["ignore", "pipe", "pipe"] : "inherit",
   cwd: process.cwd(),
-  env: process.env,
+  env: childEnv,
 });
+recordPhase("spawn");
+if (LAUNCH_TIMING) {
+  const t = performance.now();
+  process.stderr.write(
+    formatLaunchTiming({
+      // Per-phase durations (deltas between successive marks), NOT cumulative
+      // elapsed — the doc example (docs/startup-performance.md) shows the
+      // phases summing to ≈ total, which is only true per-phase. total is
+      // wall clock from t0 (includes the tiny gap between recordPhase("spawn")
+      // and this `t` capture).
+      discovery: TIMING.discovery - TIMING.t0,
+      updatecheck: TIMING.updatecheck - TIMING.discovery,
+      updateprompt: TIMING.updateprompt - TIMING.updatecheck,
+      settings: TIMING.settings - TIMING.updateprompt,
+      spawn: TIMING.spawn - TIMING.settings,
+      total: t - TIMING.t0,
+    }) + "\n",
+  );
+}
 
 if (subagentMode) {
   child.stdout?.on("data", (chunk) => process.stdout.write(chunk));
@@ -279,9 +426,16 @@ const forward = (sig) => () => {
     // child already gone
   }
 };
-process.on("SIGINT", forward("SIGINT"));
-process.on("SIGTERM", forward("SIGTERM"));
-process.on("SIGHUP", forward("SIGHUP"));
+// Named refs so the close handler can drop them before re-raising a fatal
+// signal. With a listener still attached, re-killing ourselves would be
+// swallowed (a registered handler suppresses the default terminate action)
+// and the launcher would NOT exit 128+signum.
+const forwardInt = forward("SIGINT");
+const forwardTerm = forward("SIGTERM");
+const forwardHup = forward("SIGHUP");
+process.on("SIGINT", forwardInt);
+process.on("SIGTERM", forwardTerm);
+process.on("SIGHUP", forwardHup);
 
 child.on("error", (err) => {
   console.error("little-coder: failed to start pi:", err.message);
@@ -290,6 +444,12 @@ child.on("error", (err) => {
 
 child.on("close", (code, signal) => {
   if (signal) {
+    // The child died by a fatal signal. Drop our own forwarders FIRST so the
+    // re-raised signal hits the DEFAULT action (terminate) → exit 128+signum,
+    // instead of being swallowed by the still-attached forward handler.
+    process.removeListener("SIGINT", forwardInt);
+    process.removeListener("SIGTERM", forwardTerm);
+    process.removeListener("SIGHUP", forwardHup);
     process.kill(process.pid, signal);
   } else {
     process.exit(code ?? 0);

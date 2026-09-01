@@ -133,7 +133,7 @@ Then verify with `little-coder --list-models` — you should see your overridden
 
 `LLAMACPP_BASE_URL`, `OLLAMA_BASE_URL`, and `LMSTUDIO_BASE_URL` env vars still beat both files for those three providers.
 
-`.pi/settings.json` is a separate concern: it controls per-model **profiles** (context_limit, thinking_budget, temperature, benchmark_overrides) referenced by the `<provider>/<id>` key. Profiles don't register or describe models — they only tune how little-coder runs against models that are already registered.
+`.pi/settings.json` is a separate concern: it controls per-model **profiles** (context_limit, thinking_budget, temperature, max_tokens, benchmark_overrides) referenced by the `<provider>/<id>` key. Profiles don't register or describe models — they only tune how little-coder runs against models that are already registered. A profile's `max_tokens` is applied to the outgoing request (capped by the model's registered context window); `max_tokens: 0` disables the output cap **on local servers** (llama.cpp/ollama/lmstudio — the server clamps to the remaining context). On a remote provider `max_tokens: 0` simply omits the cap (the model catalog default applies — remote APIs reject the unlimited sentinel). Profiles resolve from the package default, your per-user `~/.pi/agent/settings.json`, and the per-repo `.pi/settings.json` (repo wins).
 
 ---
 
@@ -159,6 +159,114 @@ export LITTLE_CODER_PERMISSION_MODE=accept-all
 ```
 
 Write/Edit confirmations are pi's responsibility; little-coder doesn't intercept those.
+
+### Settings-file allowlist
+
+The same allowlist can live in the existing pi settings files, which is usually
+better than an env var: it's per-user or per-repo instead of per-shell.
+
+| File                                                                  | Scope    | When it's honored                                                                                                                   |
+| --------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `~/.pi/agent/settings.json` (or `$PI_CODING_AGENT_DIR/settings.json`) | per-user | always                                                                                                                              |
+| `<repo>/.pi/settings.json`                                            | per-repo | **only after the project is trusted** (pi's project-trust flow) — an untrusted repo's settings file can't widen the shell allowlist |
+
+```json
+{
+  "little_coder": {
+    "bash_allow": ["make ", "docker compose ps "]
+  }
+}
+```
+
+- Same word-boundary convention as the env var: entries are **prefix-matched**,
+  and the **trailing space is the word boundary** (`"make "` allows `make test`
+  but not `makefoo`; `"docker compose ps"` without the trailing space would
+  also match `docker compose psfoo` — add the space).
+  **Project-scope** entries (the repo's `.pi/settings.json`) are
+  auto-normalized to word-boundary form — `"make"` is stored as `"make "`
+  (allows `make …`, not `makefoo`); global-file and env entries keep their
+  exact form (your own values, your caveat).
+- Merged additively with the built-in list and `LITTLE_CODER_BASH_ALLOW`
+  (pure union — settings can only add, never remove built-ins).
+- In a repo's `.pi/settings.json`, `bash_allow` accepts the **array form
+  only** (object/per-repo maps are a user-file concept; an object there is
+  silently ignored).
+- Project trust for this gate follows pi's `trust.json`: a **parent
+  directory** marked trusted also trusts every repo under it — so a repo
+  that lives under a trusted parent inherits that trust, and its own
+  `.pi/settings.json` `bash_allow` is honored. **Warning:** trusting a
+  parent directory auto-approves shell commands (`bash_allow`) for
+  **every** repo under it — the trust decision is stored per agent dir in
+  `trust.json`, not per repo.
+- **Session-only trust is not honored by this gate.** pi's interactive
+  trust prompt offers "trust for this session only"; that session-level
+  grant is **not** persisted to `trust.json`, so little-coder's trust gate
+  does not see it — per-repo settings (`bash_allow`, model profiles, the
+  `token_limit_auto_continue` opt-out) stay off until the project is
+  persistedly trusted (`/trust`) or a new session starts.
+- The settings-file allowlist is **cached for the session** (keyed on the
+  canonical repo path); a mid-session edit to a settings file applies after
+  the next `/allow`/`/deny`/`--reload` or the next session, not the next
+  turn. (This is
+  deliberate — it keeps the one-time notices stable — while other
+  `little_coder.*` settings are re-read on every use.) Trust revocation is
+  **one-way** mid-session: un-trusting a project immediately drops its
+  project-scoped prefixes (re-checked per call), but re-trusting does **not
+  restore** them until the next `session_start`/`/allow`/`/deny`/`--reload`.
+- When a per-repo file contributes prefixes, the session shows a one-time
+  notification (`bash allowlist: N project-scoped prefix(es) active from
+.pi/settings.json: "make ", "docker compose ps ", …`) naming the active
+  prefixes (first six, then a count) so the repo's auto-approval is
+  visible, not silent. Same for the `/allow`-based repo-scoped notice.
+- Malformed entries (non-strings, empty) are ignored without failing startup.
+
+### Per-repo allowlists: `/allow` and `/deny`
+
+`/allow <command>` and `/deny <command>` manage an allowlist **for the current
+repo only**, so you can approve `make test` in one project without widening
+the list everywhere. By default they write to your **user** settings file
+(`~/.pi/agent/settings.json`) — never into the repo's own `.pi/settings.json`,
+which is deliberate: a repo must not be able to auto-approve its own shell
+commands (that's exactly what the trust gate prevents), and nothing gets
+committed into your working tree.
+
+`bash_allow` in the user file accepts two equivalent shapes:
+
+```json
+{
+  "little_coder": {
+    "bash_allow": {
+      // per-repo map (what /allow writes)
+      "global": ["make "], // reserved key = applies everywhere
+      "/home/tom/workspace/little-coder": ["docker compose ps "]
+    }
+  }
+}
+```
+
+The plain-array form above stays fully supported (purely global). When `/allow`
+runs against an array-form file, it converts it to the map form, preserving
+existing entries under the reserved `"global"` key. Once a repo's list is
+emptied again the value collapses back to an array.
+
+- Repo key = the directory you launch little-coder from (canonicalized with
+  `realpath`, the same convention as `trust.json`). Because the key is the
+  canonical launch path, **moving a repo (or adding a new symlink alias)
+  orphans its `/allow` entry** in your global settings — re-run `/allow`
+  from the new path.
+- Input is normalized to a word-boundary prefix: `/allow make test` stores
+  `"make test "` (allows `make test …`, not `make build`); a single pair of
+  surrounding quotes is stripped (`/allow "make test"` stores `"make test "`).
+- Changes apply **immediately** in the running session and persist across
+  launches; a one-time notice names the active repo-scoped prefixes (first
+  six, then a count).
+- `/deny` only removes settings-file entries. If the command is still allowed
+  via the built-in safe prefixes, `LITTLE_CODER_BASH_ALLOW`, or your global
+  list, the reply says exactly which source keeps it allowed — built-ins can
+  never be removed (use a different `LITTLE_CODER_PERMISSION_MODE` or remove
+  the global entry instead).
+- The writer is fail-safe: a malformed `settings.json` is never clobbered;
+  the command reports the error and leaves the file untouched.
 
 ---
 
@@ -194,6 +302,10 @@ All runs used a consumer laptop: i9-14900HX, 32 GB RAM, **8 GB VRAM** on RTX 507
 **No pi "Update Available" banner** — that's intentional. little-coder defaults `PI_SKIP_VERSION_CHECK=1` so the bundled pi runtime doesn't nag about updating itself; little-coder pins pi to a known-good version per release. If you actually want the banner back, `export PI_SKIP_VERSION_CHECK=0` before launching.
 
 **Extension load failures on startup** — run `little-coder --list-models --verbose`; extension errors surface there. If the install looks corrupt: `npm uninstall -g little-coder && npm install -g github:L3tum/little-coder`.
+
+**Launch feels slow / measure it** — `LITTLE_CODER_TIMING=1 little-coder` prints launcher phase timings, the child preload cost, and pi's own per-extension startup timings on stderr. The update check never blocks startup on the network anymore (cache-only + background refresh: the "update available" notice reflects the last successful online refresh — offline launches can see an arbitrarily stale `latest`); the llama.cpp context probe is disk-cached (refreshed by a background re-probe on each launch; a warm launch uses the cached value immediately) and defaults to a 500 ms timeout. See [docs/startup-performance.md](docs/startup-performance.md) for the full breakdown and profiling recipe.
+
+**Output cut off repeatedly on a local server** — the token-limit auto-continue loop nudges the model to resume (up to 3 times, then a conciseness correction, then it backs off at 5; with compaction enabled (default) recovery is compaction, without it the turn aborts). Disable it with `little_coder.token_limit_auto_continue: false` in your settings file or `LITTLE_CODER_TOKEN_LIMIT_AUTO_CONTINUE=0` — the off-switch then intervenes (and aborts when compaction is disabled) on **every** token-limit turn. The per-repo `token_limit_auto_continue` is honored **only for trusted projects** (like `bash_allow`); an untrusted repo cannot disable the safety net, so its per-user (global) value applies.
 
 **Node version too old** — little-coder needs Node ≥ 22.19.0 (matching the minimum of the bundled `@earendil-works/pi-coding-agent` v0.75+). Check with `node --version`. Easiest fix: `nvm install 22 && nvm use 22`.
 
@@ -232,6 +344,17 @@ little-coder v0.0.x was a derivative work of [CheetahClaws / ClawSpring](https:/
 little-coder v0.1.0+ replaces that substrate with **[pi](https://pi.dev)** by Mario Zechner — Apache 2.0 / MIT. The npm package was renamed from `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent` in upstream's 0.74 release; little-coder v1.4.2+ ships with the new package. pi provides the agent loop, provider abstraction, TUI, and extension model. little-coder rebuilds its small-model adaptations on top of pi as extensions.
 
 All little-coder-specific mechanisms — Write-vs-Edit invariant, skill / knowledge injection, thinking-budget cap, output-parser, quality-monitor, per-model profiles, per-benchmark overrides, Browser / Evidence tool families, evidence-aware compaction — are preserved across versions.
+
+---
+
+## Dependency policy
+
+little-coder's dependencies are hand-picked for the pi runtime: they must load
+under pi's ESM extension system, stay out of the launch critical path, and
+not bloat the `node_modules` that ships inside the npm package. **Do not add a
+dependency without verifying it loads under pi's ESM extension system** and
+measuring its startup cost — see [docs/startup-performance.md](docs/startup-performance.md)
+for the budget and the profiling recipe.
 
 ---
 

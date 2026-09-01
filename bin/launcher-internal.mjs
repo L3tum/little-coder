@@ -4,6 +4,11 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { updateSettingsFile } from "../.pi/extensions/_shared/settings-write.mjs";
+
+// Re-exported for the launcher's pi-better-openai.json stamp (step 8), which
+// writes the same way as settings.json: locked + atomic + malformed-refusal.
+export { updateSettingsFile };
 
 // Package root resolved from the launcher's own position.
 // Importers from tests will override this; the real launcher sets it before importing.
@@ -99,3 +104,4 @@ export function bundledPackageArgs(pkgJson, opts = {}) {
 
   return args;
 }
+

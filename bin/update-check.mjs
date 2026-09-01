@@ -1,48 +1,186 @@
 // little-coder update check.
 // Polls L3tum fork's package.json on GitHub for a newer version and (in TTY
-// mode) offers to install it before the agent starts. Cached so we don't call
-// out on every invocation. Best-effort throughout: if anything fails, we skip
-// silently — never block the agent over a version check.
+// mode) offers to install it before the agent starts. Best-effort throughout:
+// if anything fails, we skip silently — never block the agent over a version
+// check.
+//
+// Startup-performance design: the pre-spawn check is CACHE-ONLY. It never
+// touches the network on the launch critical path (an offline machine with a
+// stale cache used to pay a ~2 s fetch timeout on every launch). The
+// network refresh runs fire-and-forget (refreshUpdateCache) and writes the
+// cache for the NEXT launch — so the update notice reflects the last
+// successful online refresh (≤ 12 h old once a launch with network has
+// run); a stale "latest" is only ever behind reality, and an offline
+// machine can see an arbitrarily stale one.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  openSync,
+  writeSync,
+  closeSync,
+  renameSync,
+  unlinkSync,
+  constants as fsConstants,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
+import { littleCoderCacheDir } from "../.pi/extensions/_shared/cache-path.mjs";
 
 const VERSION_SOURCE =
   "https://raw.githubusercontent.com/L3tum/little-coder/main/package.json";
 const INSTALL_TARGET = "github:L3tum/little-coder";
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 h
+const MS_PER_HOUR = 3_600_000;
 const FETCH_TIMEOUT_MS = 2000;
 
-export function cachePath() {
-  const xdg = process.env.XDG_CACHE_HOME && process.env.XDG_CACHE_HOME.trim();
-  const base = xdg ? xdg : join(homedir(), ".cache");
-  return join(base, "little-coder", "version-check.json");
+// Three tiers so a stale cache reads naturally: <1h → minutes,
+// <48h → hours, else days. Caller passes an already-clamped (>= 0) ageH.
+export function formatAgeHours(ageH) {
+  return ageH < 1
+    ? ` (last checked ${Math.round(ageH * 60)}m ago)`
+    : ageH < 48
+      ? ` (last checked ${Math.round(ageH)}h ago)`
+      : ` (last checked ${Math.round(ageH / 24)}d ago)`;
+}
+// A real npm release is always valid semver, so a format-failing `latest` is
+// a corrupt/typo/tampered cache — reject it instead of feeding it to
+// compareSemver. Tolerates a leading `v` and an optional pre-release
+// and/or build suffix — the two are separate optional groups so a combined
+// `1.2.3-rc.1+build` (pre-release AND build) is accepted, not just a lone
+// `-pre` or `+build`.
+const SEMVER_RE = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+export { SEMVER_RE };
+
+// A root package.json version is only usable for the update check
+// if it is real semver; a missing/malformed version (corrupt root
+// package.json) means we skip the check entirely rather than comparing
+// against a bogus "latest".
+//
+// SINGLE SOURCE OF TRUTH for semver validation in this repo: bin/little-coder.mjs
+// imports isValidSemver from here for its startup --version/update-compare
+// gate. Do not fork a second copy — keep every version comparison on this
+// one function (behavior pinned in update-check.test.mjs).
+export function isValidSemver(v) {
+  return typeof v === "string" && SEMVER_RE.test(v);
 }
 
-export function readCache(now = Date.now()) {
+// The version-check cache path. The absolute-home + XDG-cache-base ladder
+// lives in the shared cache-path.mjs (previously duplicated verbatim in
+// llama-cpp-provider/config.ts); this is just the little-coder/version-
+// check.json suffix.
+export function cachePath() {
+  return join(littleCoderCacheDir(), "version-check.json");
+}
+
+export function readCache(now = Date.now(), allowStale = false) {
   try {
     const path = cachePath();
     if (!existsSync(path)) return null;
     const data = JSON.parse(readFileSync(path, "utf-8"));
     if (typeof data.checkedAt !== "number" || typeof data.latest !== "string")
       return null;
-    if (now - data.checkedAt > CACHE_TTL_MS) return null;
+    if (!SEMVER_RE.test(data.latest)) return null;
+    if (!allowStale && now - data.checkedAt > CACHE_TTL_MS) return null;
     return data;
   } catch {
     return null;
   }
 }
 
+// Same parse as readCache but WITHOUT the TTL check: a stale-but-present
+// cache is still a usable "latest" for the cache-only pre-spawn comparison.
+// Only the `latest` string matters here; checkedAt is ignored by design.
+export function readCacheAllowStale() {
+  return readCache(Date.now(), true);
+}
+
+// TTL gate applied to an ALREADY-parsed+validated cache entry (readCache /
+// readCacheAllowStale shape). Lets the caller read the file ONCE and share the
+// snapshot between refreshUpdateCache (which needs the TTL gate) and
+// checkForUpdate (which does not) instead of both re-reading the file.
+export function isFreshCache(data, now = Date.now()) {
+  return (
+    !!data &&
+    typeof data.checkedAt === "number" &&
+    now - data.checkedAt <= CACHE_TTL_MS
+  );
+}
+
+// (M-arch-2) The version-check cache is a SCRATCH file (single-purpose,
+// regenerated on every online launch), not user data: last-writer-wins across
+// concurrent launchers is acceptable, and there is no read-modify-write to
+// protect — so we use a small UNLOCKED atomic writer instead of importing the
+// locked shared writer (settings-write.mjs), which would drag proper-lockfile's
+// CJS module into the launcher's module graph at load time (a startup
+// critical-path cost). Atomic via O_EXCL 0600 temp in the same dir + rename,
+// so a reader never sees a torn file.
+function atomicWriteFile(filePath, data) {
+  const buf = Buffer.from(JSON.stringify(data, null, 2) + "\n", "utf-8");
+  mkdirSync(dirname(filePath), { recursive: true });
+  const tmp = `${filePath}.tmp-${process.pid}`;
+  let fd;
+  try {
+    fd = openSync(
+      tmp,
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+      0o600,
+    );
+  } catch (err) {
+    if (err?.code !== "EEXIST") throw err;
+    // Stale tmp from a prior crashed run (same pid) — remove and retry once.
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* already gone */
+    }
+    fd = openSync(
+      tmp,
+      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
+      0o600,
+    );
+  }
+  try {
+    // Full-write loop so a rename never lands a truncated (malformed) file.
+    let offset = 0;
+    while (offset < buf.length) {
+      offset += writeSync(fd, buf, offset, buf.length - offset);
+    }
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmp, filePath);
+}
+
 export function writeCache(latest, now = Date.now()) {
   try {
-    const path = cachePath();
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({ checkedAt: now, latest }));
+    // A successful fetch clears any prior lastFailedAt (negative-cache stamp).
+    atomicWriteFile(cachePath(), { checkedAt: now, latest });
   } catch {
     // best-effort; permission errors etc. are not fatal
+  }
+}
+
+// (P4) Record a failed background fetch (negative caching): preserve any
+// existing usable checkedAt/latest so the next launch reuses it, and stamp
+// lastFailedAt so launches within the TTL window skip the network instead of
+// re-hammering a known-down endpoint.
+function writeFailedAt(now, raw) {
+  try {
+    const prev =
+      raw && typeof raw.checkedAt === "number" && typeof raw.latest === "string"
+        ? raw
+        : null;
+    atomicWriteFile(cachePath(), {
+      checkedAt: prev ? prev.checkedAt : now,
+      latest: prev ? prev.latest : "",
+      lastFailedAt: now,
+    });
+  } catch {
+    // best-effort
   }
 }
 
@@ -106,6 +244,46 @@ export async function fetchLatest() {
   }
 }
 
+// Fire-and-forget cache refresh for the NEXT launch. The launcher starts this
+// before the (now cache-only) checkForUpdate and does not await it — the
+// launcher process lives for the whole session, so the fetch typically
+// completes and writes the cache even though this launch already proceeded.
+// Mirrors the old fetch-on-stale behavior without ever touching the launch
+// critical path. Never throws.
+export async function refreshUpdateCache(opts = {}) {
+  try {
+    const skip = opts.skip ?? shouldSkip();
+    if (skip === true) return; // CI / --no-update-check / non-interactive flags
+    // Read the raw (possibly stale) cache once; the caller may pre-share a
+    // snapshot (the launcher reads once and shares it with checkForUpdate).
+    const raw = opts.cache !== undefined ? opts.cache : readCacheAllowStale();
+    // Fresh (checkedAt within TTL) → nothing to do.
+    if (raw && isFreshCache(raw)) return;
+    const now = Date.now();
+    // (P4) Negative caching: the last online fetch FAILED recently (within
+    // TTL) and the cache still has a usable latest (raw non-null ⟹ valid
+    // checkedAt + semver latest) → don't re-hammer a known-down endpoint; reuse
+    // the (possibly stale) latest for another launch. A successful fetch clears
+    // lastFailedAt; an expired failure window falls through to a real fetch.
+    if (
+      raw &&
+      typeof raw.lastFailedAt === "number" &&
+      now - raw.lastFailedAt < CACHE_TTL_MS
+    ) {
+      return;
+    }
+    const latest = await fetchLatest();
+    if (latest) {
+      writeCache(latest, now);
+    } else {
+      writeFailedAt(now, raw);
+    }
+  } catch {
+    // best-effort; a failed refresh just means the same (possibly stale)
+    // "latest" is used for another launch.
+  }
+}
+
 // Decide whether to skip the check entirely. Errs toward NOT prompting in
 // any context that smells programmatic.
 export function shouldSkip(
@@ -153,19 +331,35 @@ export function promptYesNo(question) {
 // Returns `true` if the launcher should NOT proceed to spawn pi (because we
 // updated and exited / the user opted out and we should re-run).  Returns
 // `false` to let the launcher continue.
+//
+// CACHE-ONLY: uses readCacheAllowStale() — even a stale cache is compared
+// (a stale "latest" is only ever behind reality — never a false positive).
+// No fetch here; the network refresh is refreshUpdateCache(), started
+// fire-and-forget by the launcher.
 export async function checkForUpdate(currentVersion, opts = {}) {
   const skip = opts.skip ?? shouldSkip();
-  if (skip === true) return false;
-
-  let latest = readCache()?.latest;
-  if (!latest) {
-    latest = await fetchLatest();
-    if (latest) writeCache(latest);
+  if (skip === true) {
+    opts.onDecide?.(); // skipped — the fast "should we even check?" decision is done
+    return false;
   }
-  if (!latest) return false;
-  if (compareSemver(latest, currentVersion) <= 0) return false;
 
-  const headline = `\n📦 little-coder v${latest} is available (you have v${currentVersion}).`;
+  // Use the caller-provided snapshot if given (launcher reads once); else read.
+  const cache = opts.cache !== undefined ? opts.cache : readCacheAllowStale();
+  const latest = cache?.latest;
+  const hasUpdate = !!latest && compareSemver(latest, currentVersion) > 0;
+  // The decision (cache read + compare) is done. The caller marks the
+  // "updatecheck" phase here (via opts.onDecide) so the (possibly slow) TTY
+  // prompt below is billed to a separate "updateprompt" phase, not updatecheck.
+  opts.onDecide?.();
+  if (!hasUpdate) return false;
+
+  // How old the cached "latest" is — shown so a stale cache doesn't look like
+  // a just-discovered release. Fresh cache -> "Xm ago", older -> "Xh ago".
+  // Clamp ageH to >= 0: a clock skew / future-dated cache (checkedAt in the
+  // future) would otherwise render a negative age, e.g. "last checked -3h ago".
+  const ageH = Math.max(0, (Date.now() - cache.checkedAt) / MS_PER_HOUR);
+  const ageNote = formatAgeHours(ageH);
+  const headline = `\n📦 little-coder v${latest} is available (you have v${currentVersion})${ageNote}.`;
 
   if (skip === "notice-only") {
     process.stderr.write(
