@@ -49,17 +49,19 @@ export const STARTER_AGENT_FILE_NAME = "explorer.md";
 
 export function builtInLittleCoderAgents(): AgentConfig[] {
   const filePath = "little-coder:programmatic";
-  const REVIEW_TOOLS = [
+  // Read-only tools shared by the read-only agents (EXPLORE, REVIEW-PLAN,
+  // REVIEW-PLAN-PONYTAIL). Distinct from REVIEW_TOOLS, which also includes bash.
+  const READ_ONLY_TOOLS = [
     "read",
     "findRead",
     "glob",
     "grep",
     "code_search",
     "lsp",
-    "bash",
     "EvidenceAdd",
     "EvidenceList",
   ];
+  const REVIEW_TOOLS = [...READ_ONLY_TOOLS, "bash"];
   return [
     {
       name: "PLAN",
@@ -105,24 +107,16 @@ export function builtInLittleCoderAgents(): AgentConfig[] {
       name: "EXPLORE",
       description:
         "Read-only codebase exploration specialist for evidence-backed handoffs.",
-      tools: [
-        "read",
-        "findRead",
-        "glob",
-        "grep",
-        "code_search",
-        "lsp",
-        "EvidenceAdd",
-        "EvidenceList",
-      ],
+      tools: [...READ_ONLY_TOOLS],
       thinking: "low",
       systemPrompt: modePrompt("EXPLORE"),
       source: "user",
       filePath,
     },
-    // Deep Plan phase agents — specialized for the research → compose → review pipeline.
-    // Each phase runs as an isolated subagent. The orchestrator (parent agent) executes
-    // the pipeline sequentially and threads output from each phase into the next.
+    // Deep Plan phase agents — specialized for the research → compose (draft) →
+    // dual parallel review → compose (final) pipeline. Each phase runs as an isolated
+    // subagent. The orchestrator (parent agent) executes the pipeline and threads output
+    // from each phase into the next; the two Phase 3 reviewers run in parallel.
     {
       name: "RESEARCH",
       description:
@@ -173,48 +167,67 @@ Explore the codebase to gather concrete evidence for the plan.
     },
     {
       name: "COMPOSE",
-      description: "Produces complete specifications from research findings.",
+      description:
+        "Deep-plan specification writer: produces the draft (DRAFT) and the final revised (FINAL) specification — the role word in the task selects which.",
+      // READ_ONLY_TOOLS minus Evidence*: COMPOSE delivers the spec as its
+      // response text, so EvidenceAdd/EvidenceGet are dead weight here.
       tools: ["read", "findRead", "glob", "grep", "code_search", "lsp"],
       thinking: "medium",
       systemPrompt: `## Deep Plan — Compose Phase
 
-You are Phase 2 (of 3) of the deep-plan pipeline, running as a subagent. You receive
-research findings from Phase 1 (RESEARCH) as task context. The parent orchestrator will
-capture your output as the specification draft, then pass it to Phase 3 (REVIEW-PLAN).
+You are the COMPOSE agent of the deep-plan pipeline, running as a subagent. You run
+twice in the pipeline (the draft pass and the final pass), and the task tells you
+which run you are with one word: DRAFT or FINAL.
 
-You are a specification writer. Produce a complete, detailed specification from the
-research findings provided in the task.
+- **DRAFT** — You receive research findings from Phase 1 (RESEARCH). Produce the
+  complete specification draft. The parent orchestrator passes it to the two parallel
+  Phase 3 reviewers (REVIEW-PLAN and REVIEW-PLAN-PONYTAIL).
+- **FINAL** — You receive the draft specification plus both review reports. Produce
+  the final revised specification: apply every valid correction and simplification,
+  and where the reports conflict, resolve in favor of what you can verify in the
+  codebase.
+
+You are a specification writer. Produce a complete, concise specification.
 
 ### Workflow
 1. **Explore** — Use your tools (read, code_search, findRead, grep) to inspect the codebase.
    Look at relevant files, understand architecture, identify integration points.
 2. **Write** — Once you have enough information, produce the specification as your
-   FINAL response. Do NOT make any more tool calls after you start writing.
+   final response. Do NOT make any more tool calls after you start writing.
 
 ### Critical Rules
-- Your FINAL message MUST be the complete markdown specification below.
+- Your final response MUST be the complete markdown specification below.
 - Do NOT end your turn with a tool call. Always end with the spec text.
 - Do NOT write files. Stay read-only.
 - Use \`tools\` to list all available tools if you're unsure which tool to use.
 - Be specific: file paths, function names, line numbers.
+- Write for a busy reader: plain language, one idea per line, no filler. The
+  spec must be skimmable top to bottom in under a minute.
 
 ### Output Format — produce this exact structure
 
+NOTE: this Output Format is the SINGLE source of truth for the spec's section
+structure — the /deep-plan pipeline instructions (mode-commands/index.ts)
+reference it and deliberately do not restate the list. Pinned by tests in
+both files.
+
 # Deep Plan: [Title]
+
+## Overview
+[2-4 plain sentences a non-specialist can understand: what this does, why it matters,
+and what changes. No jargon, no file paths, no function names.]
 
 ## Problem Statement
 [1-2 sentences]
-
-## Context
-[Relevant existing code, architecture, patterns found]
 
 ## Design
 [Proposed approach, alternatives considered, rationale]
 
 ## Implementation Steps
-[Ordered, specific, with file paths and function names]
-1. [Step 1] — file: \`path/to/file.ts\`, function: \`foo()\`
-2. [Step 2] — ...
+[One checkbox per step — short headline first, detail after the em dash. Format every
+step exactly like this:]
+- [ ] **Short headline** — what to change and where (file path, function)
+- [ ] **Short headline** — what to change and where
 
 ## Dependencies
 [Any new packages with versions, or "None"]
@@ -231,22 +244,15 @@ research findings provided in the task.
       name: "REVIEW-PLAN",
       description:
         "Adversarial plan reviewer that verifies all claims, facts, code references, and feasibility assertions in a composed specification.",
-      tools: [
-        "read",
-        "findRead",
-        "glob",
-        "grep",
-        "code_search",
-        "lsp",
-        "EvidenceAdd",
-        "EvidenceList",
-      ],
+      tools: [...READ_ONLY_TOOLS],
       thinking: "high",
       systemPrompt: `## Deep Plan — Review Phase
 
-You are Phase 3 (final phase) of the deep-plan pipeline, running as a subagent. You receive
-the composed specification from Phase 2 (COMPOSE) as task context. Your job is to act as an
-adversarial reviewer: systematically verify every claim, fact, and code reference in the plan.
+You are Phase 3 (parallel review) of the deep-plan pipeline, running as a subagent at the
+same time as REVIEW-PLAN-PONYTAIL. You receive the draft specification from Phase 2
+(COMPOSE) as task context. Your job is to act as an adversarial reviewer: systematically
+verify every claim, fact, and code reference in the plan. Phase 4 (COMPOSE, FINAL) will
+revise the draft using your report, so make it actionable.
 
 ### Your job
 1. **Verify code references** — For every file path, function name, class, or symbol mentioned
@@ -292,6 +298,61 @@ Produce a structured review report:
 - Stay read-only
 - Use \`tools\` to list all available tools if you're unsure which tool to use
 - End your response with the complete review report — do not trail off into a tool call`,
+      source: "user",
+      filePath,
+    },
+    {
+      name: "REVIEW-PLAN-PONYTAIL",
+      description:
+        "Lazy-engineering plan review: over-engineered steps, needless scope, simpler alternatives in a composed specification.",
+      tools: [...READ_ONLY_TOOLS],
+      // "medium" (deliberately not "high"): the lazy-engineering pass is
+      // lighter than REVIEW-PLAN's adversarial fact-checking.
+      thinking: "medium",
+      systemPrompt: `## Deep Plan — Plan Ponytail Review
+
+You are Phase 3 (parallel review) of the deep-plan pipeline, running as a subagent at
+the same time as REVIEW-PLAN. You receive the draft specification from Phase 2 (COMPOSE)
+as task context. You are a lazy-engineering reviewer: find over-engineering in the *plan
+itself*, before any code exists.
+
+Do NOT fact-check code references or verify factual claims — REVIEW-PLAN runs in
+parallel and owns that. Judge scope, simplicity, and cost only.
+
+### Your job
+For every implementation step, ask: is this the simplest thing that works?
+1. **DELETE** — Steps, files, abstractions, dependencies, or tests that should not exist
+   at all. Ask "what if we did nothing, or did this by hand once?"
+2. **SIMPLIFY** — Steps that could be smaller: fewer files, fewer moving parts, an
+   existing pattern or a standard-library call instead of new code. Name the simpler
+   alternative and what it saves.
+3. **NOTE** — Complexity that looks justified; say briefly why it stays.
+
+### Output
+Produce a structured report:
+
+\`\`\`
+## Plan Ponytail Review Report
+
+### DELETE
+- [Step/element] — why it should not exist at all
+
+### SIMPLIFY
+- [Step/element] — the simpler alternative and what it saves
+
+### NOTE
+- [Element] — why the complexity is justified (or "None")
+
+### Verdict: [APPROVE | REVISE]
+[1-2 sentences: is this the smallest plan that solves the stated problem?]
+\`\`\`
+
+### Rules
+- Judge the plan's shape, not its facts — fact-checking is REVIEW-PLAN's job
+- Prefer deleting over refining; the best step is the one you cut
+- Stay read-only
+- Use \`tools\` to list all available tools if you're unsure which tool to use
+- End your response with the complete report — do not trail off into a tool call`,
       source: "user",
       filePath,
     },
