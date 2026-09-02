@@ -700,11 +700,13 @@ describe("token-limit-guard auto-continue (default ON)", () => {
       // Count the shared resolver's reads. The spy intercepts only if
       // index.js calls through the module namespace — a 0-call result would
       // fail the toHaveBeenCalledTimes(1) below, so a broken spy is caught.
-      const settingsMod: any = await import(
-        "../_shared/little-coder-settings.mjs"
-      );
+      const settingsMod: any =
+        await import("../_shared/little-coder-settings.mjs");
       const spy = vi.spyOn(settingsMod, "resolveLittleCoderSettings");
-      const ctx: any = { abort: vi.fn(), sessionManager: { getCwd: () => cwd } };
+      const ctx: any = {
+        abort: vi.fn(),
+        sessionManager: { getCwd: () => cwd },
+      };
       // Two consecutive token-limit turns, settings unchanged: the second
       // turn's isAutoContinueEnabled must hit the freshness-keyed memo.
       await fireTurn(ctx);

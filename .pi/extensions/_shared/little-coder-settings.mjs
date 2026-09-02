@@ -168,7 +168,7 @@ export function resolveLittleCoderSettings(cwd) {
  * @param {string} key
  * @param {boolean} trusted
  * @returns {unknown} undefined when no in-scope scope has the key.
- */export function resolveKey(resolved, key, trusted) {
+ */ export function resolveKey(resolved, key, trusted) {
   if (trusted) {
     const v = resolved.project ? resolved.project[key] : undefined;
     if (v !== undefined) return v;

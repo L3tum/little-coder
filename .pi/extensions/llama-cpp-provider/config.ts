@@ -311,10 +311,10 @@ export function readCtxProbeCache(
   baseUrl: string,
   env: NodeJS.ProcessEnv = process.env,
 ): {
-    contextWindow: number;
-    probedAt: number;
-    probeFailCount: number;
-  } | null {
+  contextWindow: number;
+  probedAt: number;
+  probeFailCount: number;
+} | null {
   const path = ctxProbeCachePath(baseUrl, env);
   if (!path || !existsSync(path)) return null;
   try {

@@ -267,7 +267,10 @@ export default function (pi: ExtensionAPI) {
   // from re-running the same request, unless compaction is enabled (pi-vcc
   // recovers on agent_end — firing AFTER turn_end — so aborting here would
   // kill the run compaction was going to save).
-  const abortIfNoCompaction = (cwd: string | undefined, ctx: SteerCtx): void => {
+  const abortIfNoCompaction = (
+    cwd: string | undefined,
+    ctx: SteerCtx,
+  ): void => {
     if (isCompactionEnabled(cwd)) return;
     // The error has already been surfaced by the provider; we just prevent
     // the noisy duplicate retries and steering messages.

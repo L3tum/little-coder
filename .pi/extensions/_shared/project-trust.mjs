@@ -104,7 +104,8 @@ function readAndValidateTrustMap(file) {
   } catch {
     return null;
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return null;
   // Validate the whole map up front, like pi's readTrustFile.
   for (const value of Object.values(parsed)) {
     if (value !== true && value !== false && value !== null) return null;

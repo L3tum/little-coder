@@ -385,7 +385,11 @@ describe("resolve memo tracks trust.json freshness", () => {
     const pi = { on: (n: string, h: any) => (handlers[n] ??= []).push(h) };
     benchmarkProfiles(pi as any); // one factory => one memo (session lifetime)
     const ctx: any = {
-      model: { provider: "llamacpp", id: "qwen3.6-35b-a3b", contextWindow: 32768 },
+      model: {
+        provider: "llamacpp",
+        id: "qwen3.6-35b-a3b",
+        contextWindow: 32768,
+      },
       sessionManager: { getCwd: () => cwd },
     };
 

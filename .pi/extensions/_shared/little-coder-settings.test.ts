@@ -342,7 +342,11 @@ describe("resolveKey", () => {
   });
 
   it("trusted: matches resolved.merged semantics (project → global → pkg)", () => {
-    const merged = mergeNamespaces(resolved.project, resolved.global, resolved.pkg);
+    const merged = mergeNamespaces(
+      resolved.project,
+      resolved.global,
+      resolved.pkg,
+    );
     expect(resolveKey(resolved, "a", true)).toBe(merged["a"]);
     expect(resolveKey(resolved, "b", true)).toBe(merged["b"]);
     expect(resolveKey(resolved, "c", true)).toBe(merged["c"]);

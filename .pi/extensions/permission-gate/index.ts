@@ -568,9 +568,10 @@ export function normalizeAllowPrefix(raw: string): string {
  *  Remaining tokens are re-joined with single spaces — internal whitespace is
  *  collapsed the same way normalizeAllowPrefixDetail does, so re-joining here is
  *  lossless for the downstream normalization. */
-export function splitGlobalFlag(
-  args: string | undefined,
-): { command: string; global: boolean } {
+export function splitGlobalFlag(args: string | undefined): {
+  command: string;
+  global: boolean;
+} {
   let global = false;
   const parts: string[] = [];
   for (const t of (args ?? "").trim().split(/\s+/)) {

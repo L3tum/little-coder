@@ -636,11 +636,10 @@ describe("ctx probe cache", () => {
   // host — the stored baseUrl must be verified, else one provider's cached
   // window would be registered under a different baseUrl.
   it("readCtxProbeCache: null when the stored baseUrl differs (same host, different path)", () => {
-    writeCtxProbeCache(
-      "http://localhost:8080/v1",
-      131072,
-      { probedAt: Date.now() - 1000, env: env() },
-    );
+    writeCtxProbeCache("http://localhost:8080/v1", 131072, {
+      probedAt: Date.now() - 1000,
+      env: env(),
+    });
     expect(readCtxProbeCache("http://localhost:8080", env())).toBeNull();
   });
 });
@@ -849,7 +848,11 @@ describe("resolveWarmCtxWindow (bounded staleness, pure)", () => {
     };
     const d = await resolveWarmCtxWindow({
       baseUrl,
-      cached: { contextWindow: 131072, probedAt: now - 1 * day, probeFailCount: 0 },
+      cached: {
+        contextWindow: 131072,
+        probedAt: now - 1 * day,
+        probeFailCount: 0,
+      },
       now,
       probe,
     });
@@ -868,7 +871,11 @@ describe("resolveWarmCtxWindow (bounded staleness, pure)", () => {
     };
     const d = await resolveWarmCtxWindow({
       baseUrl,
-      cached: { contextWindow: 131072, probedAt: now - 8 * day, probeFailCount: 2 },
+      cached: {
+        contextWindow: 131072,
+        probedAt: now - 8 * day,
+        probeFailCount: 2,
+      },
       now,
       probe,
     });
@@ -884,7 +891,11 @@ describe("resolveWarmCtxWindow (bounded staleness, pure)", () => {
     const probe = async () => undefined; // failure
     const d = await resolveWarmCtxWindow({
       baseUrl,
-      cached: { contextWindow: 131072, probedAt: now - 8 * day, probeFailCount: 1 },
+      cached: {
+        contextWindow: 131072,
+        probedAt: now - 8 * day,
+        probeFailCount: 1,
+      },
       now,
       probe,
     });
@@ -899,7 +910,11 @@ describe("resolveWarmCtxWindow (bounded staleness, pure)", () => {
     const probe = async () => undefined; // failure
     const d = await resolveWarmCtxWindow({
       baseUrl,
-      cached: { contextWindow: 131072, probedAt: now - 30 * day, probeFailCount: 2 },
+      cached: {
+        contextWindow: 131072,
+        probedAt: now - 30 * day,
+        probeFailCount: 2,
+      },
       now,
       probe,
     });

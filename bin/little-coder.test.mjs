@@ -784,11 +784,12 @@ describe("launcher integration", () => {
       const pkg = JSON.parse(
         readFileSync(join(repoRoot, "package.json"), "utf-8"),
       );
-      const fresh = JSON.stringify(
-        { checkedAt: Date.now(), latest: pkg.version },
-        null,
-        2,
-      ) + "\n";
+      const fresh =
+        JSON.stringify(
+          { checkedAt: Date.now(), latest: pkg.version },
+          null,
+          2,
+        ) + "\n";
       writeFileSync(cachePath, fresh);
       const before = readFileSync(cachePath, "utf-8");
       const result = spawnSync(
@@ -899,7 +900,8 @@ describe.skipIf(!existsSync("/proc"))(
             if (childPid) break;
             await new Promise((r) => setTimeout(r, 50));
           }
-          if (!childPid) throw new Error("stub child never appeared within 5 s");
+          if (!childPid)
+            throw new Error("stub child never appeared within 5 s");
 
           process.kill(childPid, "SIGKILL");
           const [code, signal] = await new Promise((resolve) =>
