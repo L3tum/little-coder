@@ -73,6 +73,9 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "git cherry",
   "git bisect log",
   "git worktree list",
+  // Git write (staging / commits)
+  "git add ",
+  "git commit ",
   // Search / find
   "find ",
   "grep ",
@@ -86,6 +89,11 @@ const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   "node ",
   "ruby ",
   "perl ",
+  // Flutter / Dart
+  "flutter analyze",
+  "flutter test",
+  "dart run build_runner ",
+  "flutter gen-l10n",
   // Test runners (diagnostic only)
   "pytest",
   "pytest ",
