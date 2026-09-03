@@ -42,6 +42,7 @@ const runnerState = vi.hoisted(() => ({
     task: string;
     model?: string;
     thinking?: string;
+    hasOnUpdate: boolean;
     runOpts: {
       delegationMode: string;
       parentDepth: number;
@@ -53,6 +54,10 @@ const runnerState = vi.hoisted(() => ({
   fail: new Set<string>(),
   throwFor: new Set<string>(),
   hangFor: new Set<string>(),
+  // Per-agent streamed partials (arrays of message arrays): when the agent is
+  // in this map and the caller passed an onUpdate, the mock feeds each partial
+  // to it before resolving — so the pipeline's onActivity wiring is testable.
+  streamFor: {} as Record<string, unknown[][]>,
   // The concurrency arg passed to the most recent mapConcurrent call, so tests
   // can assert the pipeline's bounded fan-out (default/cap) instead of
   // "no crash" placeholders.
@@ -63,6 +68,7 @@ const runnerState = vi.hoisted(() => ({
     this.fail.clear();
     this.throwFor.clear();
     this.hangFor.clear();
+    this.streamFor = {};
     this.lastConcurrency = undefined;
   },
 }));
@@ -97,6 +103,7 @@ vi.mock("../subagent/runner.js", async (importOriginal) => {
         task: opts.task,
         model: agent.model,
         thinking: agent.thinking,
+        hasOnUpdate: Boolean(opts.onUpdate),
         runOpts: {
           delegationMode: opts.delegationMode,
           parentDepth: opts.parentDepth,
@@ -147,6 +154,21 @@ vi.mock("../subagent/runner.js", async (importOriginal) => {
           stopReason: "error",
           stderr: `${agentName} failed (simulated)`,
         };
+      }
+      // Feed streamed partials to the caller's onUpdate (the pipeline's
+      // onActivity wiring) before resolving.
+      const stream = runnerState.streamFor[agentName];
+      if (stream && opts.onUpdate) {
+        for (const msgs of stream) {
+          opts.onUpdate({
+            details: {
+              mode: "single",
+              delegationMode: "spawn",
+              projectAgentsDir: null,
+              results: [{ ...base, messages: msgs }],
+            },
+          });
+        }
       }
       const text = runnerState.output[agentName] ?? `OUTPUT-${agentName}`;
       return {
@@ -244,16 +266,22 @@ function makeTempCwd(): string {
 
 function makeCtx(opts: { cwd?: string; signal?: AbortSignal } = {}) {
   const notifications: { text: string; level?: string }[] = [];
+  const widgetCalls: { key: string; content: unknown }[] = [];
   const cwd = opts.cwd ?? makeTempCwd();
   const ctx: any = {
     ui: {
       notify: (text: string, level?: string) =>
         notifications.push({ text, level }),
+      // Recording setWidget: the pipeline's live progress panel is created
+      // and cleared through it, so tests can assert the panel lifecycle
+      // (factory content on updates, undefined on dispose, one key per run).
+      setWidget: (key: string, content: unknown) =>
+        widgetCalls.push({ key, content }),
     },
     cwd,
   };
   if (opts.signal) ctx.signal = opts.signal;
-  return { ctx, notifications, cwd };
+  return { ctx, notifications, cwd, widgetCalls };
 }
 
 beforeEach(() => {
@@ -824,6 +852,113 @@ describe("/review programmatic pipeline", () => {
       false,
     );
     expect(notifications.some((n) => n.level === "error")).toBe(true);
+  });
+});
+
+describe("pipeline live progress panel", () => {
+  it("/review: creates the widget once (single key), feeds every phase, clears it on success", async () => {
+    Object.assign(runnerState.output, {
+      "REVIEW-SECURITY": "SEC-OUT",
+      "REVIEW-SYNTHESIS": "SYNTH-REPORT",
+    });
+    const { handlers } = await makePi();
+    const { ctx, widgetCalls } = makeCtx();
+    await handlers["review"](undefined, ctx);
+
+    // Created with a component factory, updated in place under ONE key,
+    // and cleared (undefined content) exactly once, at the end.
+    expect(widgetCalls.length).toBeGreaterThanOrEqual(2);
+    expect(typeof widgetCalls[0].content).toBe("function");
+    expect(new Set(widgetCalls.map((c) => c.key))).toHaveLength(1);
+    expect(widgetCalls[widgetCalls.length - 1].content).toBeUndefined();
+    // Every phase run got a streaming feed wired to the panel.
+    expect(runnerState.calls.length).toBeGreaterThan(0);
+    for (const call of runnerState.calls) {
+      expect(call.hasOnUpdate, `${call.agent}: expected an onUpdate feed`).toBe(true);
+    }
+
+    // The (final-state) panel renders header + one row per phase.
+    const factory = widgetCalls[0].content as (tui: unknown, theme: any) => any;
+    const lines: string[] = factory(null, { fg: (_c: string, t: string) => t, bold: (t: string) => t }).render(200);
+    expect(lines[0]).toContain("all 8 phases done");
+    for (const name of [
+      "REVIEW-SECURITY",
+      "REVIEW-ARCHITECTURE",
+      "REVIEW-TESTS",
+      "REVIEW-BUGS",
+      "REVIEW-PERFORMANCE",
+      "REVIEW-LINTING",
+      "REVIEW-PONYTAIL",
+      "REVIEW-SYNTHESIS",
+    ]) {
+      expect(lines.some((l) => l.includes(name)), `panel missing row for ${name}`).toBe(true);
+    }
+  });
+
+  it("/review: the widget is still cleared when every theme fails (early return)", async () => {
+    for (const name of [
+      "REVIEW-SECURITY",
+      "REVIEW-ARCHITECTURE",
+      "REVIEW-TESTS",
+      "REVIEW-BUGS",
+      "REVIEW-PERFORMANCE",
+      "REVIEW-LINTING",
+      "REVIEW-PONYTAIL",
+    ]) {
+      runnerState.fail.add(name);
+    }
+    const { handlers } = await makePi();
+    const { ctx, widgetCalls } = makeCtx();
+    await handlers["review"](undefined, ctx);
+    expect(widgetCalls.length).toBeGreaterThanOrEqual(2);
+    expect(widgetCalls[widgetCalls.length - 1].content).toBeUndefined();
+  });
+
+  it("/deep-plan: creates the widget, feeds all five phases, clears it on success", async () => {
+    runnerState.output["COMPOSE"] = "# Spec\ndraft";
+    const { handlers } = await makePi();
+    const { ctx, widgetCalls } = makeCtx();
+    await handlers["deep-plan"]("some feature", ctx);
+
+    expect(widgetCalls.length).toBeGreaterThanOrEqual(2);
+    expect(typeof widgetCalls[0].content).toBe("function");
+    expect(new Set(widgetCalls.map((c) => c.key))).toHaveLength(1);
+    expect(widgetCalls[widgetCalls.length - 1].content).toBeUndefined();
+    for (const call of runnerState.calls) {
+      expect(call.hasOnUpdate, `${call.agent}: expected an onUpdate feed`).toBe(true);
+    }
+  });
+
+  it("runPipelineAgent forwards streaming partials to onActivity as activity lines", async () => {
+    const { runPipelineAgent } = await import("./pipeline.ts");
+    const seen: string[] = [];
+    runnerState.streamFor["TEST-STREAM"] = [
+      [{ role: "assistant", content: [{ type: "toolCall", name: "bash", arguments: { command: "ls -la" } }] }],
+      [{ role: "assistant", content: [{ type: "text", text: "final text" }] }],
+    ];
+    const depth = { currentDepth: 0, ancestorAgentStack: [], maxDepth: 1, preventCycles: true };
+    const agent: any = { name: "TEST-STREAM", description: "" };
+    const ctx: any = { cwd: "/tmp", ui: { notify: () => undefined } };
+    const outcome = await runPipelineAgent(
+      ctx,
+      depth,
+      agent,
+      "task",
+      new AbortController(),
+      false,
+      (line) => seen.push(line),
+    );
+    expect(outcome.ok).toBe(true);
+    expect(seen).toEqual(["→ bash ls -la", "writing… (10 chars)"]);
+  });
+
+  it("runPipelineAgent without onActivity wires no onUpdate at all", async () => {
+    const { runPipelineAgent } = await import("./pipeline.ts");
+    const depth = { currentDepth: 0, ancestorAgentStack: [], maxDepth: 1, preventCycles: true };
+    const agent: any = { name: "TEST-NOSTREAM", description: "" };
+    const ctx: any = { cwd: "/tmp", ui: { notify: () => undefined } };
+    await runPipelineAgent(ctx, depth, agent, "task", new AbortController());
+    expect(runnerState.calls[runnerState.calls.length - 1].hasOnUpdate).toBe(false);
   });
 });
 

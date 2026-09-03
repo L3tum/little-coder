@@ -41,6 +41,12 @@ import {
   STATIC_REVIEW_PROJECT_PROMPT,
   STATIC_REVIEW_PROMPT,
 } from "./mode-prompts.js";
+import {
+  activityLine,
+  createPipelineProgress,
+  type PipelineProgress,
+  type ProgressWidgetFactory,
+} from "./pipeline-progress.js";
 
 // Minimal ctx surface the pipeline helpers touch (the full command context
 // carries more). `ui` members are guarded at every call site, so headless and
@@ -51,6 +57,13 @@ export type PipelineCtx = {
   ui?: {
     notify?: (message: string, level?: "info" | "warning" | "error") => void;
     setWorkingMessage?: (message?: string) => void;
+    // Method syntax (bivariant) so the host's real overloaded setWidget is
+    // assignable here — see ProgressCtx in pipeline-progress.ts.
+    setWidget?(
+      key: string,
+      content: string[] | undefined | ProgressWidgetFactory,
+      options?: { placement?: "aboveEditor" | "belowEditor" },
+    ): void;
   };
 };
 
@@ -217,6 +230,10 @@ export function resolvePhaseTimeoutMs(): number {
  * exits 0 with EMPTY output is a failure, not a silent success. Returns a
  * PhaseOutcome whose `text` is the phase's full final output (threaded into
  * the next phase, bounded by truncateForThreading at the call sites).
+ *
+ * `onActivity` (optional) receives a one-line "currently doing" update
+ * (activityLine) as the child's output streams — the live-progress panel
+ * subscribes through it; absent it, nothing streams.
  */
 export async function runPipelineAgent(
   ctx: PipelineCtx,
@@ -225,6 +242,7 @@ export async function runPipelineAgent(
   task: string,
   controller: AbortController,
   announce?: boolean,
+  onActivity?: (line: string) => void,
 ): Promise<PhaseOutcome> {
   const signal = controller.signal;
   // Guarded progress: absent on headless/test contexts. Callers that run
@@ -257,6 +275,15 @@ export async function runPipelineAgent(
       maxDepth: depth.maxDepth,
       preventCycles: depth.preventCycles,
       signal,
+      // Live-progress feed: derive a one-line "currently doing" from each
+      // streaming partial and hand it to the caller's panel. Only attached
+      // when the caller wants it, so a phase with no panel pays nothing.
+      onUpdate: onActivity
+        ? (partial) => {
+            const r = partial?.details?.results?.[0];
+            if (r) onActivity(activityLine(r));
+          }
+        : undefined,
       makeDetails: (results) => ({
         mode: "single",
         delegationMode: "spawn",
@@ -356,6 +383,7 @@ export async function runThemedReviewPipeline(
   const depth = resolvePipelineDepthGate(pi, ctx);
   if (!depth) return;
   ctx.ui?.notify?.(`Starting ${opts.label} (7 focused reviews)...`, "info");
+  let progress: PipelineProgress | null = null;
   try {
     const themeAgents = THEMED_REVIEW_THEMES.map((theme) => ({
       name: `${opts.themePrefix}${theme.toUpperCase()}`,
@@ -378,6 +406,17 @@ export async function runThemedReviewPipeline(
     }
     const byName = new Map(agents.map((a) => [a.name, a]));
 
+    // Live progress panel: command handlers have no in-flight tool rendering
+    // (unlike the subagent tool), so without this a 7-phase run is silent.
+    // One row per phase + synthesis; cleared on EVERY exit path by the
+    // finally below.
+    progress = createPipelineProgress(
+      ctx,
+      opts.label,
+      [...themeAgents.map((t) => t.name), "REVIEW-SYNTHESIS"],
+    );
+    const panel = progress; // non-null local for the body (progress may be null pre-creation)
+
     const pipelineAbort = createPipelineController(ctx);
     const nonce = createFenceNonce();
     ctx.ui?.setWorkingMessage?.(`Running ${opts.label} (7 themed reviews)...`);
@@ -393,6 +432,7 @@ export async function runThemedReviewPipeline(
           // six healthy in-flight siblings. A user cancel on the parent still
           // propagates down to every phase.
           const phaseAbort = childPipelineController(pipelineAbort);
+          panel.start(t.name);
           const run = await runPipelineAgent(
             ctx,
             depth,
@@ -400,7 +440,9 @@ export async function runThemedReviewPipeline(
             opts.themeTask(t.theme),
             phaseAbort,
             false,
+            (line) => panel.activity(t.name, line),
           );
+          panel.finish(t.name, run.ok, run.error);
           return { name: t.name, run };
         },
       );
@@ -426,6 +468,7 @@ export async function runThemedReviewPipeline(
       return;
     }
 
+    panel.start("REVIEW-SYNTHESIS");
     const synthesis = await runPipelineAgent(
       ctx,
       depth,
@@ -434,7 +477,10 @@ export async function runThemedReviewPipeline(
         untrustedData("review-findings", combinedFindings, nonce),
       ),
       pipelineAbort,
+      undefined,
+      (line) => panel.activity("REVIEW-SYNTHESIS", line),
     );
+    panel.finish("REVIEW-SYNTHESIS", synthesis.ok, synthesis.error);
     if (!synthesis.ok) {
       ctx.ui?.notify?.(
         `${opts.label}: synthesis failed: ${synthesis.error ?? "unknown error"}`,
@@ -460,6 +506,13 @@ export async function runThemedReviewPipeline(
       }`,
       "error",
     );
+  } finally {
+    // Clear the live progress panel on EVERY exit path (success, per-phase
+    // failure returns, and the backstop) so a finished or failed run never
+    // leaves a stale panel above the editor. Nullable: a throw before
+    // creation (e.g. inside resolvePipelineAgents) must not turn the
+    // backstop catch into a TDZ ReferenceError.
+    progress?.dispose();
   }
 }
 
@@ -644,18 +697,34 @@ export async function runDeepPlanPipeline(
   const composeAgent = phaseAgents.get("COMPOSE")!;
   const cwd = ctx.cwd ?? process.cwd();
 
+  let progress: PipelineProgress | null = null;
   try {
     const pipelineAbort = createPipelineController(ctx);
     const nonce = createFenceNonce();
 
+    // Live progress panel (one row per phase); cleared on EVERY exit path by
+    // the finally below (command handlers have no in-flight tool rendering).
+    progress = createPipelineProgress(ctx, "deep plan", [
+      "RESEARCH",
+      "COMPOSE (DRAFT)",
+      "REVIEW-PLAN",
+      "REVIEW-PLAN-PONYTAIL",
+      "COMPOSE (FINAL)",
+    ]);
+    const panel = progress; // non-null local for the body
+
     // Phase 1: RESEARCH — explore the codebase and gather evidence.
+    panel.start("RESEARCH");
     const research = await runPipelineAgent(
       ctx,
       depth,
       researchAgent,
       `Research the codebase for this request: "${quotedPrompt}". Explore relevant files, understand architecture, identify integration points, and record all factual findings with EvidenceAdd.`,
       pipelineAbort,
+      undefined,
+      (line) => panel.activity("RESEARCH", line),
     );
+    panel.finish("RESEARCH", research.ok, research.error);
     if (!research.ok) {
       await phaseFailed("RESEARCH phase", research.error);
       return;
@@ -663,13 +732,17 @@ export async function runDeepPlanPipeline(
 
     // Phase 2: COMPOSE (DRAFT) — the role word selects the draft pass; the
     // research output is appended (bounded by truncateForThreading).
+    panel.start("COMPOSE (DRAFT)");
     const draft = await runPipelineAgent(
       ctx,
       depth,
       composeAgent,
       `Role: DRAFT.\nCompose the draft specification for this request: "${quotedPrompt}". Use the research findings from Phase 1, included in full below. Produce the complete markdown specification following the Output Format in your system prompt.\n\nFull research findings:\n${untrustedData("research-findings", truncateForThreading(research.text), nonce)}`,
       pipelineAbort,
+      undefined,
+      (line) => panel.activity("COMPOSE (DRAFT)", line),
     );
+    panel.finish("COMPOSE (DRAFT)", draft.ok, draft.error);
     if (!draft.ok) {
       await phaseFailed("COMPOSE (DRAFT) phase", draft.error);
       return;
@@ -696,17 +769,20 @@ export async function runDeepPlanPipeline(
     );
     let reviews: { name: string; run: PhaseOutcome }[];
     try {
-      reviews = await mapConcurrent(reviewers, 2, async (r) => ({
-        name: r.agent.name,
-        run: await runPipelineAgent(
+      reviews = await mapConcurrent(reviewers, 2, async (r) => {
+        panel.start(r.agent.name);
+        const run = await runPipelineAgent(
           ctx,
           depth,
           r.agent,
           r.task,
           childPipelineController(pipelineAbort),
           false,
-        ),
-      }));
+          (line) => panel.activity(r.agent.name, line),
+        );
+        panel.finish(r.agent.name, run.ok, run.error);
+        return { name: r.agent.name, run };
+      });
     } finally {
       // Reset the shared working message even if the fan-out throws.
       ctx.ui?.setWorkingMessage?.(undefined);
@@ -721,13 +797,17 @@ export async function runDeepPlanPipeline(
 
     // Phase 4: COMPOSE (FINAL) — the bounded draft plus BOTH review reports
     // (or FAILED placeholders).
+    panel.start("COMPOSE (FINAL)");
     const finalSpec = await runPipelineAgent(
       ctx,
       depth,
       composeAgent,
       `Role: FINAL.\nRevise the draft specification for: "${quotedPrompt}" using the two review reports included in full below. Apply every valid correction and simplification; where the reports conflict, resolve in favor of what you can verify in the codebase. Produce the complete final markdown specification as your response.\n\nDraft specification:\n${untrustedData("draft-specification", draftText, nonce)}\n\n${untrustedData("review-reports", reviewSections, nonce)}`,
       pipelineAbort,
+      undefined,
+      (line) => panel.activity("COMPOSE (FINAL)", line),
     );
+    panel.finish("COMPOSE (FINAL)", finalSpec.ok, finalSpec.error);
     if (!finalSpec.ok) {
       await phaseFailed("COMPOSE (FINAL) phase", finalSpec.error);
       return;
@@ -799,6 +879,11 @@ export async function runDeepPlanPipeline(
       }`,
       "error",
     );
+  } finally {
+    // Clear the live progress panel on EVERY exit path (success, phase
+    // failure returns, spec-write failure, and the backstop) so a finished
+    // or failed run never leaves a stale panel above the editor.
+    progress?.dispose();
   }
 }
 

@@ -45,3 +45,11 @@ export {
 
 // Phase outcome classification (single source of "did this phase succeed?").
 export { toPhaseOutcome, type PhaseOutcome, type SingleResult } from "./types.js";
+
+// Output extraction (the pipeline's live-progress panel derives its
+// "currently doing" line from a phase's streaming messages).
+export {
+  getFinalOutput,
+  getDisplayItems,
+  type DisplayItem,
+} from "./types.js";
