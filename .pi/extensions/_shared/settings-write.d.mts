@@ -41,7 +41,9 @@ export function acquireSettingsLock(
 /**
  * Atomically write `value` as pretty JSON to `path` (0o600 temp + rename,
  * O_EXCL | O_NOFOLLOW temp, parent dirs created). Synchronous; the caller
- * holds the lock for the surrounding read-modify-write.
+ * holds the lock for the surrounding read-modify-write. Re-exported from
+ * atomic-write.mjs (the shared lock-free implementation, which also backs
+ * the launcher's update-check cache writer).
  */
 export function atomicWriteJson(path: string, value: unknown): void;
 
@@ -56,11 +58,14 @@ export interface SettingsFileUpdateResult {
 }
 
 /**
- * Read-modify-write a settings file under the shared lock. NEVER rejects:
- * every failure is returned as `{ ok: false, path, error }`.
+ * Read-modify-write a settings file under the shared lock. `mutate`
+ * receives the parsed top-level JSON document and may modify it in place;
+ * returning `false` from `mutate` skips the write (no-op update — the
+ * file's mtime is left untouched) and still resolves `{ ok: true, … }`.
+ * NEVER rejects: every failure is returned as `{ ok: false, path, error }`.
  */
 export function updateSettingsFile(
   settingsPath: string,
-  mutate: (doc: Record<string, unknown>) => void,
+  mutate: (doc: Record<string, unknown>) => void | false,
   opts?: SettingsLockOptions,
 ): Promise<SettingsFileUpdateResult>;

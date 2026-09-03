@@ -445,6 +445,29 @@ export function writeCtxProbeCache(
   const { probedAt = Date.now(), env = process.env, probeFailCount = 0 } = opts;
   const path = ctxProbeCachePath(baseUrl, env);
   if (!path) return;
+  // Value-equality guard: a warm launch whose cache is still fresh persists
+  // UNCHANGED values before the background re-probe — rewriting them bumped
+  // the file mtime on every launch for no reason. Read the existing file and
+  // skip the write when it already equals the new data (best-effort: any
+  // read/parse failure falls through to the write).
+  try {
+    if (existsSync(path)) {
+      const prev = JSON.parse(
+        readFileSync(path, "utf-8"),
+      ) as CtxProbeCacheFile | null;
+      if (
+        prev &&
+        prev.contextWindow === contextWindow &&
+        prev.probedAt === probedAt &&
+        prev.baseUrl === baseUrl &&
+        (prev.probeFailCount ?? 0) === probeFailCount
+      ) {
+        return;
+      }
+    }
+  } catch {
+    // malformed/unreadable existing file → rewrite below
+  }
   try {
     const data: CtxProbeCacheFile = {
       contextWindow,

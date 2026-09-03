@@ -150,8 +150,7 @@ describe("token-limit-guard extension behavior (auto-continue OFF — pre-change
     const ctx = { abort: abortSpy };
     const event = {
       message: {
-        stopReason: "error",
-        errorMessage: "maximum token limit exceeded",
+        stopReason: "length",
         content: [],
       },
     };
@@ -163,6 +162,49 @@ describe("token-limit-guard extension behavior (auto-continue OFF — pre-change
       expect.stringContaining("maximum output token limit"),
     );
     expect(abortSpy).toHaveBeenCalled();
+  });
+
+  it("does NOT treat an error stop with a token-limit-looking message as a length stop (quota errors must not consume the auto-continue budget)", async () => {
+    const harnessInterventionSpy = vi.fn();
+    const abortSpy = vi.fn();
+
+    vi.doMock("../_shared/intervention.ts", () => ({
+      harnessIntervention: harnessInterventionSpy,
+    }));
+
+    vi.resetModules();
+
+    handlers = new Map();
+    pi = {
+      on: vi.fn((event, handler) => {
+        handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+      }),
+    };
+
+    const mod = await import("./index.js");
+    extension = mod.default;
+    mod._setCompactionCheckerForTests(() => false);
+    extension(pi);
+
+    const turnEndHandler = handlers.get("turn_end")[0];
+
+    const ctx = { abort: abortSpy };
+    // A provider quota/billing error whose message matches the token-limit
+    // regexes ("token ... exceeded"): NOT a context overflow. The guard must
+    // leave it alone — no nudge, no budget increment, no abort — so
+    // quality-monitor / other error-turn handlers see it.
+    const event = {
+      message: {
+        stopReason: "error",
+        errorMessage: "your monthly token budget exceeded",
+        content: [],
+      },
+    };
+
+    await turnEndHandler(event, ctx);
+
+    expect(harnessInterventionSpy).not.toHaveBeenCalled();
+    expect(abortSpy).not.toHaveBeenCalled();
   });
 
   it("skips non-token-limit turns", async () => {
@@ -209,8 +251,7 @@ describe("token-limit-guard extension behavior (auto-continue OFF — pre-change
     await turnEndHandler(
       {
         message: {
-          stopReason: "error",
-          errorMessage: "maximum token limit reached",
+          stopReason: "length",
           content: [],
         },
       },
@@ -226,8 +267,7 @@ describe("token-limit-guard extension behavior (auto-continue OFF — pre-change
     await turnEndHandler(
       {
         message: {
-          stopReason: "error",
-          errorMessage: "token limit exceeded",
+          stopReason: "length",
           content: [],
         },
       },
@@ -251,8 +291,7 @@ describe("token-limit-guard extension behavior (auto-continue OFF — pre-change
 
     const event = {
       message: {
-        stopReason: "error",
-        errorMessage: "maximum token limit reached",
+        stopReason: "length",
         content: [],
       },
     };
@@ -411,8 +450,7 @@ describe("token-limit-guard extension behavior (auto-continue OFF — pre-change
     const ctx = { abort: abortSpy };
     const event = {
       message: {
-        stopReason: "error",
-        errorMessage: "maximum token limit exceeded",
+        stopReason: "length",
         content: [],
       },
     };
@@ -747,6 +785,37 @@ describe("token-limit-guard auto-continue (default ON)", () => {
       await fireTurn(ctx);
       expect(sendUserMessage).not.toHaveBeenCalled();
       expect(ctx.abort).toHaveBeenCalled();
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("a NON-boolean token_limit_auto_continue (string 'false') does NOT disable auto-continue — only a strict boolean false does", async () => {
+    // The typeof guard: `"false"` (a string) is not a boolean, so it falls
+    // through to the default ON rather than being coerced. Pins the
+    // "only a strict boolean false disables it" contract.
+    mod._setCompactionCheckerForTests(() => false);
+    const cwd = mkdtempSync(join(tmpdir(), "tlg-test-cwd-"));
+    try {
+      mkdirSync(join(cwd, ".pi"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".pi", "settings.json"),
+        JSON.stringify({
+          little_coder: { token_limit_auto_continue: "false" },
+        }),
+      );
+      writeFileSync(
+        join(agentDir, "trust.json"),
+        JSON.stringify({ [realpathSync(cwd)]: true }),
+      );
+      const ctx = {
+        abort: vi.fn(),
+        sessionManager: { getCwd: () => cwd },
+      };
+      await fireTurn(ctx);
+      // Auto-continue stays ON: the nudge is sent, no abort.
+      expect(sendUserMessage).toHaveBeenCalled();
+      expect(ctx.abort).not.toHaveBeenCalled();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

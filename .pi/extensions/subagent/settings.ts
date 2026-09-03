@@ -4,14 +4,20 @@
  * Extracted from the subagent extension entry module so that programmatic
  * pipeline callers (mode-commands) can honor the user's configured
  * `little_coder.subagent_models` / `subagent_thinking` overrides without
- * importing a sibling extension's registration entry point. This is a
- * dependency-free leaf: no TUI, no tool schemas, no side effects at import.
+ * importing a sibling extension's registration entry point.
+ *
+ * Leaf module: no TUI, no tool schemas, no side effects at import. ALL
+ * writes go through the shared locked writer
+ * (_shared/settings-write.mjs updateSettingsFile) — the same lock the
+ * launcher's quietStartup stamp and the permission-gate /allow writer take
+ * (an unlocked full-document read → write on <agentDir>/settings.json raced
+ * those writers into lost updates and clobbered a malformed file).
  */
 
-import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { updateSettingsFile } from "../_shared/settings-write.mjs";
 import type { AgentConfig } from "./agents.js";
 
 export type SubagentLevel =
@@ -111,33 +117,42 @@ export function readSettings(): PiSettings {
   }
 }
 
-export function writeSettings(settings: PiSettings): void {
-  const sp = settingsPath();
-  fs.mkdirSync(path.dirname(sp), { recursive: true });
-  // Invalidate cache so the next read picks up fresh data
+/** Result of a little-coder settings write (mirrors the shared writer). */
+export type SettingsWriteResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Read-modify-write ONE mutation into the `little_coder` namespace through
+ * the shared locked writer (updateSettingsFile): the whole read-modify-
+ * write runs under the proper-lockfile settings lock and the bytes are
+ * written with the shared atomic protocol (0600 temp + rename, O_EXCL |
+ * O_NOFOLLOW). A malformed existing settings.json is REFUSED, never
+ * clobbered — the pre-migration unlocked writer here read → {} → wrote on
+ * any parse failure, which contradicted the shared writer's contract.
+ *
+ * Never rejects: a failed write (lock exhaustion, malformed file, …) is
+ * returned as { ok: false, error } so a /subagent-* command can report it
+ * instead of crashing. `mutate` receives the little_coder namespace (a
+ * fresh object when the file has none — a non-object stored namespace is
+ * normalized away) and modifies it in place.
+ */
+export async function mutateLittleCoderSettings(
+  mutate: (lc: LittleCoderSettings) => void,
+): Promise<SettingsWriteResult> {
+  const res = await updateSettingsFile(settingsPath(), (doc) => {
+    const rawLc = doc.little_coder;
+    const lc =
+      rawLc !== null && typeof rawLc === "object" && !Array.isArray(rawLc)
+        ? (rawLc as LittleCoderSettings)
+        : ({} as LittleCoderSettings);
+    mutate(lc);
+    doc.little_coder = lc;
+  });
+  // Invalidate cache so the next read picks up fresh data (a skipped no-op
+  // write leaves disk unchanged; invalidating is harmless).
   settingsCache = null;
-  // Atomic write: write to a temp file then rename, so a crash mid-write
-  // doesn't corrupt the settings file. The temp name is randomized (a fixed
-  // predictable name lets another local user race-read it), and 0600: the
-  // rename preserves the temp file's mode, and the settings file may carry
-  // credentials (the shared _shared/settings-write.mjs writer uses the same
-  // 0600 convention).
-  const tmp = `${sp}.tmp-${randomBytes(4).toString("hex")}`;
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n", {
-      encoding: "utf-8",
-      mode: 0o600,
-    });
-    fs.renameSync(tmp, sp);
-  } catch (err) {
-    // Clean up temp file if rename failed
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* ignore */
-    }
-    throw err;
-  }
+  return res.ok
+    ? { ok: true }
+    : { ok: false, error: res.error ?? "unknown settings write error" };
 }
 
 export function littleCoderSettings(): PiSettingsWithLC {
@@ -151,17 +166,22 @@ export function getSubagentLevel(): SubagentLevel {
   return raw && LEVELS.includes(raw) ? raw : "medium";
 }
 
-export function setSubagentLevel(level: SubagentLevel): void {
-  const s = littleCoderSettings();
-  s.little_coder.subagent_level = level;
-  writeSettings(s);
+export async function setSubagentLevel(
+  level: SubagentLevel,
+): Promise<SettingsWriteResult> {
+  return mutateLittleCoderSettings((lc) => {
+    lc.subagent_level = level;
+  });
 }
 
-export function setSubagentModel(agent: string, model: string): void {
-  const s = littleCoderSettings();
-  s.little_coder.subagent_models ??= {};
-  s.little_coder.subagent_models[agent] = model;
-  writeSettings(s);
+export async function setSubagentModel(
+  agent: string,
+  model: string,
+): Promise<SettingsWriteResult> {
+  return mutateLittleCoderSettings((lc) => {
+    lc.subagent_models ??= {};
+    lc.subagent_models[agent] = model;
+  });
 }
 
 export function getSubagentModels(): Record<string, string> {
@@ -190,14 +210,14 @@ function pickThinkingEntry(value: unknown): SubagentLevel | undefined {
     : undefined;
 }
 
-export function setSubagentThinking(
+export async function setSubagentThinking(
   agent: string,
   thinking: SubagentLevel,
-): void {
-  const s = littleCoderSettings();
-  s.little_coder.subagent_thinking ??= {};
-  s.little_coder.subagent_thinking[agent] = thinking;
-  writeSettings(s);
+): Promise<SettingsWriteResult> {
+  return mutateLittleCoderSettings((lc) => {
+    lc.subagent_thinking ??= {};
+    lc.subagent_thinking[agent] = thinking;
+  });
 }
 
 export function getSubagentThinkingSettings(): Record<string, SubagentLevel> {

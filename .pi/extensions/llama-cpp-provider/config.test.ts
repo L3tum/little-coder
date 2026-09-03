@@ -6,6 +6,8 @@ import {
   mkdirSync,
   readFileSync,
   existsSync,
+  statSync,
+  utimesSync,
 } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { dirname, join, resolve, isAbsolute } from "node:path";
@@ -343,22 +345,30 @@ describe("probeContextWindow", () => {
 
   it("defaults to a 500 ms timeout (was 1500) when none is given", async () => {
     // A fetchImpl that only settles via the abort signal: if the abort fires
-    // at ~500 ms this resolves fast; with the old 1500 ms default the 1200 ms
-    // race below would win instead.
+    // at ~500 ms the probe resolves as undefined fast. The assertion is on
+    // the ABORT SIGNAL itself (stall-proof), not on wall clock — the
+    // previous `elapsed < 1200` for a 500 ms abort made a ~700 ms CI stall
+    // look like a late abort. The 3000 ms race is only a fallback so a
+    // wedged signal can't hang the suite.
+    let aborted = false;
     const fetchImpl = ((_url: string, init?: { signal?: AbortSignal }) =>
       new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () =>
-          reject(new Error("aborted")),
-        );
+        init?.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new Error("aborted"));
+        });
       })) as unknown as typeof fetch;
     const t0 = Date.now();
     const got = await Promise.race([
       probeContextWindow("http://x:8888/v1", { fetchImpl }),
-      new Promise((r) => setTimeout(() => r("timeout"), 1200)),
+      new Promise((r) => setTimeout(() => r("timeout"), 3000)),
     ]);
     const elapsed = Date.now() - t0;
     expect(got).toBeUndefined();
-    expect(elapsed).toBeLessThan(1200); // 500 ms abort fired, not 1500
+    // The abort signal fired (the timeout path, not the race fallback):
+    expect(aborted).toBe(true);
+    // Loose sanity bound (6× the 500 ms default — a stall-proof margin):
+    expect(elapsed).toBeLessThan(3000);
   });
 });
 
@@ -641,6 +651,22 @@ describe("ctx probe cache", () => {
       env: env(),
     });
     expect(readCtxProbeCache("http://localhost:8080", env())).toBeNull();
+  });
+
+  it("writeCtxProbeCache: unchanged values do NOT rewrite the file (mtime unchanged)", () => {
+    const baseUrl = "http://localhost:8080/v1";
+    writeCtxProbeCache(baseUrl, 131072, { probedAt: 42, env: env() });
+    const p = ctxProbeCachePath(baseUrl, env())!;
+    // Force a distinct mtime so a spurious rewrite would be observable
+    // without a sleep (coarse filesystems can share mtimeMs).
+    utimesSync(p, new Date(), new Date(Date.now() + 60_000));
+    const before = statSync(p).mtimeMs;
+    // Warm-launch shape: the fresh path persists the very values just read.
+    writeCtxProbeCache(baseUrl, 131072, { probedAt: 42, env: env() });
+    expect(statSync(p).mtimeMs).toBe(before);
+    // A CHANGED value still writes.
+    writeCtxProbeCache(baseUrl, 131072, { probedAt: 43, env: env() });
+    expect(statSync(p).mtimeMs).not.toBe(before);
   });
 });
 

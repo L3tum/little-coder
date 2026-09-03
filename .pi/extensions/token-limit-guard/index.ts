@@ -118,21 +118,22 @@ export function isTokenLimitError(message: string | undefined | null): boolean {
   return TOKEN_LIMIT_PATTERNS.some((p) => p.test(message));
 }
 
-/** Check whether a turn_end event represents a token limit error. */
+/** Check whether a turn_end event represents a token limit error.
+ *
+ *  ONLY stopReason "length" qualifies: a stopReason "error" turn whose
+ *  message merely matches a token-limit regex (e.g. a quota/billing error
+ *  like "your monthly token budget exceeded") is NOT a context overflow.
+ *  The pre-fix version also matched those, which consumed the auto-
+ *  continue budget (consecutive/total length-stop counters) and queued a
+ *  misleading "resume exactly where you stopped" nudge for an error that
+ *  retrying/continuing cannot fix. Context overflows that arrive as error
+ *  stops are classified and compacted by pi-vcc's own overflow detection;
+ *  `isTokenLimitError` (exported) remains the message matcher for those
+ *  other error-turn consumers. */
 function isTokenLimitTurn(event: any): boolean {
   const message = event?.message;
   if (!message) return false;
-  if (message.stopReason === "length") return true;
-  if (message.stopReason !== "error") return false;
-  // Check the errorMessage field if present
-  if (isTokenLimitError(message.errorMessage)) return true;
-  // Check any text content for the error pattern
-  if (Array.isArray(message.content)) {
-    for (const block of message.content) {
-      if (block?.type === "text" && isTokenLimitError(block.text)) return true;
-    }
-  }
-  return false;
+  return message.stopReason === "length";
 }
 
 // Module-scoped flag to ensure only one extension handles the error.
@@ -216,7 +217,12 @@ function isAutoContinueEnabled(cwd?: string): boolean {
         ? isProjectTrustedFailClosed(cwd, r.defaultProjectTrust)
         : false;
       const v = resolveKey(r, "token_limit_auto_continue", trusted);
-      value = v !== false;
+      // Only a strict boolean is honored (default ON). The old `v !== false`
+      // coerced the string "false", 0, null, etc. to ON, silently ignoring a
+      // user's intent; the explicit typeof guard makes the "only a boolean
+      // false disables it" contract legible and robust. Non-boolean values
+      // (undefined included) fall through to the default ON.
+      value = typeof v === "boolean" ? v : true;
     }
   } catch (err) {
     // Deliberate fail-open — to the DEFAULT (ON), never to OFF: a

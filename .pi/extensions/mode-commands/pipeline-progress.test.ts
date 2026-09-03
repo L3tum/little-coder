@@ -41,7 +41,10 @@ function textMsg(text: string) {
   return { role: "assistant", content: [{ type: "text", text }] };
 }
 function toolMsg(name: string, args: Record<string, unknown>) {
-  return { role: "assistant", content: [{ type: "toolCall", name, arguments: args }] };
+  return {
+    role: "assistant",
+    content: [{ type: "toolCall", name, arguments: args }],
+  };
 }
 
 describe("activityLine", () => {
@@ -58,7 +61,9 @@ describe("activityLine", () => {
   it("shows read offset/limit as a line range", () => {
     expect(
       activityLine(
-        makeResult([toolMsg("read", { file_path: "src/a.ts", offset: 10, limit: 20 })]),
+        makeResult([
+          toolMsg("read", { file_path: "src/a.ts", offset: 10, limit: 20 }),
+        ]),
       ),
     ).toBe("→ read src/a.ts:10-29");
   });
@@ -72,7 +77,9 @@ describe("activityLine", () => {
 
   it("falls back to 'writing… (N chars)' when the newest item is text", () => {
     expect(
-      activityLine(makeResult([toolMsg("bash", { command: "ls" }), textMsg("abc")])),
+      activityLine(
+        makeResult([toolMsg("bash", { command: "ls" }), textMsg("abc")]),
+      ),
     ).toBe("writing… (3 chars)");
   });
 
@@ -88,6 +95,62 @@ describe("activityLine", () => {
       toolMsg("websearch", { query: "pi tui" }),
     ]);
     expect(activityLine(result)).toBe("→ websearch pi tui");
+  });
+
+  it("pins the canonical tool-name → arg-field mapping (drift degrades the activity line)", () => {
+    // summarizeArgs re-encodes the tool-name → argument-field mapping that
+    // subagent/render.ts owns; a renamed arg or new pi tool would silently
+    // fall through to the default case (first string value) or "". Pinning
+    // each dedicated case keeps that drift visible.
+    const cases: Array<[string, Record<string, unknown>, string]> = [
+      ["bash", { command: "git diff" }, "→ bash git diff"],
+      ["read", { file_path: "src/a.ts" }, "→ read src/a.ts"],
+      ["write", { path: "src/b.ts" }, "→ write src/b.ts"],
+      ["edit", { file_path: "src/c.ts" }, "→ edit src/c.ts"],
+      ["grep", { pattern: "foo" }, "→ grep foo"],
+      ["glob", { pattern: "*.ts" }, "→ glob *.ts"],
+      ["find", { query: "bar" }, "→ find bar"],
+      ["webfetch", { url: "http://x" }, "→ webfetch http://x"],
+      ["websearch", { query: "pi" }, "→ websearch pi"],
+    ];
+    for (const [name, args, want] of cases) {
+      expect(activityLine(makeResult([toolMsg(name, args)])), name).toBe(want);
+    }
+    // Unknown tools: the first non-empty string arg is the fallback.
+    expect(
+      activityLine(makeResult([toolMsg("mystery", { z: 1, label: "hello" })])),
+    ).toBe("→ mystery hello");
+  });
+
+  it("does not split a surrogate pair when truncating", () => {
+    // The bash command is truncated to 48 code units by summarizeArgs. Build
+    // a command where that cut lands exactly on a surrogate PAIR boundary:
+    // 46 filler chars, then 😀 (a 2-code-unit pair) at indices 46..47, then
+    // more filler so the total (50) exceeds 48. Naive truncation to 48 would
+    // keep the HIGH surrogate at index 46 without its low half — a lone
+    // (unpaired) surrogate. The backoff must drop the whole pair instead.
+    const s = "x".repeat(46) + "\u{1F600}" + "xy"; // length 50
+    const line = activityLine(makeResult([toolMsg("bash", { command: s })]));
+    // Kept prefix is the 46 filler chars + ellipsis — the pair at 46..47 is
+    // dropped whole, not split.
+    expect(line).toBe("→ bash " + "x".repeat(46) + "…");
+    const kept = line.slice("→ bash ".length, -1);
+    for (let i = 0; i < kept.length; i++) {
+      const c = kept.charCodeAt(i);
+      const paired =
+        (c >= 0xd800 &&
+          c <= 0xdbff &&
+          i + 1 < kept.length &&
+          kept.charCodeAt(i + 1) >= 0xdc00 &&
+          kept.charCodeAt(i + 1) <= 0xdfff) ||
+        (c >= 0xdc00 &&
+          c <= 0xdfff &&
+          i > 0 &&
+          kept.charCodeAt(i - 1) >= 0xd800 &&
+          kept.charCodeAt(i - 1) <= 0xdbff);
+      const lone = c >= 0xd800 && c <= 0xdfff && !paired;
+      expect(lone, `lone surrogate at ${i}`).toBe(false);
+    }
   });
 });
 
@@ -287,8 +350,14 @@ describe("createPipelineProgress", () => {
     p.start("B");
     p.finish("A", false, "phase timeout");
     p.finish("B", false);
-    expect(p.state[0]).toMatchObject({ status: "failed", error: "phase timeout" });
-    expect(p.state[1]).toMatchObject({ status: "failed", error: "unknown error" });
+    expect(p.state[0]).toMatchObject({
+      status: "failed",
+      error: "phase timeout",
+    });
+    expect(p.state[1]).toMatchObject({
+      status: "failed",
+      error: "unknown error",
+    });
     p.dispose();
   });
 

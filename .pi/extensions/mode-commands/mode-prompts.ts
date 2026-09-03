@@ -493,3 +493,13 @@ The themed ${scope === "project" ? "project-wide " : ""}code review pipeline ran
 
 export const STATIC_REVIEW_PROMPT = staticReviewPrompt("code");
 export const STATIC_REVIEW_PROJECT_PROMPT = staticReviewPrompt("project");
+
+// Short STATIC mode prompt for /review-focused. Like the themed-review
+// prompts it only points at the follow-up user message (which carries the
+// finished report); the focus is embedded so the mode records what was
+// reviewed. Same deep-plan contract: must NOT contain "Deep Plan Pipeline".
+export function staticFocusedReviewPrompt(focusText: string): string {
+  return `## Focused Code Review
+
+The focused code review pipeline ran programmatically in a subagent (a single change-scoped reviewer focused on: "${focusText}"). The follow-up user message is the finished review report — present it to the user as rendered Markdown, NOT inside a code block. Do not re-run the review; do not implement fixes unless asked.`;
+}

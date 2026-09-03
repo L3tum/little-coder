@@ -1,8 +1,16 @@
 // little-coder update check.
-// Polls L3tum fork's package.json on GitHub for a newer version and (in TTY
-// mode) offers to install it before the agent starts. Best-effort throughout:
-// if anything fails, we skip silently — never block the agent over a version
-// check.
+// Polls the L3tum fork's GIT TAGS for a newer version and (in TTY mode)
+// offers to install it before the agent starts. Best-effort throughout:
+// if anything fails, we skip silently — never block the agent over a
+// version check.
+//
+// Supply-chain pin (Security M2): the version source is the fork's tag LIST
+// (immutable, per-tag), never the mutable main branch — a compromised or
+// careless push to main used to be both the "latest" we display AND what the
+// install would fetch. The displayed version is therefore the exact tag the
+// install target pins to (#vX.Y.Z), so what the notice shows is what gets
+// installed (no drift). The prompt defaults to NO ([y/N]): an update is an
+// explicit opt-in, not an ambient yes-on-empty-Enter.
 //
 // Startup-performance design: the pre-spawn check is CACHE-ONLY. It never
 // touches the network on the launch critical path (an offline machine with a
@@ -13,25 +21,30 @@
 // run); a stale "latest" is only ever behind reality, and an offline
 // machine can see an arbitrarily stale one.
 
-import {
-  existsSync,
-  readFileSync,
-  mkdirSync,
-  openSync,
-  writeSync,
-  closeSync,
-  renameSync,
-  unlinkSync,
-  constants as fsConstants,
-} from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import { littleCoderCacheDir } from "../.pi/extensions/_shared/cache-path.mjs";
+// The shared lock-FREE atomic writer (Security L2): the version-check cache
+// is a SCRATCH file (single-purpose, regenerated on every online launch),
+// so it deliberately skips the shared settings LOCK — but it gets the same
+// atomic 0600 temp + rename, O_EXCL | O_NOFOLLOW protocol every other
+// writer in this repo uses, from one shared implementation instead of a
+// second local copy. (Importing settings-write.mjs directly would drag
+// proper-lockfile's CJS module into the launcher's module graph at load
+// time — a startup critical-path cost; atomic-write.mjs is the lock-free
+// half of the same protocol.)
+import { atomicWriteJson } from "../.pi/extensions/_shared/atomic-write.mjs";
 
+// The fork's tag list (immutable per tag; per_page=100 covers any realistic
+// tag count — fetchLatest picks the highest valid semver among them).
 const VERSION_SOURCE =
-  "https://raw.githubusercontent.com/L3tum/little-coder/main/package.json";
-const INSTALL_TARGET = "github:L3tum/little-coder";
+  "https://api.github.com/repos/L3tum/little-coder/tags?per_page=100";
+// The unpinned base; the ACTUAL install target is pinned to the discovered
+// tag at update time (installTargetFor) so the displayed version is the
+// installed version.
+const INSTALL_BASE = "github:L3tum/little-coder";
 const CACHE_TTL_MS = 12 * 60 * 60 * 1000; // 12 h
 const MS_PER_HOUR = 3_600_000;
 const FETCH_TIMEOUT_MS = 2000;
@@ -110,55 +123,13 @@ export function isFreshCache(data, now = Date.now()) {
   );
 }
 
-// (M-arch-2) The version-check cache is a SCRATCH file (single-purpose,
-// regenerated on every online launch), not user data: last-writer-wins across
-// concurrent launchers is acceptable, and there is no read-modify-write to
-// protect — so we use a small UNLOCKED atomic writer instead of importing the
-// locked shared writer (settings-write.mjs), which would drag proper-lockfile's
-// CJS module into the launcher's module graph at load time (a startup
-// critical-path cost). Atomic via O_EXCL 0600 temp in the same dir + rename,
-// so a reader never sees a torn file.
-function atomicWriteFile(filePath, data) {
-  const buf = Buffer.from(JSON.stringify(data, null, 2) + "\n", "utf-8");
-  mkdirSync(dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.tmp-${process.pid}`;
-  let fd;
-  try {
-    fd = openSync(
-      tmp,
-      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
-      0o600,
-    );
-  } catch (err) {
-    if (err?.code !== "EEXIST") throw err;
-    // Stale tmp from a prior crashed run (same pid) — remove and retry once.
-    try {
-      unlinkSync(tmp);
-    } catch {
-      /* already gone */
-    }
-    fd = openSync(
-      tmp,
-      fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL,
-      0o600,
-    );
-  }
-  try {
-    // Full-write loop so a rename never lands a truncated (malformed) file.
-    let offset = 0;
-    while (offset < buf.length) {
-      offset += writeSync(fd, buf, offset, buf.length - offset);
-    }
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmp, filePath);
-}
-
+// (M-arch-2) See the module header: scratch file, deliberately lock-FREE —
+// but the BYTES go through the shared atomic writer (atomic-write.mjs), so
+// a reader never sees a torn file and the protocol lives in one place.
 export function writeCache(latest, now = Date.now()) {
   try {
     // A successful fetch clears any prior lastFailedAt (negative-cache stamp).
-    atomicWriteFile(cachePath(), { checkedAt: now, latest });
+    atomicWriteJson(cachePath(), { checkedAt: now, latest });
   } catch {
     // best-effort; permission errors etc. are not fatal
   }
@@ -174,7 +145,7 @@ function writeFailedAt(now, raw) {
       raw && typeof raw.checkedAt === "number" && typeof raw.latest === "string"
         ? raw
         : null;
-    atomicWriteFile(cachePath(), {
+    atomicWriteJson(cachePath(), {
       checkedAt: prev ? prev.checkedAt : now,
       latest: prev ? prev.latest : "",
       lastFailedAt: now,
@@ -235,13 +206,35 @@ export async function fetchLatest() {
   try {
     const res = await fetch(VERSION_SOURCE, { signal: ctrl.signal });
     if (!res.ok) return null;
-    const json = await res.json();
-    return typeof json?.version === "string" ? json.version : null;
+    const tags = await res.json();
+    if (!Array.isArray(tags)) return null;
+    // The tag list is the source of truth: keep only valid-semver tags and
+    // pick the highest (compareSemver ignores a leading v, so "v1.8.2" and
+    // "1.8.2" sort alike). Non-release tags (branch names, release-please
+    // noise) are filtered out by isValidSemver.
+    let best = null;
+    for (const tag of tags) {
+      const name = typeof tag?.name === "string" ? tag.name : "";
+      if (!isValidSemver(name)) continue;
+      if (best === null || compareSemver(name, best) > 0) best = name;
+    }
+    return best;
   } catch {
     return null;
   } finally {
     clearTimeout(t);
   }
+}
+
+// Pin the install target to the discovered tag: the version the notice shows
+// is the exact ref npm fetches (no main-branch drift between display and
+// install). Strips a leading v for display purposes only — the ref keeps it.
+export function installTargetFor(latest) {
+  return `${INSTALL_BASE}#${String(latest).trim()}`;
+}
+
+export function displayVersion(latest) {
+  return String(latest).trim().replace(/^v/i, "");
 }
 
 // Fire-and-forget cache refresh for the NEXT launch. The launcher starts this
@@ -323,7 +316,9 @@ export function promptYesNo(question) {
     rl.question(question, (answer) => {
       rl.close();
       const a = (answer ?? "").trim().toLowerCase();
-      resolve(a === "" || a === "y" || a === "yes");
+      // DEFAULT NO: an update is an explicit opt-in (an empty Enter must not
+      // run `npm install -g` against a network-pinned ref).
+      resolve(a === "y" || a === "yes");
     });
   });
 }
@@ -359,29 +354,31 @@ export async function checkForUpdate(currentVersion, opts = {}) {
   // future) would otherwise render a negative age, e.g. "last checked -3h ago".
   const ageH = Math.max(0, (Date.now() - cache.checkedAt) / MS_PER_HOUR);
   const ageNote = formatAgeHours(ageH);
-  const headline = `\n📦 little-coder v${latest} is available (you have v${currentVersion})${ageNote}.`;
+  const latestV = displayVersion(latest);
+  const installTarget = installTargetFor(latest);
+  const headline = `\n📦 little-coder v${latestV} is available (you have v${currentVersion})${ageNote}.`;
 
   if (skip === "notice-only") {
     process.stderr.write(
-      `${headline}\n   Update with: npm install -g ${INSTALL_TARGET}\n\n`,
+      `${headline}\n   Update with: npm install -g ${installTarget}\n\n`,
     );
     return false;
   }
 
   process.stderr.write(`${headline}\n`);
-  const wantsUpdate = await promptYesNo("   Update now? [Y/n] ");
+  const wantsUpdate = await promptYesNo("   Update now? [y/N] ");
   if (!wantsUpdate) {
     process.stderr.write("   Skipping update for this run.\n\n");
     return false;
   }
 
-  process.stderr.write(`\n   Running: npm install -g ${INSTALL_TARGET}\n\n`);
-  const result = spawnSync("npm", ["install", "-g", INSTALL_TARGET], {
+  process.stderr.write(`\n   Running: npm install -g ${installTarget}\n\n`);
+  const result = spawnSync("npm", ["install", "-g", installTarget], {
     stdio: "inherit",
   });
   if (result.status === 0) {
     process.stderr.write(
-      `\n   ✓ Updated to v${latest}. Re-run \`little-coder\` to use the new version.\n\n`,
+      `\n   ✓ Updated to v${latestV}. Re-run \`little-coder\` to use the new version.\n\n`,
     );
     return true;
   }

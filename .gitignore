@@ -48,6 +48,11 @@ brainstorm_outputs/
 # working tree)
 cache/
 
-# Auto-generated plan artifacts (deep-plan pipeline output, review-synthesis, etc.)
-plans/
+# Auto-generated plan artifacts (deep-plan + themed-review pipeline output).
+# Deliberately NOT the whole plans/ directory: user-authored plan files there
+# must stay trackable. Two artifact families exist: the deep-plan spec
+# (plans/deep-plan-<ts>-<hex>.md, plus legacy research/spec intermediates that
+# all match deep-plan-*) and the legacy themed-review synthesis output.
+plans/deep-plan-*.md
+plans/review-synthesis-*.md
 PLAN.md

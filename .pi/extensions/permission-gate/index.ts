@@ -31,6 +31,15 @@ import { fileFreshnessKey } from "../_shared/freshness.mjs";
 // canonicalRepoKey from ./index.ts).
 export { canonicalRepoKey, isProjectTrustedFailClosed };
 
+// DELIBERATE TRADE-OFF (Security L1): a few entries are NOT strictly
+// read-only — "git add "/"git commit " write the local repo (and "git commit" also fires .git/hooks/*, i.e. repo-controlled code), "flutter test"
+// /"cargo test"/"pytest"/"dart run build_runner" EXECUTE test/build code authored in the repo, and the interpreter prefixes
+// ("python3 ", "node ", …) run arbitrary scripts. They stay in the safe
+// list on purpose: little-coder runs are already trusted to edit the repo
+// and drive its toolchain, and the gate's job is to catch the rare
+// high-blast-radius commands (rm -rf, force-pushes, package publishes,
+// credential access) — not to re-prompt for every build or test. Removing
+// an entry here is a UX-vs-blast-radius policy decision: make it knowingly.
 const BUILTIN_SAFE_PREFIXES: readonly string[] = [
   // Read-only commands
   "ls",
@@ -720,6 +729,11 @@ async function applyBashAllowOp(
         }
       }
     }
+    // No-op update (allowing an already-allowed / denying an already-absent
+    // prefix): skip the write so the settings file's mtime is left
+    // untouched — a redundant /allow must not bump the freshness key that
+    // gates the trust recheck, nor drag other writers' state into a rewrite.
+    if (!added && !removed) return false;
     ns.bash_allow = buildBashAllow(parsed);
     doc.little_coder = ns;
   });
@@ -816,21 +830,31 @@ function normalizeCargoCommand(c: string): string {
   return c.replace(/\bcargo\s+\+\w+\s+/g, "cargo ");
 }
 
+/**
+ * Word-boundary prefix match. A space-terminated prefix ("git add ") carries
+ * its own boundary; it also matches the bare command ("git add" — the
+ * idiomatic no-args form) but never a longer word. A NON-space-terminated
+ * prefix ("flutter test") must match the exact command or one followed by
+ * whitespace — a bare `startsWith` would let "flutter testing" (or
+ * "lsof" for "ls") match, silently broadening the allowlist.
+ */
+function matchesSafePrefix(segment: string, p: string): boolean {
+  if (p.endsWith(" ")) return segment.startsWith(p) || segment === p.trim();
+  return (
+    segment === p || segment.startsWith(p + " ") || segment.startsWith(p + "\t")
+  );
+}
+
 function isSafePrefixCommand(
   segment: string,
   prefixes: readonly string[],
 ): boolean {
   if (isSafeSingleDiagnosticCommand(segment)) return true;
   const normalized = normalizeCargoCommand(segment);
-  if (
-    prefixes.some((p) => segment.startsWith(p)) ||
-    prefixes.some((p) => normalized.startsWith(p))
-  )
-    return true;
-  // Space-terminated prefixes (e.g. "sort ") also allow the bare command name
-  // (e.g. "sort") — the idiomatic pipeline tail — without matching longer
-  // words like "sortsomething", preserving the word-boundary convention.
-  return prefixes.some((p) => p.endsWith(" ") && segment === p.trim());
+  return (
+    prefixes.some((p) => matchesSafePrefix(segment, p)) ||
+    prefixes.some((p) => matchesSafePrefix(normalized, p))
+  );
 }
 
 /**

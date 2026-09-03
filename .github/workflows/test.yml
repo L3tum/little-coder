@@ -5,10 +5,21 @@ on:
     branches:
       - main
   pull_request:
+  # The live Playwright integration test (browser-extract-retention) is gated
+  # on RUN_LIVE_TESTS=1 and hits a real external URL, so it is NOT run on
+  # push/PR (keeps those fast and hermetic). This scheduled job enables it so
+  # the real browser-extraction path is exercised at least once a day; if it
+  # flakes on a transient network/remote-site failure, the next run retries.
+  schedule:
+    - cron: "17 3 * * *"
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    # Live browser path only under the scheduled run — see the `on:` note.
+    env:
+      RUN_LIVE_TESTS: ${{ github.event_name == 'schedule' && '1' || '' }}
 
     steps:
       - uses: actions/checkout@v4

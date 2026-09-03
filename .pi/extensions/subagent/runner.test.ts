@@ -3,13 +3,18 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import {
-  resolveTaskArg,
-  TASK_INLINE_MAX_BYTES,
-  writeTaskToTempFile,
+  isTransientRemoteFailure,
   mapConcurrent,
+  resolveTaskArg,
   runAgent,
+  sleepAbortable,
+  SUBAGENT_MAX_ATTEMPTS,
+  SUBAGENT_RETRY_BACKOFF_MS,
+  TASK_INLINE_MAX_BYTES,
+  withTransientRetry,
+  writeTaskToTempFile,
 } from "./runner.js";
-import { type SingleResult } from "./types.js";
+import { emptyUsage, type SingleResult } from "./types.js";
 
 // The node:fs namespace is non-redefinable, so vi.spyOn on writeFileSync
 // cannot work; a module mock with a runtime toggle is the seam for
@@ -201,6 +206,25 @@ describe("mapConcurrent rejection handling", () => {
     );
     expect(results).toEqual(["A", "B"]);
   });
+
+  it("fail-fast: a rejection stops SCHEDULING — not-yet-started items are never spawned", async () => {
+    // The pre-fix behavior kept pulling items off the queue until every one
+    // had a (pi) process in flight before surfacing the first error. With
+    // fail-fast scheduling, only the ≤ concurrency already in flight run;
+    // the rest are never started. Item 0 rejects synchronously (a microtask
+    // at t0 — before the 50 ms worker's timer can re-enter the loop), so
+    // exactly the two in-flight items start. Deterministic.
+    const started: number[] = [];
+    await expect(
+      mapConcurrent([0, 1, 2, 3, 4, 5], 2, async (i) => {
+        started.push(i);
+        if (i === 0) throw new Error("boom");
+        await new Promise((r) => setTimeout(r, 50));
+        return i;
+      }),
+    ).rejects.toThrow("boom");
+    expect(started.sort((a, b) => a - b)).toEqual([0, 1]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -276,5 +300,218 @@ describe("runAgent failure paths", () => {
     } finally {
       fsMockState.failSubagentTaskWrites = false;
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Transient-remote-error retry
+// ---------------------------------------------------------------------------
+
+/** A finished run whose LAST LLM call errored (the observed failure shape:
+ *  child exits 0 after emitting agent_end, error only in stopReason). */
+function errorResult(overrides: Partial<SingleResult> = {}): SingleResult {
+  return {
+    agent: "TEST",
+    agentSource: "user",
+    task: "t",
+    exitCode: 0,
+    stopReason: "error",
+    messages: [],
+    stderr: "",
+    usage: emptyUsage(),
+    ...overrides,
+  };
+}
+
+describe("isTransientRemoteFailure", () => {
+  it("flags transient provider/transport errors", () => {
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: "503 service unavailable" }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: "429 rate limit exceeded" }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientRemoteFailure(errorResult({ errorMessage: "socket hang up" })),
+    ).toBe(true);
+    // "terminated" covers "Response terminated unexpectedly"-style drops.
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: "Response terminated unexpectedly" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT flag context overflow (a re-spawn overflows again)", () => {
+    // "400 status code (no body)" is the Cerebras/llama.cpp overflow
+    // signature — the exact error that used to surface as a misleading
+    // subagent result. It must fail fast, not burn the retry budget.
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: "400 status code (no body)" }),
+      ),
+    ).toBe(false);
+    expect(
+      isTransientRemoteFailure(
+        errorResult({
+          errorMessage: "prompt is too long: 213462 tokens > 200000 maximum",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does NOT flag quota/billing exhaustion", () => {
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: "insufficient_quota" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("does NOT flag non-remote failures (clean stop, abort, empty error, never spawned)", () => {
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ stopReason: "stop", errorMessage: undefined }),
+      ),
+    ).toBe(false);
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ stopReason: "aborted", errorMessage: undefined }),
+      ),
+    ).toBe(false);
+    expect(
+      isTransientRemoteFailure(errorResult({ errorMessage: undefined })),
+    ).toBe(false);
+    expect(isTransientRemoteFailure(errorResult({ exitCode: -1 }))).toBe(false);
+  });
+
+  it("falls back to stderr when errorMessage is missing", () => {
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: undefined, stderr: "502 Bad Gateway" }),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("sleepAbortable", () => {
+  it("resolves true when the full sleep elapses", async () => {
+    await expect(sleepAbortable(20)).resolves.toBe(true);
+  });
+
+  it("resolves false immediately when already aborted", async () => {
+    const c = new AbortController();
+    c.abort();
+    await expect(sleepAbortable(10_000, c.signal)).resolves.toBe(false);
+  });
+
+  it("resolves false when aborted mid-sleep (without waiting out the sleep)", async () => {
+    const c = new AbortController();
+    const started = Date.now();
+    const t = setTimeout(() => c.abort(), 30);
+    try {
+      await expect(sleepAbortable(10_000, c.signal)).resolves.toBe(false);
+    } finally {
+      clearTimeout(t);
+    }
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
+describe("withTransientRetry", () => {
+  const fastBackoff = [1, 2];
+  const transient = () =>
+    errorResult({ errorMessage: "503 service unavailable" });
+  const ok = (): SingleResult =>
+    errorResult({
+      stopReason: "stop",
+      errorMessage: undefined,
+      sawAgentEnd: true,
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: "done" }] },
+      ],
+    });
+
+  it("retries transient failures and returns the eventual success", async () => {
+    let calls = 0;
+    const { result, attempts } = await withTransientRetry(
+      async () => {
+        calls += 1;
+        return calls < 3 ? transient() : ok();
+      },
+      undefined,
+      3,
+      fastBackoff,
+    );
+    expect(calls).toBe(3);
+    expect(attempts).toBe(3);
+    expect(result.stopReason).toBe("stop");
+  });
+
+  it("gives up after maxAttempts on persistent transient failures", async () => {
+    let calls = 0;
+    const { result, attempts } = await withTransientRetry(
+      async () => {
+        calls += 1;
+        return transient();
+      },
+      undefined,
+      3,
+      fastBackoff,
+    );
+    expect(calls).toBe(3);
+    expect(attempts).toBe(3);
+    expect(result.stopReason).toBe("error");
+  });
+
+  it("does not retry non-transient failures (overflow fails fast)", async () => {
+    let calls = 0;
+    const { result, attempts } = await withTransientRetry(
+      async () => {
+        calls += 1;
+        return errorResult({ errorMessage: "400 status code (no body)" });
+      },
+      undefined,
+      3,
+      fastBackoff,
+    );
+    expect(calls).toBe(1);
+    expect(attempts).toBe(1);
+    expect(result.errorMessage).toBe("400 status code (no body)");
+  });
+
+  it("stops retrying when the signal aborts during backoff", async () => {
+    let calls = 0;
+    const c = new AbortController();
+    const p = withTransientRetry(
+      async () => {
+        calls += 1;
+        return transient();
+      },
+      c.signal,
+      3,
+      [10_000], // long backoff: only the abort can end this quickly
+    );
+    const t = setTimeout(() => c.abort(), 20);
+    try {
+      const { result, attempts } = await p;
+      expect(calls).toBe(1);
+      expect(attempts).toBe(1);
+      expect(result.stopReason).toBe("error");
+    } finally {
+      clearTimeout(t);
+    }
+  });
+
+  it("exposes sane defaults (3 attempts, growing backoff)", () => {
+    expect(SUBAGENT_MAX_ATTEMPTS).toBe(3);
+    expect(SUBAGENT_RETRY_BACKOFF_MS.length).toBeGreaterThanOrEqual(2);
+    expect(SUBAGENT_RETRY_BACKOFF_MS[1]).toBeGreaterThan(
+      SUBAGENT_RETRY_BACKOFF_MS[0],
+    );
   });
 });

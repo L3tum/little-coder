@@ -162,21 +162,29 @@ export function getFinalAssistantText(messages) {
 }
 
 export function getResultSummaryText(result) {
-  const finalText = getFinalAssistantText(result?.messages);
-  if (finalText) return finalText;
-
-  if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
-    return capErrorText(result.errorMessage.trim());
-  }
-
   const isError =
     (typeof result?.exitCode === "number" && result.exitCode > 0) ||
     result?.stopReason === "error" ||
     result?.stopReason === "aborted";
 
-  if (isError && typeof result?.stderr === "string" && result.stderr.trim()) {
-    return capErrorText(result.stderr.trim());
+  if (isError) {
+    // Lead with the ACTUAL error (the final assistant turn's errorMessage,
+    // else stderr) instead of whatever earlier assistant text the child
+    // wrote before it died — stale partial output must not masquerade as
+    // the subagent's answer. The partial output is kept below as context.
+    const error =
+      (typeof result?.errorMessage === "string" &&
+        result.errorMessage.trim()) ||
+      (typeof result?.stderr === "string" && result.stderr.trim()) ||
+      `subagent ${result?.stopReason ?? "failed"} (exit code ${result?.exitCode})`;
+    const partial = getFinalAssistantText(result?.messages).trim();
+    return partial
+      ? `${capErrorText(error)}\n\nPartial output before failure:\n${capErrorText(partial)}`
+      : capErrorText(error);
   }
+
+  const finalText = getFinalAssistantText(result?.messages);
+  if (finalText) return finalText;
 
   return "(no output)";
 }

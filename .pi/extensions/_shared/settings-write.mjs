@@ -4,8 +4,17 @@
 //
 //   - the TS extensions' updateGlobalSettings (permission-gate /allow /deny)
 //     via _shared/little-coder-settings.mjs (loaded through jiti);
+//   - the subagent extension's little-coder.settings block (model/thinking
+//     overrides, subagent_level, trustProjectAgents) via settings.ts
+//     (loaded through jiti);
 //   - the plain-.mjs launcher (bin/little-coder.mjs step 8, via
 //     bin/launcher-internal.mjs writeGlobalSettingsJson).
+//
+// The lock-FREE atomic write protocol (0600 temp + rename, O_EXCL | O_NOFOLLOW
+// temp, symlink refusal) lives in the sibling atomic-write.mjs and is
+// re-exported from here for the TS importers; callers that deliberately
+// write WITHOUT the shared settings lock (the launcher's update-check cache)
+// import atomic-write.mjs directly.
 //
 // Plain dependency-light ESM (node:fs + proper-lockfile, which is a direct
 // little-coder dependency): importable both from the launcher's native ESM
@@ -27,7 +36,8 @@
 //      O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW at 0o600, written, then renamed
 //      over the target — a reader never sees a torn file, a stale temp from
 //      a crashed writer (pid reuse / crash between create and rename) is
-//      unlinked and retried once, and a planted symlink is never followed;
+//      unlinked and retried once, and a planted symlink is never followed
+//      (the protocol itself lives in atomic-write.mjs);
 //   4. fail-safe: a malformed existing file is REFUSED (never clobbered) —
 //      updateSettingsFile reports it as {ok:false} with one reconciled
 //      message (the TS wording), which the launcher wrapper re-throws.
@@ -41,29 +51,15 @@
 // Relocating this directory requires updating every bin/ import edge and the
 // relative import in little-coder-settings.mjs first.
 
-import fs, {
-  closeSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import lockfile from "proper-lockfile";
+import { atomicWriteJson } from "./atomic-write.mjs";
 
-// Node's ESM wrapper for node:fs does not expose the O_* open flags as
-// named exports (plain `import { O_WRONLY } from "node:fs"` is a
-// SyntaxError in ESM, and undefined under vite-node) — read them from
-// fs.constants, which is the platform-correct source under both ESM and
-// CJS (jiti). Same convention as little-coder-settings.mjs.
-const O_WRONLY = fs.constants.O_WRONLY;
-const O_CREAT = fs.constants.O_CREAT;
-const O_EXCL = fs.constants.O_EXCL;
-const O_NOFOLLOW = fs.constants.O_NOFOLLOW;
+// Re-exported for the TS importers (settings-write.d.mts declares it): the
+// implementation lives in atomic-write.mjs (shared with the lock-free
+// launcher cache writer).
+export { atomicWriteJson };
 
 const SETTINGS_LOCK_MAX_ATTEMPTS = 10;
 const SETTINGS_LOCK_DELAY_MS = 20;
@@ -141,91 +137,14 @@ export async function acquireSettingsLock(settingsPath, opts = {}) {
 }
 
 /**
- * Open the temp file exclusively (O_EXCL: never truncate a pre-existing
- * temp; O_NOFOLLOW: never follow a planted symlink). A stale temp left by
- * a crashed writer (pid reuse, or crash between create and rename) makes
- * the first open fail EEXIST — unlink it once and retry; a second failure
- * (e.g. a racing writer recreated it in between) is rethrown raw.
- */
-function openTmpExclusive(tmp) {
-  try {
-    return openSync(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600);
-  } catch (err) {
-    if (err instanceof Error && err.code === "EEXIST") {
-      // The temp path already exists. Distinguish the two cases:
-      //   - a regular file → a stale temp left by a crashed writer (pid reuse
-      //     or a crash between create and rename): unlink once and retry.
-      //   - a symlink → never delete or follow it: rethrow (refuse). A planted
-      //     symlink must not be replaced with our regular file.
-      let st;
-      try {
-        st = lstatSync(tmp);
-      } catch {
-        st = null; // vanished between the open and the lstat
-      }
-      if (st !== null && st.isSymbolicLink()) throw err;
-      try {
-        unlinkSync(tmp);
-      } catch {
-        /* already gone */
-      }
-      return openSync(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600);
-    }
-    throw err;
-  }
-}
-
-/**
- * Atomically write `value` as pretty JSON to `path` (0o600 temp + rename;
- * creates parent dirs). Synchronous — the file is small; the LOCK around
- * the surrounding read-modify-write is the async part.
- */
-export function atomicWriteJson(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp-${process.pid}`;
-  let fd;
-  try {
-    fd = openTmpExclusive(tmp);
-    try {
-      // writeSync can in theory partial-write; loop to a FULL write so a
-      // rename never lands a truncated (malformed) file where there was a valid
-      // one — the "a reader never sees a torn file" guarantee, made airtight.
-      const buf = Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf-8");
-      let offset = 0;
-      while (offset < buf.length) {
-        offset += writeSync(fd, buf, offset, buf.length - offset);
-      }
-    } finally {
-      closeSync(fd);
-      fd = undefined;
-    }
-    renameSync(tmp, path);
-  } catch (err) {
-    if (fd !== undefined) {
-      try {
-        closeSync(fd);
-      } catch {
-        /* already closed */
-      }
-    }
-    // Never unlink a symlink at the temp path — only remove a temp file we
-    // created (a regular file). A planted symlink is left intact (refused).
-    try {
-      const st = lstatSync(tmp);
-      if (!st.isSymbolicLink()) unlinkSync(tmp);
-    } catch {
-      /* renamed, never created, or a symlink we must not touch */
-    }
-    throw err;
-  }
-}
-
-/**
  * Read-modify-write a settings file under the shared lock. `mutate`
  * receives the parsed top-level JSON document (a plain object; {} when the
  * file does not exist yet) and may modify it in place. Idempotent mutates
  * are applied to a FRESH under-lock read, so a concurrent writer's change
- * is not clobbered.
+ * is not clobbered. Returning `false` from `mutate` skips the write
+ * entirely (no-op update — e.g. an /allow of an already-allowed prefix):
+ * the file's mtime is left untouched and the result is still
+ * `{ ok: true, … }` with the read document.
  *
  * `opts` (optional) = `{ staleMs?, maxRetries?, retryDelayMs? }` tunes the
  * lock retry budget (production defaults in DEFAULT_LOCK_OPTS); primarily
@@ -279,8 +198,10 @@ export async function updateSettingsFile(settingsPath, mutate, opts = {}) {
       }
       doc = parsed;
     }
-    mutate(doc);
-    atomicWriteJson(settingsPath, doc);
+    // A mutate that returns false is a no-op (nothing changed under the
+    // lock): skip the write so the file's mtime is left untouched.
+    const skipWrite = mutate(doc) === false;
+    if (!skipWrite) atomicWriteJson(settingsPath, doc);
     return { ok: true, path: settingsPath, value: doc };
   } catch (err) {
     return { ok: false, path: settingsPath, error: errMsg(err) };

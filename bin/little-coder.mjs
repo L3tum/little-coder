@@ -97,11 +97,29 @@ let piPkgVersion;
 // Test/debug hook: LITTLE_CODER_PI_ENTRY overrides the resolved pi entry (a
 // stub child script for the hermetic signal-propagation test, or a custom pi
 // entry). Bypasses the node_modules resolution entirely.
+//
+// Security gate: because that bypass is a direct arbitrary-code-execution
+// surface if an attacker can set the environment, the override is honored
+// ONLY behind an explicit non-production flag (LITTLE_CODER_DEV=1|true|yes).
+// In a normal launch a stray LITTLE_CODER_PI_ENTRY is ignored with a loud
+// warning rather than executed — defense-in-depth, mirroring how the rest of
+// the launcher fails closed on misconfiguration.
 const piEntryOverride = process.env.LITTLE_CODER_PI_ENTRY;
-if (piEntryOverride) {
+const devMode = /^(1|true|yes)$/i.test(process.env.LITTLE_CODER_DEV ?? "");
+if (piEntryOverride && devMode) {
   piEntry = resolve(piEntryOverride);
   piPkgVersion = ""; // not a real bundled pi; version is unused for a stub
+} else if (piEntryOverride) {
+  console.error(
+    `little-coder: ignoring LITTLE_CODER_PI_ENTRY override — it is a test/` +
+      `debug hook and requires LITTLE_CODER_DEV=1 to take effect. The bundled` +
+      ` pi will be used for this run.`,
+  );
+  piEntry = undefined; // fall through to node_modules resolution below
 } else {
+  piEntry = undefined;
+}
+if (piEntry === undefined) {
   try {
     const piPkgJson = JSON.parse(
       readFileSync(join(piPkgRoot, "package.json"), "utf-8"),

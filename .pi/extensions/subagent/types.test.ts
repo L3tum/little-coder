@@ -399,6 +399,28 @@ describe("isResultSuccess / isResultError", () => {
     expect(isResultSuccess(r)).toBe(false);
     expect(isResultError(r)).toBe(true);
   });
+
+  it("treats an error-ended run with prior assistant text as error (no stale-success)", () => {
+    // Regression: a child whose FINAL LLM call failed (stopReason "error")
+    // still emitted agent_end and has earlier assistant text — it must not
+    // be classified as success just because stale partial output exists.
+    // (This misclassification is what made remote errors invisible: the
+    // parent saw "The bash tool isn't available..." instead of the 400/5xx.)
+    const r = makeResult({
+      exitCode: 0,
+      sawAgentEnd: true,
+      stopReason: "error",
+      errorMessage: "503 service unavailable",
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "partial work..." }],
+        },
+      ],
+    });
+    expect(isResultSuccess(r)).toBe(false);
+    expect(isResultError(r)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -483,6 +505,21 @@ describe("hasSemanticCompletion", () => {
     ).toBe(false);
   });
 
+  it("returns false when the last assistant turn ended in an LLM error", () => {
+    // The child may have finished a turn with text, then hit a remote error
+    // on the next call: agent_end fires and stale text exists, but the run
+    // did not complete.
+    expect(
+      hasSemanticCompletion({
+        sawAgentEnd: true,
+        stopReason: "error",
+        messages: [
+          { role: "assistant", content: [{ type: "text", text: "partial" }] },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it("returns false with sawAgentEnd but no assistant output", () => {
     expect(
       hasSemanticCompletion({
@@ -556,12 +593,14 @@ describe("normalizeCompletedResult", () => {
     expect(r.stderr).toBe("Subagent was aborted.");
   });
 
-  it("exitCode > 0 + semantic success: exitCode → 0, stopReason cleared", () => {
+  it("exitCode > 0 + clean semantic success: exitCode → 0, stopReason cleared", () => {
+    // The child produced a real final answer (clean stop + text +
+    // agent_end) but exited non-zero for an unrelated shutdown reason —
+    // the semantic result wins.
     const r = makeResult({
       exitCode: 1,
-      stopReason: "error" as const,
-      errorMessage: "stderr text",
-      stderr: "stderr text",
+      stopReason: "stop" as const,
+      stderr: "graceful-exit warning",
       sawAgentEnd: true,
       messages: [
         { role: "assistant", content: [{ type: "text", text: "done" }] },
@@ -569,9 +608,28 @@ describe("normalizeCompletedResult", () => {
     });
     normalizeCompletedResult(r, false);
     expect(r.exitCode).toBe(0);
-    expect(r.stopReason).toBeUndefined();
-    // errorMessage is preserved when it matches stderr
-    expect(r.errorMessage).toBeUndefined();
+    // stopReason "stop" is the child's real final turn — it is kept.
+    expect(r.stopReason).toBe("stop");
+  });
+
+  it("exitCode > 0 + error final turn: NOT downgraded (the error is real)", () => {
+    // Regression: a child whose FINAL LLM call failed used to be downgraded
+    // to success because stale assistant text + sawAgentEnd looked like
+    // completion — that hid the remote error from the parent model.
+    const r = makeResult({
+      exitCode: 1,
+      stopReason: "error" as const,
+      errorMessage: "503 service unavailable",
+      stderr: "503 service unavailable",
+      sawAgentEnd: true,
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: "partial" }] },
+      ],
+    });
+    normalizeCompletedResult(r, false);
+    expect(r.exitCode).toBe(1);
+    expect(r.stopReason).toBe("error");
+    expect(r.errorMessage).toBe("503 service unavailable");
   });
 
   it("exitCode > 0 + no semantic success: stopReason → error", () => {

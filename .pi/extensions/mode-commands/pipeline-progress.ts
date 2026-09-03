@@ -19,7 +19,7 @@
 import { randomBytes } from "node:crypto";
 import { Container, Text, type TUI } from "@earendil-works/pi-tui";
 import {
-  getDisplayItems,
+  getLastDisplayItem,
   getFinalOutput,
   type SingleResult,
 } from "../subagent/api.js";
@@ -29,14 +29,26 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Minimal theme surface the widget needs (pi's interactive Theme satisfies
- *  this; tests can pass a no-op substitute). */
+ *  this; tests can pass a no-op substitute).
+ *
+ *  WHY THIS ASSIGNS FROM pi's Theme (undocumented bivariance — don't "fix"
+ *  it): pi's Theme declares `fg`/`bold` as METHODS, while the properties
+ *  here are FUNCTION-TYPED. Function-typed properties check parameter
+ *  positions CONTRAVariantly (strictFunctionTypes), but method declarations
+ *  check BIVARIANTLY — the bivariance on pi's Theme side is what makes the
+ *  narrower/overloaded real signatures assignable to these. Keep this type
+ *  as-is; if pi ever flips its Theme to function-typed properties, this
+ *  widget factory stops compiling and that is the signal to revisit it. */
 export type ProgressTheme = {
   fg: (color: string, text: string) => string;
   bold: (text: string) => string;
 };
 
 /** Widget factory shape pi's setWidget expects for component content. */
-export type ProgressWidgetFactory = (tui: TUI, theme: ProgressTheme) => Container;
+export type ProgressWidgetFactory = (
+  tui: TUI,
+  theme: ProgressTheme,
+) => Container;
 
 /** Structural slice of the command context this module touches. `setWidget`
  *  is declared with METHOD syntax (not a function-typed property) so its
@@ -71,7 +83,16 @@ export interface PipelinePhaseState {
 // ---------------------------------------------------------------------------
 
 function truncateLine(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+  if (s.length <= max) return s;
+  // Back off one more code unit when the LAST KEPT character is a HIGH
+  // surrogate — keeping it without its low half would emit a lone (unpaired)
+  // surrogate before the ellipsis (the same bug class 6899bf8 fixed in
+  // truncateForThreading). Check end-1, the last kept index: if s[end] were a
+  // high surrogate its pair would be entirely excluded — no split.
+  let end = max - 1;
+  const code = s.charCodeAt(end - 1);
+  if (code >= 0xd800 && code <= 0xdbff) end -= 1;
+  return `${s.slice(0, end)}…`;
 }
 
 /** Compact one-arg summary for the common tool shapes (plain text — the
@@ -116,10 +137,15 @@ function summarizeArgs(name: string, args: Record<string, unknown>): string {
  * LAST display item of the streamed messages — the current tool call if the
  * phase is mid-tool, else "writing… (N chars)" while the final text is the
  * newest item. Empty history → "(starting…)".
+ *
+ * Producer-side O(1): getLastDisplayItem scans BACKWARDS and stops at the
+ * first hit, so the per-child-event cost no longer grows with history
+ * length (the old getDisplayItems built the full item list on every event,
+ * which is what made this O(N²) across a phase's lifetime — the 400 ms
+ * render throttle only bounded how OFTEN we paid it, not HOW MUCH).
  */
 export function activityLine(result: SingleResult): string {
-  const items = getDisplayItems(result.messages);
-  const last = items[items.length - 1];
+  const last = getLastDisplayItem(result.messages);
   if (last && last.type === "toolCall") {
     const arg = summarizeArgs(last.name, last.args);
     return arg ? `→ ${last.name} ${arg}` : `→ ${last.name}`;
@@ -183,7 +209,8 @@ export function buildProgressSpec(
     (p) => p.status === "ok" || p.status === "failed",
   ).length;
   const allDone = phases.length > 0 && done === phases.length;
-  const headerIcon = running > 0 ? "⏳" : failed > 0 ? "◐" : allDone ? "✓" : "○";
+  const headerIcon =
+    running > 0 ? "⏳" : failed > 0 ? "◐" : allDone ? "✓" : "○";
   const headerIconColor =
     running > 0 || failed > 0 ? "warning" : allDone ? "success" : "muted";
   const headerText =
@@ -238,13 +265,16 @@ export function buildProgressSpec(
 // ---------------------------------------------------------------------------
 
 /** Build the widget component for the current phase state (called once per
- *  setWidget by pi's interactive mode). */
+ *  setWidget by pi's interactive mode). `now` is injectable (default
+ *  Date.now()) so the elapsed-time display is deterministically testable —
+ *  the factory path below passes nothing and renders with the real clock. */
 export function renderProgressWidget(
   label: string,
   phases: PipelinePhaseState[],
   theme: ProgressTheme,
+  now: number = Date.now(),
 ): Container {
-  const spec = buildProgressSpec(label, phases, Date.now());
+  const spec = buildProgressSpec(label, phases, now);
   const container = new Container();
   container.addChild(
     new Text(
@@ -329,7 +359,10 @@ export function createPipelineProgress(
   const renderNow = () => {
     if (disposed) return;
     lastRenderAt = Date.now();
-    setWidget?.(widgetKey, makeProgressWidgetFactory(label, () => phases));
+    setWidget?.(
+      widgetKey,
+      makeProgressWidgetFactory(label, () => phases),
+    );
   };
 
   renderNow();

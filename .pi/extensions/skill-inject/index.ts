@@ -8,12 +8,12 @@ import {
   readdirSync,
   readFileSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseSkillFile } from "./frontmatter.ts";
+import { updateSettingsFile } from "../_shared/settings-write.mjs";
 
 export interface SkillEntry {
   name: string;
@@ -104,9 +104,16 @@ function readSettings(): any {
     return {};
   }
 }
-function writeSettings(settings: any): void {
-  mkdirSync(dirname(settingsPath()), { recursive: true });
-  writeFileSync(settingsPath(), JSON.stringify(settings, null, 2) + "\n");
+async function writeSettings(
+  settings: any,
+): Promise<{ ok: boolean; error?: string }> {
+  // The shared locked writer (same proper-lockfile lock the launcher stamp
+  // and permission-gate /allow take): the pre-migration version was an
+  // UNLOCKED, NON-ATOMIC full-document write of the same settings.json.
+  const res = await updateSettingsFile(settingsPath(), (doc) => {
+    Object.assign(doc, settings);
+  });
+  return res.ok ? { ok: true } : { ok: false, error: res.error };
 }
 function littleCoderSettings(): any {
   const s = readSettings();
@@ -126,14 +133,14 @@ function persistedBudget(
     ? value
     : undefined;
 }
-function setPersistedBudgets(
+async function setPersistedBudgets(
   knowledgeTokenBudget: number,
   skillTokenBudget: number,
-): void {
+): Promise<{ ok: boolean; error?: string }> {
   const s = littleCoderSettings();
   s.little_coder.knowledgeTokenBudget = knowledgeTokenBudget;
   s.little_coder.skillTokenBudget = skillTokenBudget;
-  writeSettings(s);
+  return writeSettings(s);
 }
 
 function inferType(sourceDir: string, fmType: unknown): string {
@@ -490,11 +497,18 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      setPersistedBudgets(knowledge, tools);
-      ctx.ui?.notify?.(
-        `Skill injection budgets set to knowledge=${knowledge}, tools=${tools}.`,
-        "info",
-      );
+      const r = await setPersistedBudgets(knowledge, tools);
+      if (r.ok) {
+        ctx.ui?.notify?.(
+          `Skill injection budgets set to knowledge=${knowledge}, tools=${tools}.`,
+          "info",
+        );
+      } else {
+        ctx.ui?.notify?.(
+          `Could not update settings: ${r.error ?? "unknown error"}`,
+          "error",
+        );
+      }
     },
   });
 

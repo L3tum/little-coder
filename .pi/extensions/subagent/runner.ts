@@ -27,8 +27,18 @@ import {
   type SubagentDetails,
   emptyUsage,
   getFinalOutput,
+  isResultError,
   normalizeCompletedResult,
 } from "./types.js";
+// Same retryable/overflow classification pi's own agent loop uses
+// (pi-coding-agent imports the same symbols from this entry point), so a
+// subagent-level retry means "transient" exactly the same way an in-session
+// retry does. pi-ai is a direct dependency, and pi-coding-agent (which we
+// already import) depends on it, so it is always resolvable.
+import {
+  isContextOverflow,
+  isRetryableAssistantError,
+} from "@earendil-works/pi-ai/compat";
 
 const isWindows = process.platform === "win32";
 const SIGKILL_TIMEOUT_MS = 5000;
@@ -57,6 +67,12 @@ export const TASK_INLINE_MAX_BYTES = 64 * 1024;
 // slot is a FULL pi process (~300-500 MB RSS).
 export const MAX_SUBAGENT_PARALLEL_TASKS = 8;
 export const DEFAULT_SUBAGENT_CONCURRENCY = 4;
+// Transient-remote-error retry budget: a child whose final LLM call hit a
+// transient provider/transport failure (rate limit, 5xx, dropped connection,
+// stream cut short) is respawned up to this many times TOTAL. Backoff is
+// per-retry (index = retry number - 1).
+export const SUBAGENT_MAX_ATTEMPTS = 3;
+export const SUBAGENT_RETRY_BACKOFF_MS = [5_000, 15_000];
 
 /** Maps signal names to their POSIX numbers for exit code computation. */
 const SIGNAL_MAP: Record<string, number> = {
@@ -326,10 +342,110 @@ export interface RunAgentOptions {
   makeDetails: (results: SingleResult[]) => SubagentDetails;
 }
 
+// ---------------------------------------------------------------------------
+// Transient-remote-error retry
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a finished subagent run failed on a TRANSIENT remote/provider error
+ * worth respawning for.
+ *
+ * Reuses pi-ai's own classifiers so "transient" means exactly what pi's
+ * in-session retries mean: overloaded/rate-limit/5xx/connection-drop/stream
+ * cut short. Deliberately NOT retryable (fail fast, a fresh spawn cannot
+ * fix them):
+ *  - context overflow (e.g. "400 status code (no body)" from Cerebras/
+ *    llama.cpp servers) — a re-spawn overflows again at the same point;
+ *  - quota/billing exhaustion (pi's NON_RETRYABLE_PROVIDER_LIMIT list);
+ *  - anything that is not stopReason "error" — aborts, timeouts, spawn
+ *    failures, prep failures, unknown agents.
+ */
+export function isTransientRemoteFailure(result: SingleResult): boolean {
+  if (result.exitCode === -1) return false; // never even spawned
+  if (result.stopReason !== "error") return false;
+  const text =
+    (typeof result.errorMessage === "string" && result.errorMessage.trim()) ||
+    (typeof result.stderr === "string" && result.stderr.trim()) ||
+    "";
+  if (!text) return false;
+  // isRetryableAssistantError/isContextOverflow only read stopReason and
+  // errorMessage off the AssistantMessage they are given.
+  const probe = {
+    stopReason: "error",
+    errorMessage: text,
+  } as Parameters<typeof isRetryableAssistantError>[0];
+  if (isContextOverflow(probe, 0)) return false;
+  return isRetryableAssistantError(probe);
+}
+
+/** Sleep up to `ms`; resolves `false` immediately if `signal` aborts first. */
+export function sleepAbortable(
+  ms: number,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(false);
+      return;
+    }
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(false);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Run `produce()` and, while it keeps failing on a transient remote error,
+ * back off and retry up to `maxAttempts` total spawns. Aborting the signal
+ * during a backoff stops retrying and returns the current (failed) result.
+ * The FIRST non-transient outcome — success or hard failure — is returned
+ * unchanged. Returns how many attempts were made so callers can annotate
+ * exhausted retries.
+ */
+export async function withTransientRetry(
+  produce: () => Promise<SingleResult>,
+  signal?: AbortSignal,
+  maxAttempts: number = SUBAGENT_MAX_ATTEMPTS,
+  backoffMs: number[] = SUBAGENT_RETRY_BACKOFF_MS,
+): Promise<{ result: SingleResult; attempts: number }> {
+  let result = await produce();
+  let attempts = 1;
+  while (
+    attempts < maxAttempts &&
+    !signal?.aborted &&
+    isTransientRemoteFailure(result)
+  ) {
+    const backoff = backoffMs[attempts - 1] ?? backoffMs[backoffMs.length - 1];
+    const completed = await sleepAbortable(backoff, signal);
+    if (!completed) break;
+    attempts += 1;
+    result = await produce();
+  }
+  return { result, attempts };
+}
+
 /**
  * Spawn a single subagent process and collect its results.
  *
  * Returns a SingleResult even on failure (exitCode > 0, stderr populated).
+ *
+ * Transient remote/provider failures (rate limit, 5xx, dropped connection,
+ * stream cut short — see isTransientRemoteFailure) are retried up to
+ * SUBAGENT_MAX_ATTEMPTS total spawns with backoff (SUBAGENT_RETRY_BACKOFF_MS);
+ * an exhausted budget is annotated into the returned error text. Context
+ * overflow, quota exhaustion, aborts, timeouts, and spawn/prep failures are
+ * never retried.
  */
 export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
   const {
@@ -375,30 +491,6 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       agent.model,
     );
   }
-
-  const result: SingleResult = {
-    agent: agentName,
-    agentSource: agent.source,
-    task,
-    exitCode: -1,
-    messages: [],
-    stderr: "",
-    usage: emptyUsage(),
-    model: agent.model,
-  };
-
-  const emitUpdate = () => {
-    if (!onUpdate) return;
-    onUpdate({
-      content: [
-        {
-          type: "text",
-          text: getFinalOutput(result.messages) || "(running...)",
-        },
-      ],
-      details: makeDetails([result]),
-    });
-  };
 
   // Write support files (system prompt, fork session snapshot, oversized task)
   // to temp files. A failure here (ENOSPC etc.) must NOT throw out of
@@ -463,7 +555,33 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     );
   }
 
-  try {
+  // One spawn attempt: fresh result object, its own event collection, and
+  // its own live-update closure. Retried by withTransientRetry below.
+  const runSingleAttempt = async (): Promise<SingleResult> => {
+    const attemptResult: SingleResult = {
+      agent: agentName,
+      agentSource: agent.source,
+      task,
+      exitCode: -1,
+      messages: [],
+      stderr: "",
+      usage: emptyUsage(),
+      model: agent.model,
+    };
+
+    const emitUpdate = () => {
+      if (!onUpdate) return;
+      onUpdate({
+        content: [
+          {
+            type: "text",
+            text: getFinalOutput(attemptResult.messages) || "(running...)",
+          },
+        ],
+        details: makeDetails([attemptResult]),
+      });
+    };
+
     const piArgs = buildPiArgs(
       agent,
       promptTmpPath,
@@ -546,7 +664,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       };
 
       const flushLine = (line: string) => {
-        if (processPiJsonLine(line, result)) emitUpdate();
+        if (processPiJsonLine(line, attemptResult)) emitUpdate();
         maybeFinishFromAgentEnd();
       };
 
@@ -557,10 +675,10 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       };
 
       const maybeFinishFromAgentEnd = () => {
-        if (!result.sawAgentEnd || didClose || settled) return;
+        if (!attemptResult.sawAgentEnd || didClose || settled) return;
         clearSemanticCompletionTimer();
         semanticCompletionTimer = setTimeout(() => {
-          if (didClose || settled || !result.sawAgentEnd) return;
+          if (didClose || settled || !attemptResult.sawAgentEnd) return;
           if (buffer.trim()) {
             flushBufferedLines(buffer);
             buffer = "";
@@ -581,7 +699,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       };
 
       const onStderrData = (chunk: Buffer) => {
-        result.stderr += chunk.toString();
+        attemptResult.stderr += chunk.toString();
       };
 
       proc.stdout!.on("data", onStdoutData);
@@ -592,8 +710,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
         if (buffer.trim()) flushBufferedLines(buffer);
         if (signal) {
           const signalNumber = SIGNAL_MAP[signal] ?? 0;
-          result.stderr +=
-            (result.stderr.trim() ? "\n" : "") +
+          attemptResult.stderr +=
+            (attemptResult.stderr.trim() ? "\n" : "") +
             `Process killed by signal ${signal}.`;
           finish(128 + signalNumber);
         } else {
@@ -602,7 +720,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       });
 
       proc.on("error", (err) => {
-        result.stderr += (result.stderr.trim() ? "\n" : "") + err.message;
+        attemptResult.stderr +=
+          (attemptResult.stderr.trim() ? "\n" : "") + err.message;
         finish(1);
       });
 
@@ -618,8 +737,29 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
       }
     });
 
-    result.exitCode = exitCode;
-    return normalizeCompletedResult(result, wasAborted);
+    attemptResult.exitCode = exitCode;
+    return normalizeCompletedResult(attemptResult, wasAborted);
+  };
+
+  try {
+    const { result, attempts } = await withTransientRetry(
+      runSingleAttempt,
+      signal,
+    );
+    if (attempts > 1 && isResultError(result)) {
+      // Make it visible to the parent model that the failure survived the
+      // full retry budget (otherwise the error text reads like a one-shot).
+      const note = `after ${attempts} attempts`;
+      if (
+        typeof result.errorMessage === "string" &&
+        result.errorMessage.trim()
+      ) {
+        result.errorMessage = `${result.errorMessage} (${note})`;
+      } else if (typeof result.stderr === "string" && result.stderr.trim()) {
+        result.stderr = `${result.stderr} (${note})`;
+      }
+    }
+    return result;
   } finally {
     cleanupTempDir(promptTmpDir);
     if (!forkSessionShared) cleanupTempDir(forkSessionTmpDir);
@@ -635,12 +775,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
  * Map over items with a bounded number of concurrent workers.
  *
  * Rejection handling: each worker catches its item's rejection and records the
- * FIRST one instead of letting it escape as an unhandled rejection. Sibling
- * workers keep running (same fan-out as a plain Promise.all), and after ALL
- * workers settle the first recorded error is rethrown — so a failing item can
- * never orphan sibling workers into unhandled-rejection territory (which
- * crashes the process under Node's default handler) while still surfacing the
- * failure to the caller.
+ * FIRST one instead of letting it escape as an unhandled rejection. On the
+ * first failure the pool STOPS SCHEDULING new items (fail-fast on the
+ * work-stealing loop) — a rejecting item no longer cascades into spawning
+ * every remaining worker (a full pi process each, ~300–500 MB) before the
+ * error surfaces. Items ALREADY in flight (≤ `concurrency` of them) keep
+ * running to completion, and after ALL in-flight workers settle the first
+ * recorded error is rethrown — so a failing item can never orphan siblings
+ * into unhandled-rejection territory (which crashes the process under Node's
+ * default handler) while still surfacing the failure to the caller.
  */
 export async function mapConcurrent<TIn, TOut>(
   items: TIn[],
@@ -658,15 +801,20 @@ export async function mapConcurrent<TIn, TOut>(
   const results: TOut[] = new Array(items.length);
   let nextIndex = 0;
   let firstError: unknown;
+  // Once set, workers stop pulling (spawning) new items — only the already
+  // in-flight ones (≤ limit) are allowed to settle.
+  let scheduling = true;
 
   const worker = async () => {
     while (true) {
+      if (!scheduling) return; // fail-fast: don't spawn more work
       const i = nextIndex++;
       if (i >= items.length) return;
       try {
         results[i] = await fn(items[i], i);
       } catch (err) {
         if (firstError === undefined) firstError = err;
+        scheduling = false; // signal siblings to stop scheduling
       }
     }
   };

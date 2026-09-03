@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -1274,6 +1275,21 @@ describe("per-repo bash allowlist (/allow, /deny)", () => {
       ]);
     });
 
+    it("no-op /allow (already allowed) does NOT rewrite the file (mtime unchanged)", async () => {
+      const r1 = await allowBashPrefix("make fmt", projectCwd);
+      expect(r1.added).toBe(true);
+      const settingsFile = join(agentDir, "settings.json");
+      // Force a distinct mtime so a spurious rewrite would be observable
+      // without a sleep (coarse filesystems can share mtimeMs).
+      utimesSync(settingsFile, new Date(), new Date(Date.now() + 60_000));
+      const before = statSync(settingsFile).mtimeMs;
+      const r2 = await allowBashPrefix("make fmt", projectCwd);
+      expect(r2).toMatchObject({ ok: true, added: false });
+      // The no-op must have skipped the write entirely (shared writer's
+      // mutate-returned-false path) — the forced mtime survives.
+      expect(statSync(settingsFile).mtimeMs).toBe(before);
+    });
+
     it("converts a legacy array to the object form, preserving globals under 'global'", async () => {
       writeGlobalSettings({
         defaultProjectTrust: "ask",
@@ -1547,6 +1563,30 @@ describe("splitGlobalFlag (--global parsing)", () => {
 });
 
 describe("BUILTIN_SAFE_PREFIXES whitelist coverage", () => {
+  it("non-space-terminated prefixes do not match longer words (negative pins)", () => {
+    const prev = process.env.LITTLE_CODER_BASH_ALLOW;
+    delete process.env.LITTLE_CODER_BASH_ALLOW;
+    try {
+      const prefixes = getSafePrefixes();
+      // "flutter test" must not silently broaden to "flutter testing"/the
+      // British-spelling "flutter analyse" (a bare startsWith match used to
+      // let these through); same class of bug: "ls" vs "lsof", "pytest" vs
+      // "pytestx", "git status" vs "git statusx".
+      expect(isSafeBash("flutter testing", prefixes)).toBe(false);
+      expect(isSafeBash("flutter analyse", prefixes)).toBe(false);
+      expect(isSafeBash("lsof /tmp", prefixes)).toBe(false);
+      expect(isSafeBash("pytestx", prefixes)).toBe(false);
+      expect(isSafeBash("git statusx", prefixes)).toBe(false);
+      // …while the intended commands still pass:
+      expect(isSafeBash("flutter test", prefixes)).toBe(true);
+      expect(isSafeBash("flutter test --coverage", prefixes)).toBe(true);
+      expect(isSafeBash("ls -la", prefixes)).toBe(true);
+      expect(isSafeBash("git status", prefixes)).toBe(true);
+    } finally {
+      process.env.LITTLE_CODER_BASH_ALLOW = prev;
+    }
+  });
+
   it("every builtin prefix passes isSafeBash", () => {
     const prev = process.env.LITTLE_CODER_BASH_ALLOW;
     delete process.env.LITTLE_CODER_BASH_ALLOW;

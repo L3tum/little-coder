@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  resolveDelegationDepthConfig,
-} from "./depth.js";
+import { resolveDelegationDepthConfig } from "./depth.js";
 
 // The pipeline (mode-commands) and the subagent tool both call this as their
 // single delegation gate; it resolves maxDepth with the precedence

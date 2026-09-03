@@ -357,24 +357,42 @@ describe("settings read/write", () => {
     expect(agents[0].model).toBe("default-model");
   });
 
-  it("writeSettings performs atomic write and invalidates cache", () => {
+  it("mutateLittleCoderSettings performs locked atomic write and invalidates cache", async () => {
     const settingsDir = join(testHome, ".pi", "agent");
     mkdirSync(settingsDir, { recursive: true });
 
-    // Write first settings
-    __subagentTest.writeSettings({ little_coder: { subagent_level: "low" } });
+    // Write first settings through the shared locked writer
+    const r = await __subagentTest.mutateLittleCoderSettings((lc) => {
+      lc.subagent_level = "low";
+    });
+    expect(r.ok).toBe(true);
 
     // Read should return new settings (cache was invalidated)
     __subagentTest.__resetSettingsCache();
     const settings = __subagentTest.readSettings();
     expect(settings.little_coder?.subagent_level).toBe("low");
 
-    // Verify no tmp file remains (any shape: the old fixed name or the new
-    // randomized settings.json.tmp-<hex> name — nothing tmp may be left).
+    // Verify no tmp file remains (any shape: nothing tmp may be left).
     const leftovers = readdirSync(settingsDir).filter((f) =>
       f.startsWith("settings.json.tmp"),
     );
     expect(leftovers).toEqual([]);
+  });
+
+  it("mutateLittleCoderSettings refuses a malformed settings.json (never clobbers)", async () => {
+    const settingsDir = join(testHome, ".pi", "agent");
+    mkdirSync(settingsDir, { recursive: true });
+    const settingsPath = join(settingsDir, "settings.json");
+    writeFileSync(settingsPath, "{ not valid json");
+    __subagentTest.__resetSettingsCache();
+
+    const r = await __subagentTest.mutateLittleCoderSettings((lc) => {
+      lc.subagent_level = "low";
+    });
+    expect(r.ok).toBe(false);
+    // The malformed file must survive untouched — the pre-migration unlocked
+    // writer read → {} → wrote, destroying the user's file.
+    expect(readFileSync(settingsPath, "utf-8")).toBe("{ not valid json");
   });
 
   it("uses mtime cache on unchanged file", () => {
@@ -428,12 +446,15 @@ describe("settings read/write", () => {
     expect(settings.little_coder?.subagent_level).toBe("high");
   });
 
-  it("PI_CODING_AGENT_DIR: writeSettings writes the FILE <dir>/settings.json (regression: env branch must append settings.json, not point at the directory)", () => {
+  it("PI_CODING_AGENT_DIR: mutateLittleCoderSettings writes the FILE <dir>/settings.json (regression: env branch must append settings.json, not point at the directory)", async () => {
     const agentDir = join(testHome, "lc-agent");
     process.env.PI_CODING_AGENT_DIR = agentDir;
     __subagentTest.__resetSettingsCache();
 
-    __subagentTest.writeSettings({ little_coder: { subagent_level: "low" } });
+    const r = await __subagentTest.mutateLittleCoderSettings((lc) => {
+      lc.subagent_level = "low";
+    });
+    expect(r.ok).toBe(true);
 
     const file = join(agentDir, "settings.json");
     expect(existsSync(file)).toBe(true);
@@ -441,13 +462,16 @@ describe("settings read/write", () => {
     expect(raw.little_coder.subagent_level).toBe("low");
   });
 
-  it("PI_CODING_AGENT_DIR supports ~ expansion (POSIX)", () => {
+  it("PI_CODING_AGENT_DIR supports ~ expansion (POSIX)", async () => {
     if (process.platform === "win32") return; // os.homedir() ignores HOME there
     const agentDir = "~/tilde-agent";
     process.env.PI_CODING_AGENT_DIR = agentDir;
     __subagentTest.__resetSettingsCache();
 
-    __subagentTest.writeSettings({ little_coder: { subagent_level: "high" } });
+    const r = await __subagentTest.mutateLittleCoderSettings((lc) => {
+      lc.subagent_level = "high";
+    });
+    expect(r.ok).toBe(true);
 
     const file = join(testHome, "tilde-agent", "settings.json");
     expect(existsSync(file)).toBe(true);

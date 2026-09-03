@@ -879,6 +879,11 @@ describe.skipIf(!existsSync("/proc"))(
               env: {
                 ...process.env,
                 LITTLE_CODER_NO_UPDATE_CHECK: "1",
+                // The PI_ENTRY override is a test/debug hook gated behind
+                // LITTLE_CODER_DEV (it bypasses node_modules resolution, so a
+                // stray env var in a real launch must not execute arbitrary
+                // code). Set it so the hermetic stub child is used.
+                LITTLE_CODER_DEV: "1",
                 LITTLE_CODER_PI_ENTRY: stubPath,
                 PI_CODING_AGENT_DIR: agentDir,
               },

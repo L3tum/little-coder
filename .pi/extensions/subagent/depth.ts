@@ -94,6 +94,25 @@ export function getPreventCyclesFlagFromArgv(
   return null;
 }
 
+const EXPECTED_NON_NEG_INT = "Expected a non-negative integer.";
+const EXPECTED_BOOL = "Expected true/false.";
+
+/** The one warning shape every invalid-config check in this module shares:
+ *  `[pi-subagent] Ignoring invalid <source>="<value>". <expected>` — collapsed
+ *  into a helper so the 8 call sites stay one-liners. `value === undefined`
+ *  drops the `="…"` (the stack check warns on shape, not a printable value). */
+function warnIfInvalid(
+  source: string,
+  value: string | undefined,
+  expected: string,
+): void {
+  console.warn(
+    value === undefined
+      ? `[pi-subagent] Ignoring invalid ${source} value. ${expected}`
+      : `[pi-subagent] Ignoring invalid ${source}="${value}". ${expected}`,
+  );
+}
+
 export function resolveDelegationDepthConfig(
   pi: ExtensionAPI,
 ): DelegationDepthConfig {
@@ -105,17 +124,17 @@ export function resolveDelegationDepthConfig(
     depthRaw.trim() !== "" &&
     parsedDepth === null
   ) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_DEPTH_ENV}="${depthRaw}". Expected a non-negative integer.`,
-    );
+    warnIfInvalid(SUBAGENT_DEPTH_ENV, depthRaw, EXPECTED_NON_NEG_INT);
   }
   const currentDepth = parsedDepth ?? 0;
 
   const stackRaw = process.env[SUBAGENT_STACK_ENV];
   const ancestorAgentStack = parseAgentStack(stackRaw);
   if (stackRaw !== undefined && ancestorAgentStack === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_STACK_ENV} value. Expected a JSON array of agent names.`,
+    warnIfInvalid(
+      SUBAGENT_STACK_ENV,
+      undefined,
+      "Expected a JSON array of agent names.",
     );
   }
 
@@ -126,18 +145,14 @@ export function resolveDelegationDepthConfig(
     envMaxDepthRaw.trim() !== "" &&
     envMaxDepth === null
   ) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_MAX_DEPTH_ENV}="${envMaxDepthRaw}". Expected a non-negative integer.`,
-    );
+    warnIfInvalid(SUBAGENT_MAX_DEPTH_ENV, envMaxDepthRaw, EXPECTED_NON_NEG_INT);
   }
 
   const argvFlagRaw = getMaxDepthFlagFromArgv(process.argv);
   const argvFlagMaxDepth =
     argvFlagRaw !== null ? parseNonNegativeInt(argvFlagRaw) : null;
   if (argvFlagRaw !== null && argvFlagMaxDepth === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-max-depth value "${argvFlagRaw}". Expected a non-negative integer.`,
-    );
+    warnIfInvalid("--subagent-max-depth", argvFlagRaw, EXPECTED_NON_NEG_INT);
   }
 
   const runtimeFlagValue = pi.getFlag("subagent-max-depth");
@@ -150,8 +165,10 @@ export function resolveDelegationDepthConfig(
     typeof runtimeFlagValue === "string" &&
     runtimeFlagMaxDepth === null
   ) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-max-depth value "${runtimeFlagValue}". Expected a non-negative integer.`,
+    warnIfInvalid(
+      "--subagent-max-depth",
+      runtimeFlagValue,
+      EXPECTED_NON_NEG_INT,
     );
   }
 
@@ -162,8 +179,10 @@ export function resolveDelegationDepthConfig(
     envPreventCyclesRaw.trim() !== "" &&
     envPreventCycles === null
   ) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_PREVENT_CYCLES_ENV}="${envPreventCyclesRaw}". Expected true/false.`,
+    warnIfInvalid(
+      SUBAGENT_PREVENT_CYCLES_ENV,
+      envPreventCyclesRaw,
+      EXPECTED_BOOL,
     );
   }
 
@@ -173,8 +192,10 @@ export function resolveDelegationDepthConfig(
       ? argvPreventCyclesRaw
       : parseBoolean(argvPreventCyclesRaw);
   if (typeof argvPreventCyclesRaw === "string" && argvPreventCycles === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-prevent-cycles value "${argvPreventCyclesRaw}". Expected true/false.`,
+    warnIfInvalid(
+      "--subagent-prevent-cycles",
+      argvPreventCyclesRaw,
+      EXPECTED_BOOL,
     );
   }
 
@@ -185,8 +206,10 @@ export function resolveDelegationDepthConfig(
     runtimePreventCyclesRaw !== undefined &&
     runtimePreventCycles === null
   ) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-prevent-cycles value "${String(runtimePreventCyclesRaw)}". Expected true/false.`,
+    warnIfInvalid(
+      "--subagent-prevent-cycles",
+      String(runtimePreventCyclesRaw),
+      EXPECTED_BOOL,
     );
   }
 

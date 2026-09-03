@@ -44,12 +44,21 @@ export {
 } from "./depth.js";
 
 // Phase outcome classification (single source of "did this phase succeed?").
-export { toPhaseOutcome, type PhaseOutcome, type SingleResult } from "./types.js";
+export {
+  toPhaseOutcome,
+  type PhaseOutcome,
+  type SingleResult,
+} from "./types.js";
 
 // Output extraction (the pipeline's live-progress panel derives its
 // "currently doing" line from a phase's streaming messages).
+// getLastDisplayItem is the O(1) backward scan the panel uses on every
+// child event; getDisplayItems is the full list for the one-shot render
+// paths. DisplayItem is re-exported because it is the return type of
+// getLastDisplayItem (consumers of that function need the type).
 export {
   getFinalOutput,
   getDisplayItems,
+  getLastDisplayItem,
   type DisplayItem,
 } from "./types.js";

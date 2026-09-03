@@ -86,9 +86,17 @@ export function hasFinalAssistantOutput(
 
 /** Whether the child semantically completed the run. */
 export function hasSemanticCompletion(
-  r: Pick<SingleResult, "messages" | "sawAgentEnd">,
+  r: Pick<SingleResult, "messages" | "sawAgentEnd" | "stopReason">,
 ): boolean {
-  return Boolean(r.sawAgentEnd) && hasFinalAssistantOutput(r);
+  // A run whose LAST assistant turn ended in an LLM error (stopReason
+  // "error") did not complete, even though it emitted agent_end and has
+  // earlier assistant text — treating it as success would hide the real
+  // error behind stale partial output.
+  return (
+    Boolean(r.sawAgentEnd) &&
+    r.stopReason !== "error" &&
+    hasFinalAssistantOutput(r)
+  );
 }
 
 /** Whether a result should be treated as successful by the wrapper/UI. */
@@ -184,8 +192,8 @@ export function toPhaseOutcome(result: SingleResult): PhaseOutcome {
       error = `${result.agent} completed but produced no output`;
     } else if (isResultError(result)) {
       error =
-        capErrorText(result.stderr) ||
         capErrorText(result.errorMessage ?? "") ||
+        capErrorText(result.stderr) ||
         `${result.agent} failed (exit ${result.exitCode})`;
     } else {
       error = `${result.agent} failed (exit ${result.exitCode})`;
@@ -213,6 +221,33 @@ export function getDisplayItems(messages: Message[]): DisplayItem[] {
     }
   }
   return items;
+}
+
+/**
+ * Return only the LAST display-worthy item (the current tool call if the
+ * history ends mid-tool, else the newest text). Backward scan that stops at
+ * the first hit — O(1) in history length where getDisplayItems is O(N) in
+ * messages AND parts (it allocates a DisplayItem per part). For a live
+ * progress panel that re-derives the activity line on every child event,
+ * this turns per-event work from unbounded-history into constant. Same
+ * filter as getDisplayItems (assistant text/toolCall parts only).
+ */
+export function getLastDisplayItem(
+  messages: Message[],
+): DisplayItem | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role !== "assistant") continue;
+    for (let j = msg.content.length - 1; j >= 0; j--) {
+      const part = msg.content[j];
+      if (part.type === "text") {
+        return { type: "text", text: part.text };
+      } else if (part.type === "toolCall") {
+        return { type: "toolCall", name: part.name, args: part.arguments };
+      }
+    }
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------

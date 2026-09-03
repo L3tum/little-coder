@@ -1,18 +1,16 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-  existsSync,
-  readdirSync,
-  readFileSync,
-  statSync,
-} from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   autoresearchModePrompt,
   executionModePrompt,
   planModePrompt,
-  reviewModePrompt,
 } from "./mode-prompts.js";
-import { runDeepPlanPipeline, runThemedReviewPipeline } from "./pipeline.js";
+import {
+  runDeepPlanPipeline,
+  runFocusedReviewPipeline,
+  runThemedReviewPipeline,
+} from "./pipeline.js";
 
 function latestPlan(cwd: string): string | undefined {
   const dirs = [join(cwd, "plans"), cwd];
@@ -228,53 +226,8 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      ctx.ui?.notify?.(
-        `Starting focused review on: "${focusText.slice(0, 60)}${focusText.length > 60 ? "..." : ""}"`,
-        "info",
-      );
-
-      const focusedReviewPrompt = `${reviewModePrompt()}
-
-### Focus
-Review with specific attention to: ${focusText}
-
-### Approach
-1. Use \`git diff\` to identify recent changes, or use \`code_search\` and targeted reads to find relevant code.
-2. Examine files and code paths related to the focus area above.
-3. Use \`EvidenceAdd\` to record findings with file paths and line numbers.
-4. Rate each finding as CRITICAL, HIGH, MEDIUM, or LOW.
-
-### Output format — render as raw Markdown, NOT inside a code block
-
-## Review Verdict: [approve | comment | request_changes]
-
-### Critical Findings
-- [Any CRITICAL severity items]
-
-### High Priority
-- [HIGH severity items]
-
-### Medium/Low Priority
-- [Remaining items grouped by category]
-
-### Summary
-[2-3 sentence overall assessment]
-
-### Recommendation
-[What to do next: proceed as-is, address comments first, or block on fixes]
-
-Important: Output the Markdown above as plain rendered text. Do NOT wrap
-the entire response in a code block (triple backticks). The user will read
-this directly.`;
-
-      switchSystemPrompt(ctx, focusedReviewPrompt);
-
-      pi.sendUserMessage(
-        `Perform a focused code review with specific attention to: "${focusText}". ` +
-          `Use git diff to see what changed, then examine relevant files. ` +
-          `Return a structured review with a verdict (approve, comment, or request_changes) ` +
-          `and findings sorted by severity.`,
-        { deliverAs: "followUp" },
+      await runFocusedReviewPipeline(pi, ctx, focusText, (prompt) =>
+        switchSystemPrompt(ctx, prompt),
       );
     },
   });

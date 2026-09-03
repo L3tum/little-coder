@@ -32,9 +32,8 @@ import {
 } from "./depth.js";
 import {
   applySubagentOverrides,
-  littleCoderSettings,
   readSettings,
-  writeSettings,
+  mutateLittleCoderSettings,
   __resetSettingsCache,
   getSubagentLevel,
   setSubagentLevel,
@@ -45,6 +44,7 @@ import {
   subagentThinking,
   setSubagentThinking,
   LEVELS,
+  type SettingsWriteResult,
   type SubagentLevel,
 } from "./settings.js";
 import { type RenderTheme, renderCall, renderResult } from "./render.js";
@@ -178,12 +178,19 @@ export function areProjectAgentsTrusted(
   );
 }
 
-function trustProjectAgents(projectAgentsDir: string): void {
-  const s = littleCoderSettings();
-  const trusted = new Set(getTrustedProjectAgentDirs(s));
-  trusted.add(trustedProjectAgentsKey(projectAgentsDir));
-  s.little_coder.trusted_project_agent_dirs = Array.from(trusted).sort();
-  writeSettings(s);
+async function trustProjectAgents(projectAgentsDir: string): Promise<void> {
+  // Same shared locked writer as the /subagent-* commands: trust entries are
+  // just another little_coder field, so they take the same lost-update
+  // protection. No command ctx here to report into — a failed write is
+  // logged (the session still works for this run; trust just isn't
+  // persisted).
+  const r = await mutateLittleCoderSettings((lc) => {
+    const trusted = new Set(getTrustedProjectAgentDirs(readSettings()));
+    trusted.add(trustedProjectAgentsKey(projectAgentsDir));
+    lc.trusted_project_agent_dirs = Array.from(trusted).sort();
+  });
+  if (!r.ok)
+    console.warn(`[pi-subagent] Could not persist agent trust: ${r.error}`);
 }
 
 export function agentsForPrompt(
@@ -300,8 +307,27 @@ async function confirmProjectAgentsIfNeeded(
     "Trust project-local agents?",
     `Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories. This choice will be saved.`,
   );
-  if (approved && projectAgentsDir) trustProjectAgents(projectAgentsDir);
+  if (approved && projectAgentsDir) await trustProjectAgents(projectAgentsDir);
   return approved;
+}
+
+/** Report a little-coder settings write result to the command ctx:
+ *  success message on ok, an error notify on failure (a settings write must
+ *  never crash a /subagent-* command). */
+function notifySettingsResult(
+  ctx: {
+    ui?: {
+      notify?: (message: string, level?: "info" | "warning" | "error") => void;
+    };
+  },
+  r: SettingsWriteResult,
+  successMessage: string,
+): void {
+  if (r.ok) {
+    ctx.ui?.notify?.(successMessage, "info");
+  } else {
+    ctx.ui?.notify?.(`Could not update settings: ${r.error}`, "error");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -335,10 +361,10 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      setSubagentLevel(level);
-      ctx.ui?.notify?.(
+      notifySettingsResult(
+        ctx,
+        await setSubagentLevel(level),
         `Subagent level set to ${level}. Restart the session for tool registration changes to apply.`,
-        "info",
       );
     },
   });
@@ -367,8 +393,11 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      setSubagentModel(agent, model);
-      ctx.ui?.notify?.(`Subagent model for ${agent} set to ${model}.`, "info");
+      notifySettingsResult(
+        ctx,
+        await setSubagentModel(agent, model),
+        `Subagent model for ${agent} set to ${model}.`,
+      );
     },
   });
   pi.registerCommand("subagent-model-all", {
@@ -379,10 +408,10 @@ export default function (pi: ExtensionAPI) {
         ctx.ui?.notify?.("Usage: /subagent-model-all <model>", "warning");
         return;
       }
-      setSubagentModel("all", model);
-      ctx.ui?.notify?.(
+      notifySettingsResult(
+        ctx,
+        await setSubagentModel("all", model),
         `Subagent model for all agents set to ${model}.`,
-        "info",
       );
     },
   });
@@ -417,10 +446,10 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      setSubagentThinking(agent, thinking as SubagentLevel);
-      ctx.ui?.notify?.(
+      notifySettingsResult(
+        ctx,
+        await setSubagentThinking(agent, thinking as SubagentLevel),
         `Subagent thinking level for ${agent} set to ${thinking}.`,
-        "info",
       );
     },
   });
@@ -436,10 +465,10 @@ export default function (pi: ExtensionAPI) {
         );
         return;
       }
-      setSubagentThinking("all", thinking as SubagentLevel);
-      ctx.ui?.notify?.(
+      notifySettingsResult(
+        ctx,
+        await setSubagentThinking("all", thinking as SubagentLevel),
         `Subagent thinking level for all agents set to ${thinking}.`,
-        "info",
       );
     },
   });
@@ -944,7 +973,7 @@ export const __subagentTest = {
   getPreventCyclesFlagFromArgv,
   getCycleViolations,
   readSettings,
-  writeSettings,
+  mutateLittleCoderSettings,
   applySubagentOverrides,
   __resetSettingsCache,
   formatSubagentsList: __formatSubagentsList,

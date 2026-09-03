@@ -288,13 +288,19 @@ describe("fetchLatest", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns version on 200 response", async () => {
+  it("returns the highest valid-semver tag from the tag list", async () => {
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "2.0.0" }),
+      json: async () => [
+        { name: "v1.8.2" },
+        { name: "v1.8.10" }, // numerically higher than v1.8.2 (not lexicographic)
+        { name: "main" }, // not semver — ignored
+        { name: "release-please" }, // not semver — ignored
+        { name: "" }, // not semver — ignored
+      ],
     });
     const latest = await fetchLatest();
-    expect(latest).toBe("2.0.0");
+    expect(latest).toBe("v1.8.10");
   });
 
   it("returns null on non-200 response", async () => {
@@ -302,10 +308,18 @@ describe("fetchLatest", () => {
     expect(await fetchLatest()).toBeNull();
   });
 
-  it("returns null when response has no version field", async () => {
+  it("returns null when response is not a tag array (e.g. API error body)", async () => {
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({}),
+      json: async () => ({ message: "Not Found" }),
+    });
+    expect(await fetchLatest()).toBeNull();
+  });
+
+  it("returns null when the tag list has no valid-semver tag", async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => [{ name: "main" }, { name: "v-next" }],
     });
     expect(await fetchLatest()).toBeNull();
   });
@@ -320,6 +334,17 @@ describe("fetchLatest", () => {
       new DOMException("The operation was aborted", "AbortError"),
     );
     expect(await fetchLatest()).toBeNull();
+  });
+});
+
+describe("installTargetFor / displayVersion (pinning)", () => {
+  it("pins the install target to the discovered tag", async () => {
+    const { installTargetFor, displayVersion } =
+      await import("./update-check.mjs");
+    expect(installTargetFor("v1.8.2")).toBe("github:L3tum/little-coder#v1.8.2");
+    expect(installTargetFor("1.8.2")).toBe("github:L3tum/little-coder#1.8.2");
+    expect(displayVersion("v1.8.2")).toBe("1.8.2");
+    expect(displayVersion("1.8.2")).toBe("1.8.2");
   });
 });
 
@@ -352,11 +377,18 @@ describe("promptYesNo", () => {
     vi.restoreAllMocks();
   });
 
-  it("defaults to yes on empty input", async () => {
+  it("defaults to NO on empty input (explicit opt-in)", async () => {
     const { promptYesNo: pyn } = await import("./update-check.mjs");
     const promise = pyn("Test? ");
     questionCallback("");
-    expect(await promise).toBe(true);
+    expect(await promise).toBe(false);
+  });
+
+  it("returns false on 'N' (case-insensitive)", async () => {
+    const { promptYesNo: pyn } = await import("./update-check.mjs");
+    const promise = pyn("Test? ");
+    questionCallback("N");
+    expect(await promise).toBe(false);
   });
 
   it("returns true for 'y' and 'yes'", async () => {
@@ -448,7 +480,7 @@ describe("checkForUpdate", () => {
   });
 
   it("prints notice in notice-only mode without prompting", async () => {
-    writeCache("2.0.0", Date.now());
+    writeCache("v2.0.0", Date.now());
     const stderrLog = [];
     const origStderr = process.stderr.write;
     process.stderr.write = vi.fn((msg) => {
@@ -459,7 +491,15 @@ describe("checkForUpdate", () => {
       const result = await checkForUpdate("1.0.0", { skip: "notice-only" });
       expect(result).toBe(false);
       expect(stderrLog.join("").includes("available")).toBe(true);
-      expect(stderrLog.join("").includes("npm install -g")).toBe(true);
+      // The install target is PINNED to the cached tag — the displayed
+      // version is exactly what npm would fetch (no main-branch drift).
+      expect(stderrLog.join("")).toContain(
+        "npm install -g github:L3tum/little-coder#v2.0.0",
+      );
+      // The leading v is stripped for display, not doubled ("v2.0.0" tag
+      // renders as "v2.0.0", not "vv2.0.0").
+      expect(stderrLog.join("")).toContain("little-coder v2.0.0 is available");
+      expect(stderrLog.join("")).not.toContain("vv2.0.0");
     } finally {
       process.stderr.write = origStderr;
     }
@@ -622,7 +662,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
     writeCache("1.0.0", 0); // stale
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "2.1.0" }),
+      json: async () => [{ name: "2.1.0" }],
     });
     await refreshUpdateCache({ skip: "notice-only" });
     expect(global.fetch).toHaveBeenCalledTimes(1);
@@ -637,7 +677,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
     const onDisk = readFileSync(cachePath(), "utf-8");
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "9.9.9" }),
+      json: async () => [{ name: "9.9.9" }],
     });
     await refreshUpdateCache({
       skip: "notice-only",
@@ -651,7 +691,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
     writeCache("2.0.0", Date.now()); // fresh on disk — would short-circuit a re-read
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "3.0.0" }),
+      json: async () => [{ name: "3.0.0" }],
     });
     await refreshUpdateCache({
       skip: "notice-only",
@@ -664,7 +704,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
   it("injected garbage snapshot (no checkedAt): fetches", async () => {
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "4.0.0" }),
+      json: async () => [{ name: "4.0.0" }],
     });
     await refreshUpdateCache({
       skip: "notice-only",
@@ -677,7 +717,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
   it("fetches and writes a cache when none exists", async () => {
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "3.0.0" }),
+      json: async () => [{ name: "3.0.0" }],
     });
     await refreshUpdateCache({ skip: "notice-only" });
     expect(readCache()?.latest).toBe("3.0.0");
@@ -698,7 +738,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
     writeCache("1.0.0", 0); // stale
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "2.1.0" }),
+      json: async () => [{ name: "2.1.0" }],
     });
     // Structural dedup (the skip-guard and refresh-guard share a single
     // readCache() result) is verified behaviorally: a stale cache produces
@@ -752,7 +792,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
     );
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "9.9.9" }),
+      json: async () => [{ name: "9.9.9" }],
     });
     await refreshUpdateCache({ skip: "notice-only" });
     expect(global.fetch).not.toHaveBeenCalled(); // negative cache: skipped
@@ -773,7 +813,7 @@ describe("refreshUpdateCache (fire-and-forget next-launch refresh)", () => {
     );
     global.fetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ version: "9.9.9" }),
+      json: async () => [{ name: "9.9.9" }],
     });
     await refreshUpdateCache({ skip: "notice-only" });
     expect(global.fetch).toHaveBeenCalledTimes(1); // retried
