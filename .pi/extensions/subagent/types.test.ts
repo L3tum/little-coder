@@ -11,6 +11,7 @@ import {
   isResultError,
   isResultSuccess,
   normalizeCompletedResult,
+  toPhaseOutcome,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -678,5 +679,120 @@ describe("formatSubagentResult snapshots", () => {
 
       Total: 5 turns ↑3.0k ↓1.3k"
     `);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toPhaseOutcome
+// ---------------------------------------------------------------------------
+
+describe("toPhaseOutcome", () => {
+  it("returns ok with text for a successful run with output", () => {
+    const result = makeResult({
+      exitCode: 0,
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: "phase done" }] },
+      ],
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(true);
+    expect(outcome.text).toBe("phase done");
+    expect(outcome.error).toBeUndefined();
+  });
+
+  it("returns not ok with specific message for exit 0 + empty output", () => {
+    const result = makeResult({
+      exitCode: 0,
+      messages: [
+        { role: "assistant", content: [{ type: "text", text: "   " }] },
+      ],
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.text).toBe("   ");
+    expect(outcome.error).toBe("TEST completed but produced no output");
+  });
+
+  it("returns not ok for an errored run (exit 1 + stderr)", () => {
+    const result = makeResult({
+      exitCode: 1,
+      stopReason: "error",
+      stderr: "something went wrong",
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toBe("something went wrong");
+  });
+
+  it("returns not ok for an errored run (fallback to exit code)", () => {
+    const result = makeResult({
+      exitCode: 1,
+      stopReason: "error",
+      stderr: "",
+      errorMessage: "",
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toBe("TEST failed (exit 1)");
+  });
+
+  it("falls back to errorMessage when stderr is empty", () => {
+    // The error-string chain is stderr || errorMessage || exit-code default;
+    // without this test the errorMessage branch is dead-lettered.
+    const result = makeResult({
+      exitCode: 1,
+      stopReason: "error",
+      stderr: "",
+      errorMessage: "EM-ONLY",
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toBe("EM-ONLY");
+  });
+
+  it("truncates a huge stderr so a failed phase cannot flood notifications", () => {
+    const huge = "x".repeat(5_000);
+    const result = makeResult({
+      exitCode: 1,
+      stopReason: "error",
+      stderr: huge,
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).not.toBe(huge);
+    expect(outcome.error!.length).toBeLessThan(2_200);
+    expect(outcome.error).toContain(huge.slice(0, 100));
+    expect(outcome.error).toContain("truncated");
+  });
+
+  it("truncates a huge errorMessage as well", () => {
+    const huge = "y".repeat(5_000);
+    const result = makeResult({
+      exitCode: 1,
+      stopReason: "error",
+      stderr: "",
+      errorMessage: huge,
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.error!.length).toBeLessThan(2_200);
+    expect(outcome.error).toContain("truncated");
+  });
+
+  it("returns not ok for an aborted run (exit 130)", () => {
+    const result = makeResult({
+      exitCode: 130,
+      stopReason: "aborted",
+      stderr: "Subagent was aborted.",
+    });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toBe("Subagent was aborted.");
+  });
+
+  it("returns not ok for exitCode -1 (unreachable running state)", () => {
+    const result = makeResult({ exitCode: -1 });
+    const outcome = toPhaseOutcome(result);
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toBe("TEST failed (exit -1)");
   });
 });

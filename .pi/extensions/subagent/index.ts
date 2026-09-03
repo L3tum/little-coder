@@ -16,17 +16,46 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import { z } from "zod";
 import {
   type AgentConfig,
   discoverAgents,
   discoverAgentsWithStarter,
 } from "./agents.js";
+import {
+  resolveDelegationDepthConfig,
+  parseNonNegativeInt,
+  parseBoolean,
+  parseAgentStack,
+  getMaxDepthFlagFromArgv,
+  getPreventCyclesFlagFromArgv,
+} from "./depth.js";
+import {
+  applySubagentOverrides,
+  littleCoderSettings,
+  readSettings,
+  writeSettings,
+  __resetSettingsCache,
+  getSubagentLevel,
+  setSubagentLevel,
+  getSubagentModels,
+  subagentModel,
+  setSubagentModel,
+  getSubagentThinkingSettings,
+  subagentThinking,
+  setSubagentThinking,
+  LEVELS,
+  type SubagentLevel,
+} from "./settings.js";
 import { type RenderTheme, renderCall, renderResult } from "./render.js";
 import { getResultSummaryText } from "./runner-events.js";
-import { mapConcurrent, runAgent } from "./runner.js";
+import {
+  mapConcurrent,
+  runAgent,
+  writeForkSessionToTempFile,
+  MAX_SUBAGENT_PARALLEL_TASKS,
+  DEFAULT_SUBAGENT_CONCURRENCY,
+} from "./runner.js";
 import {
   type DelegationMode,
   type SingleResult,
@@ -40,151 +69,10 @@ import {
 // ---------------------------------------------------------------------------
 // Limits
 // ---------------------------------------------------------------------------
-
-const MAX_PARALLEL_TASKS = 8;
-const MAX_CONCURRENCY = 4;
+// (fan-out ceilings now live in runner.ts — MAX_SUBAGENT_PARALLEL_TASKS /
+// DEFAULT_SUBAGENT_CONCURRENCY — so the programmatic pipelines share the same
+// ceiling instead of redeclaring it.)
 const PARALLEL_HEARTBEAT_MS = 1000;
-const DEFAULT_MAX_DELEGATION_DEPTH = 3;
-const DEFAULT_PREVENT_CYCLE_DELEGATION = true;
-const SUBAGENT_DEPTH_ENV = "PI_SUBAGENT_DEPTH";
-const SUBAGENT_MAX_DEPTH_ENV = "PI_SUBAGENT_MAX_DEPTH";
-const SUBAGENT_STACK_ENV = "PI_SUBAGENT_STACK";
-const SUBAGENT_PREVENT_CYCLES_ENV = "PI_SUBAGENT_PREVENT_CYCLES";
-type SubagentLevel =
-  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-const LEVELS: SubagentLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
-
-function settingsPath(): string {
-  return path.join(os.homedir(), ".pi", "agent", "settings.json");
-}
-
-/** Cached settings payload keyed by file mtime to avoid redundant disk reads. */
-let settingsCache: { data: unknown; mtimeMs: number } | null = null;
-
-const SubagentLevelSchema = z.enum(LEVELS);
-const LittleCoderSettingsSchema = z
-  .object({
-    little_coder: z
-      .object({
-        subagent_thinking: z.record(z.string(), SubagentLevelSchema).optional(),
-        subagent_models: z.record(z.string(), z.string()).optional(),
-        subagent_level: SubagentLevelSchema.optional(),
-      })
-      .optional(),
-  })
-  .passthrough();
-
-type PiSettings = z.infer<typeof LittleCoderSettingsSchema> & {
-  little_coder?: {
-    subagent_thinking?: Record<string, SubagentLevel>;
-    subagent_models?: Record<string, string>;
-    subagent_level?: SubagentLevel;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-};
-
-function readSettings(): PiSettings {
-  const sp = settingsPath();
-  try {
-    const st = fs.statSync(sp);
-    if (settingsCache && st.mtimeMs === settingsCache.mtimeMs) {
-      return settingsCache.data as PiSettings;
-    }
-    const raw = JSON.parse(fs.readFileSync(sp, "utf-8"));
-    try {
-      const parsed = LittleCoderSettingsSchema.parse(raw);
-      settingsCache = { data: parsed, mtimeMs: st.mtimeMs };
-      return parsed as PiSettings;
-    } catch {
-      // Validation failed — return raw data but log a warning.
-      settingsCache = { data: raw, mtimeMs: st.mtimeMs };
-      return raw as PiSettings;
-    }
-  } catch {
-    return {};
-  }
-}
-
-function writeSettings(settings: PiSettings): void {
-  const sp = settingsPath();
-  fs.mkdirSync(path.dirname(sp), { recursive: true });
-  // Invalidate cache so the next read picks up fresh data
-  settingsCache = null;
-  // Atomic write: write to temp file then rename, so a crash mid-write
-  // doesn't corrupt the settings file.
-  const tmp = sp + ".tmp";
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n");
-    fs.renameSync(tmp, sp);
-  } catch (err) {
-    // Clean up temp file if rename failed
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* ignore */
-    }
-    throw err;
-  }
-}
-function littleCoderSettings(): any {
-  const s = readSettings();
-  s.little_coder ??= {};
-  return s;
-}
-function getSubagentLevel(): SubagentLevel {
-  const raw = readSettings()?.little_coder?.subagent_level;
-  return raw && LEVELS.includes(raw) ? raw : "medium";
-}
-function setSubagentLevel(level: SubagentLevel): void {
-  const s = littleCoderSettings();
-  s.little_coder.subagent_level = level;
-  writeSettings(s);
-}
-function setSubagentModel(agent: string, model: string): void {
-  const s = littleCoderSettings();
-  s.little_coder.subagent_models ??= {};
-  s.little_coder.subagent_models[agent] = model;
-  writeSettings(s);
-}
-function getSubagentModels(): Record<string, string> {
-  const raw = readSettings()?.little_coder?.subagent_models;
-  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-}
-function subagentModel(agent: string): string | undefined {
-  const models = getSubagentModels();
-  if (typeof models.all === "string" && models.all.trim()) return models.all;
-  return models[agent];
-}
-function setSubagentThinking(agent: string, thinking: SubagentLevel): void {
-  const s = littleCoderSettings();
-  s.little_coder.subagent_thinking ??= {};
-  s.little_coder.subagent_thinking[agent] = thinking;
-  writeSettings(s);
-}
-function getSubagentThinkingSettings(): Record<string, SubagentLevel> {
-  const raw = readSettings()?.little_coder?.subagent_thinking;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  return Object.fromEntries(
-    Object.entries(raw).filter(
-      (entry): entry is [string, SubagentLevel] =>
-        typeof entry[1] === "string" &&
-        LEVELS.includes(entry[1] as SubagentLevel),
-    ),
-  );
-}
-function subagentThinking(agent: string): SubagentLevel | undefined {
-  const settings = getSubagentThinkingSettings();
-  return settings[agent] ?? settings.all;
-}
 function steeringForLevel(level: SubagentLevel): string {
   const guidance: Record<SubagentLevel, string> = {
     off: "",
@@ -262,14 +150,6 @@ const SubagentParams = Type.Object({
 // Helpers
 // ---------------------------------------------------------------------------
 
-interface DelegationDepthConfig {
-  currentDepth: number;
-  maxDepth: number;
-  canUseSubagentTool: boolean;
-  ancestorAgentStack: string[];
-  preventCycles: boolean;
-}
-
 interface SessionSnapshotSource {
   getHeader: () => unknown;
   getBranch: () => unknown[];
@@ -342,171 +222,6 @@ function buildForkSessionSnapshotJsonl(
   const lines = [JSON.stringify(header)];
   for (const entry of branchEntries) lines.push(JSON.stringify(entry));
   return `${lines.join("\n")}\n`;
-}
-
-function parseNonNegativeInt(raw: unknown): number | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  if (!/^\d+$/.test(trimmed)) return null;
-  const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) ? parsed : null;
-}
-
-function parseBoolean(raw: unknown): boolean | null {
-  if (typeof raw === "boolean") return raw;
-  if (typeof raw !== "string") return null;
-  const normalized = raw.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return null;
-}
-
-function parseAgentStack(raw: unknown): string[] | null {
-  if (raw === undefined) return [];
-  if (typeof raw !== "string") return null;
-  if (!raw.trim()) return [];
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  if (!Array.isArray(parsed)) return null;
-  if (!parsed.every((value) => typeof value === "string")) return null;
-  return parsed
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
-}
-
-function getMaxDepthFlagFromArgv(argv: string[]): string | null {
-  for (let i = 2; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--subagent-max-depth") {
-      return argv[i + 1] ?? "";
-    }
-    if (arg.startsWith("--subagent-max-depth=")) {
-      return arg.slice("--subagent-max-depth=".length);
-    }
-  }
-  return null;
-}
-
-function getPreventCyclesFlagFromArgv(argv: string[]): string | boolean | null {
-  for (let i = 2; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--subagent-prevent-cycles") {
-      const maybeValue = argv[i + 1];
-      if (maybeValue !== undefined && !maybeValue.startsWith("--")) {
-        return maybeValue;
-      }
-      return true;
-    }
-    if (arg === "--no-subagent-prevent-cycles") return false;
-    if (arg.startsWith("--subagent-prevent-cycles=")) {
-      return arg.slice("--subagent-prevent-cycles=".length);
-    }
-  }
-  return null;
-}
-
-function resolveDelegationDepthConfig(pi: ExtensionAPI): DelegationDepthConfig {
-  const depthRaw = process.env[SUBAGENT_DEPTH_ENV];
-  const parsedDepth = parseNonNegativeInt(depthRaw);
-  if (depthRaw !== undefined && parsedDepth === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_DEPTH_ENV}="${depthRaw}". Expected a non-negative integer.`,
-    );
-  }
-  const currentDepth = parsedDepth ?? 0;
-
-  const stackRaw = process.env[SUBAGENT_STACK_ENV];
-  const ancestorAgentStack = parseAgentStack(stackRaw);
-  if (stackRaw !== undefined && ancestorAgentStack === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_STACK_ENV} value. Expected a JSON array of agent names.`,
-    );
-  }
-
-  const envMaxDepthRaw = process.env[SUBAGENT_MAX_DEPTH_ENV];
-  const envMaxDepth = parseNonNegativeInt(envMaxDepthRaw);
-  if (envMaxDepthRaw !== undefined && envMaxDepth === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_MAX_DEPTH_ENV}="${envMaxDepthRaw}". Expected a non-negative integer.`,
-    );
-  }
-
-  const argvFlagRaw = getMaxDepthFlagFromArgv(process.argv);
-  const argvFlagMaxDepth =
-    argvFlagRaw !== null ? parseNonNegativeInt(argvFlagRaw) : null;
-  if (argvFlagRaw !== null && argvFlagMaxDepth === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-max-depth value "${argvFlagRaw}". Expected a non-negative integer.`,
-    );
-  }
-
-  const runtimeFlagValue = pi.getFlag("subagent-max-depth");
-  const runtimeFlagMaxDepth =
-    typeof runtimeFlagValue === "string"
-      ? parseNonNegativeInt(runtimeFlagValue)
-      : null;
-  if (
-    argvFlagRaw === null &&
-    typeof runtimeFlagValue === "string" &&
-    runtimeFlagMaxDepth === null
-  ) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-max-depth value "${runtimeFlagValue}". Expected a non-negative integer.`,
-    );
-  }
-
-  const envPreventCyclesRaw = process.env[SUBAGENT_PREVENT_CYCLES_ENV];
-  const envPreventCycles = parseBoolean(envPreventCyclesRaw);
-  if (envPreventCyclesRaw !== undefined && envPreventCycles === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid ${SUBAGENT_PREVENT_CYCLES_ENV}="${envPreventCyclesRaw}". Expected true/false.`,
-    );
-  }
-
-  const argvPreventCyclesRaw = getPreventCyclesFlagFromArgv(process.argv);
-  const argvPreventCycles =
-    typeof argvPreventCyclesRaw === "boolean"
-      ? argvPreventCyclesRaw
-      : parseBoolean(argvPreventCyclesRaw);
-  if (typeof argvPreventCyclesRaw === "string" && argvPreventCycles === null) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-prevent-cycles value "${argvPreventCyclesRaw}". Expected true/false.`,
-    );
-  }
-
-  const runtimePreventCyclesRaw = pi.getFlag("subagent-prevent-cycles");
-  const runtimePreventCycles = parseBoolean(runtimePreventCyclesRaw);
-  if (
-    argvPreventCyclesRaw === null &&
-    runtimePreventCyclesRaw !== undefined &&
-    runtimePreventCycles === null
-  ) {
-    console.warn(
-      `[pi-subagent] Ignoring invalid --subagent-prevent-cycles value "${String(runtimePreventCyclesRaw)}". Expected true/false.`,
-    );
-  }
-
-  const flagMaxDepth = argvFlagMaxDepth ?? runtimeFlagMaxDepth;
-  const maxDepth = flagMaxDepth ?? envMaxDepth ?? DEFAULT_MAX_DELEGATION_DEPTH;
-  const preventCycles =
-    argvPreventCycles ??
-    runtimePreventCycles ??
-    envPreventCycles ??
-    DEFAULT_PREVENT_CYCLE_DELEGATION;
-
-  return {
-    currentDepth,
-    maxDepth,
-    canUseSubagentTool: currentDepth < maxDepth,
-    ancestorAgentStack: ancestorAgentStack ?? [],
-    preventCycles,
-  };
 }
 
 function makeDetailsFactory(
@@ -764,11 +479,7 @@ export default function (pi: ExtensionAPI) {
         ctx,
       );
     }
-    discoveredAgents = discovery.agents.map((agent) => ({
-      ...agent,
-      model: subagentModel(agent.name) ?? agent.model,
-      thinking: subagentThinking(agent.name) ?? agent.thinking,
-    }));
+    discoveredAgents = applySubagentOverrides(discovery.agents);
 
     if (ctx.hasUI) {
       if (starterDiscovery.createdAgentPath) {
@@ -833,11 +544,7 @@ ${steeringForLevel(configuredLevel)}
       async execute(_toolCallId, params, signal, onUpdate, ctx) {
         const starterDiscovery = discoverAgentsWithStarter(ctx.cwd);
         const discovery = starterDiscovery.discovery;
-        const agents = discovery.agents.map((agent) => ({
-          ...agent,
-          model: subagentModel(agent.name) ?? agent.model,
-          thinking: subagentThinking(agent.name) ?? agent.thinking,
-        }));
+        const agents = applySubagentOverrides(discovery.agents);
 
         const delegationMode = parseDelegationMode(params.mode);
         if (!delegationMode) {
@@ -1103,12 +810,12 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
     onUpdate: ((partial: any) => void) | undefined,
     makeDetails: ReturnType<typeof makeDetailsFactory>,
   ) {
-    if (tasks.length > MAX_PARALLEL_TASKS) {
+    if (tasks.length > MAX_SUBAGENT_PARALLEL_TASKS) {
       return {
         content: [
           {
             type: "text" as const,
-            text: `Too many parallel tasks (${tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+            text: `Too many parallel tasks (${tasks.length}). Max is ${MAX_SUBAGENT_PARALLEL_TASKS}.`,
           },
         ],
         details: makeDetails("parallel")([]),
@@ -1150,11 +857,32 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
     }
 
     let results: SingleResult[];
+    // Fork mode writes the full parent session snapshot to a temp file. In a
+    // parallel fan-out every task shares the SAME snapshot, so write it ONCE
+    // and hand every child the shared file instead of N identical copies of
+    // the whole session on disk. runAgent leaves a shared file to the caller,
+    // so we clean it up here in finally.
+    let sharedForkFile: { dir: string; filePath: string } | undefined;
     try {
       results = await mapConcurrent(
         tasks,
-        MAX_CONCURRENCY,
+        DEFAULT_SUBAGENT_CONCURRENCY,
         async (t, index) => {
+          if (
+            sharedForkFile === undefined &&
+            delegationMode === "fork" &&
+            forkSessionSnapshotJsonl
+          ) {
+            try {
+              sharedForkFile = writeForkSessionToTempFile(
+                t.agent,
+                forkSessionSnapshotJsonl,
+              );
+            } catch {
+              // Write failed (ENOSPC etc.) — fall back to per-task writes;
+              // runAgent's own prep failure returns a failure result.
+            }
+          }
           const result = await runAgent({
             cwd: defaultCwd,
             agents,
@@ -1163,6 +891,7 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
             taskCwd: t.cwd,
             delegationMode,
             forkSessionSnapshotJsonl,
+            forkSessionSnapshotFile: sharedForkFile,
             parentDepth: currentDepth,
             parentAgentStack: ancestorAgentStack,
             maxDepth,
@@ -1183,14 +912,17 @@ This guard prevents self-recursion and cyclic handoffs (for example A -> B -> A)
       );
     } finally {
       if (heartbeat) clearInterval(heartbeat);
+      if (sharedForkFile) {
+        try {
+          fs.rmSync(sharedForkFile.dir, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
     }
 
     return buildParallelToolResult(results, makeDetails);
   }
-}
-
-function __resetSettingsCache(): void {
-  settingsCache = null;
 }
 
 function __formatSubagentsList(agents: AgentConfig[]): string {
@@ -1213,6 +945,7 @@ export const __subagentTest = {
   getCycleViolations,
   readSettings,
   writeSettings,
+  applySubagentOverrides,
   __resetSettingsCache,
   formatSubagentsList: __formatSubagentsList,
 };

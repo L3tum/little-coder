@@ -22,6 +22,7 @@ describe("built-in agents", () => {
     expect(names).toContain("COMPOSE");
     expect(names).toContain("REVIEW-PLAN");
     expect(names).toContain("REVIEW-PLAN-PONYTAIL");
+    expect(names).toContain("REVIEW-SYNTHESIS");
     // Themed review agents
     expect(names).toContain("REVIEW-SECURITY");
     expect(names).toContain("REVIEW-ARCHITECTURE");
@@ -38,6 +39,9 @@ describe("built-in agents", () => {
       "REVIEW-TESTS",
       "REVIEW-BUGS",
       "REVIEW-PERFORMANCE",
+      "REVIEW-LINTING",
+      "REVIEW-PONYTAIL",
+      "REVIEW-SYNTHESIS",
     ]) {
       const agent = agents.find((a) => a.name === name);
       expect(agent).toBeDefined();

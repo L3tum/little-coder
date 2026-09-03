@@ -102,10 +102,22 @@ describe("isSafeBash", () => {
   it("handles leading whitespace", () => {
     expect(isSafeBash("   ls")).toBe(true);
   });
-  it("git subcommand gating is strict", () => {
+  it("git subcommand gating allows read-only and staging, blocks push and destructive writes", () => {
     expect(isSafeBash("git log")).toBe(true);
+    // Staging / committing is intentionally allowed (see the "Git write" safe
+    // prefixes); only push (and other remote/network writes) is blocked.
+    expect(isSafeBash("git add x")).toBe(true);
+    expect(isSafeBash("git commit -m x")).toBe(true);
     expect(isSafeBash("git push origin main")).toBe(false);
-    expect(isSafeBash("git commit -m x")).toBe(false);
+    // Destructive / history-rewriting local writes stay blocked.
+    expect(isSafeBash("git reset --hard HEAD~1")).toBe(false);
+    expect(isSafeBash("git checkout other-branch")).toBe(false);
+    expect(isSafeBash("git stash pop")).toBe(false);
+    expect(isSafeBash("git push --force origin main")).toBe(false);
+    // Word-boundary convention: the `git commit ` prefix must not substring-
+    // match a longer subcommand token (a bare `startsWith` would allow it).
+    expect(isSafeBash("git commitXYZ")).toBe(false);
+    expect(isSafeBash("git addXYZ")).toBe(false);
   });
   it("respects an explicit prefix list (LITTLE_CODER_BASH_ALLOW shape)", () => {
     const extra = ["make ", "docker compose ps"];

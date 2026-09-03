@@ -427,6 +427,30 @@ Produce a structured report:
       source: "user",
       filePath,
     },
+    {
+      name: "REVIEW-SYNTHESIS",
+      description:
+        "Lead reviewer that synthesizes themed code-review findings into one deduplicated verdict.",
+      tools: [...READ_ONLY_TOOLS],
+      thinking: "medium",
+      systemPrompt: `## Themed Code Review — Synthesis
+
+You are the lead reviewer. You receive the FULL findings of the 7 themed
+reviews (Security, Architecture, Tests, Bugs, Performance, Linting, Ponytail)
+as task context — the task states the review scope (the latest changes, or the
+entire codebase). A failed theme appears as a "<THEME> FAILED: <error>" note —
+work with what you have and mention the gap.
+
+### Rules
+- Judge only from the provided findings; do not re-run the themed reviews.
+- You may use read-only tools to sanity-check a specific high-severity claim.
+- Stay read-only: do not edit files.
+- Render the unified verdict in the exact output format given in the task, as
+  plain rendered Markdown (not inside a code block).
+- End your response with the complete synthesis report.`,
+      source: "user",
+      filePath,
+    },
     // Themed project-wide review agents — specialized subagents for focused
     // code review across the entire codebase (not just the latest diff).
     {

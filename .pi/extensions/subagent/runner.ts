@@ -6,6 +6,7 @@
 
 import { spawn } from "node:child_process";
 import { startSubprocess } from "../_shared/subprocess.js";
+import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -37,6 +38,25 @@ const SUBAGENT_MAX_DEPTH_ENV = "PI_SUBAGENT_MAX_DEPTH";
 const SUBAGENT_STACK_ENV = "PI_SUBAGENT_STACK";
 const SUBAGENT_PREVENT_CYCLES_ENV = "PI_SUBAGENT_PREVENT_CYCLES";
 const PI_OFFLINE_ENV = "PI_OFFLINE";
+// Inline the task as a single argv element only while it is comfortably under
+// the OS per-argument limit (Linux MAX_ARG_STRLEN is 128 KiB; macOS ARG_MAX is
+// 256 KiB across all args+env). Larger tasks — the pipeline synthesis and final
+// composition embed full prior outputs verbatim — are written to a 0600 temp
+// file and referenced with @file so spawn cannot throw E2BIG and the task (which
+// may carry repository content) is not exposed on the process command line.
+export const TASK_INLINE_MAX_BYTES = 64 * 1024;
+// Cross-reference: this is the SAME magnitude as mode-commands/pipeline.ts
+// PHASE_THREAD_MAX_BYTES on purpose — a full-budget threaded phase output is
+// exactly what decides whether the NEXT phase's task routes inline or through
+// the @file temp-file path above. Change one, reconsider the other.
+
+// Shared fan-out ceilings. The subagent tool caps parallel tasks at
+// MAX_SUBAGENT_PARALLEL_TASKS and runs at most MAX_SUBAGENT_CONCURRENCY of
+// them at once; the programmatic pipelines (mode-commands) reuse the same
+// concurrency so the two surfaces cannot drift to different ceilings. Each
+// slot is a FULL pi process (~300-500 MB RSS).
+export const MAX_SUBAGENT_PARALLEL_TASKS = 8;
+export const DEFAULT_SUBAGENT_CONCURRENCY = 4;
 
 /** Maps signal names to their POSIX numbers for exit code computation. */
 const SIGNAL_MAP: Record<string, number> = {
@@ -81,6 +101,34 @@ const SIGNAL_MAP: Record<string, number> = {
 
 type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
 
+/**
+ * Build the canonical failure SingleResult. Single source of shape for every
+ * "runAgent returns an error" path (unknown agent, missing fork snapshot,
+ * file-prep failure) and for pipeline callers that synthesize a result after
+ * a runAgent throw — so the optional fields (model, stopReason, errorMessage)
+ * are set consistently in one place.
+ */
+export function makeFailureResult(
+  agentName: string,
+  agentSource: SingleResult["agentSource"],
+  task: string,
+  message: string,
+  model?: string,
+): SingleResult {
+  return {
+    agent: agentName,
+    agentSource,
+    task,
+    exitCode: 1,
+    messages: [],
+    stderr: message,
+    usage: emptyUsage(),
+    model,
+    stopReason: "error",
+    errorMessage: message,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Process helpers
 // ---------------------------------------------------------------------------
@@ -112,7 +160,7 @@ function writePromptToTempFile(
   return { dir: tmpDir, filePath };
 }
 
-function writeForkSessionToTempFile(
+export function writeForkSessionToTempFile(
   agentName: string,
   sessionJsonl: string,
 ): { dir: string; filePath: string } {
@@ -121,6 +169,58 @@ function writeForkSessionToTempFile(
   const filePath = path.join(tmpDir, `fork-${safeName}.jsonl`);
   fs.writeFileSync(filePath, sessionJsonl, { encoding: "utf-8", mode: 0o600 });
   return { dir: tmpDir, filePath };
+}
+
+/**
+ * Write a large task to a 0600 temp file so it can be passed to the child via
+ * an `@file` reference instead of as one oversized argv element. Content is the
+ * full `Task: ...` string, so the inlined prompt matches the inline path apart
+ * from the `<file>` wrapper the CLI adds around the read content.
+ */
+export function writeTaskToTempFile(
+  agentName: string,
+  task: string,
+): { dir: string; filePath: string } {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-"));
+  const safeName = agentName.replace(/[^\w.-]+/g, "_");
+  const rand = randomBytes(4).toString("hex");
+  const filePath = path.join(tmpDir, `task-${safeName}-${rand}.md`);
+  try {
+    fs.writeFileSync(filePath, `Task: ${task}`, {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+  } catch (err) {
+    // The dir was created but the file write failed (ENOSPC/etc.). The
+    // caller can't clean it up (we never return it), so the creator must.
+    // Rethrow so runAgent's prep catch still reports the failure.
+    cleanupTempDir(tmpDir);
+    throw err;
+  }
+  return { dir: tmpDir, filePath };
+}
+
+/**
+ * Decide how the task reaches the child: inline `Task: <task>` argv element
+ * while under TASK_INLINE_MAX_BYTES, otherwise a 0600 temp file referenced as
+ * `@<file>`. Extracted as a pure-ish function so the routing decision is
+ * unit-testable without spawning; `dir` is the temp dir to clean up (null for
+ * the inline path).
+ */
+export function resolveTaskArg(
+  agentName: string,
+  task: string,
+): { dir: string | null; arg: string } {
+  // Measure in UTF-8 BYTES, not code units: multibyte tasks (CJK, emoji) can
+  // be up to 4x longer in bytes than in JS string length, and the E2BIG/argv
+  // budget is a byte budget. Buffer.byteLength measures without encoding the
+  // string, so there is no fast-path to avoid. A code-unit check would inline
+  // a 60K-char CJK task (180 KB bytes) and hit E2BIG anyway.
+  if (Buffer.byteLength(task, "utf8") > TASK_INLINE_MAX_BYTES) {
+    const tmp = writeTaskToTempFile(agentName, task);
+    return { dir: tmp.dir, arg: `@${tmp.filePath}` };
+  }
+  return { dir: null, arg: `Task: ${task}` };
 }
 
 function cleanupTempDir(dir: string | null): void {
@@ -141,7 +241,7 @@ const inheritedCliArgs = parseInheritedCliArgs(process.argv);
 function buildPiArgs(
   agent: AgentConfig,
   systemPromptPath: string | null,
-  task: string,
+  taskArg: string,
   delegationMode: DelegationMode,
   forkSessionPath: string | null,
 ): string[] {
@@ -176,7 +276,7 @@ function buildPiArgs(
   }
 
   if (systemPromptPath) args.push("--append-system-prompt", systemPromptPath);
-  args.push(`Task: ${task}`);
+  args.push(taskArg);
   return args;
 }
 
@@ -199,6 +299,13 @@ export interface RunAgentOptions {
   delegationMode: DelegationMode;
   /** Serialized parent session snapshot used when delegationMode is "fork". */
   forkSessionSnapshotJsonl?: string;
+  /**
+   * Pre-written fork session snapshot file, shared across a parallel fan-out
+   * (one write of the full session instead of one per task). When set,
+   * runAgent uses it as-is and does NOT clean it up — the caller owns the
+   * temp dir and must remove it after all tasks finish.
+   */
+  forkSessionSnapshotFile?: { dir: string; filePath: string };
   /** Override the agent's system prompt for this run. */
   systemPromptOverride?: string;
   /** Current delegation depth of the caller process. */
@@ -233,6 +340,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     taskCwd,
     delegationMode,
     forkSessionSnapshotJsonl,
+    forkSessionSnapshotFile,
     systemPromptOverride,
     parentDepth,
     parentAgentStack,
@@ -247,35 +355,25 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
   const agent = agents.find((a) => a.name === agentName);
   if (!agent) {
     const available = agents.map((a) => `"${a.name}"`).join(", ") || "none";
-    return {
-      agent: agentName,
-      agentSource: "unknown",
+    return makeFailureResult(
+      agentName,
+      "unknown",
       task,
-      exitCode: 1,
-      messages: [],
-      stderr: `Unknown agent: "${agentName}". Available agents: ${available}.`,
-      usage: emptyUsage(),
-    };
+      `Unknown agent: "${agentName}". Available agents: ${available}.`,
+    );
   }
 
   if (
     delegationMode === "fork" &&
     (!forkSessionSnapshotJsonl || !forkSessionSnapshotJsonl.trim())
   ) {
-    return {
-      agent: agentName,
-      agentSource: agent.source,
+    return makeFailureResult(
+      agentName,
+      agent.source,
       task,
-      exitCode: 1,
-      messages: [],
-      stderr:
-        "Cannot run in fork mode: missing parent session snapshot context.",
-      usage: emptyUsage(),
-      model: agent.model,
-      stopReason: "error",
-      errorMessage:
-        "Cannot run in fork mode: missing parent session snapshot context.",
-    };
+      "Cannot run in fork mode: missing parent session snapshot context.",
+      agent.model,
+    );
   }
 
   const result: SingleResult = {
@@ -290,7 +388,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
   };
 
   const emitUpdate = () => {
-    onUpdate?.({
+    if (!onUpdate) return;
+    onUpdate({
       content: [
         {
           type: "text",
@@ -301,33 +400,74 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     });
   };
 
-  // Write system prompt to temp file if needed
+  // Write support files (system prompt, fork session snapshot, oversized task)
+  // to temp files. A failure here (ENOSPC etc.) must NOT throw out of
+  // runAgent — the documented contract is "returns a SingleResult even on
+  // failure". The catch below cleans up any temp dir already created in this
+  // sequence (this early return never reaches the outer try/finally that
+  // cleans up after the spawn).
   let promptTmpDir: string | null = null;
   let promptTmpPath: string | null = null;
-  const effectivePrompt = systemPromptOverride ?? agent.systemPrompt;
-  if (effectivePrompt.trim()) {
-    const tmp = writePromptToTempFile(agent.name, effectivePrompt);
-    promptTmpDir = tmp.dir;
-    promptTmpPath = tmp.filePath;
-  }
-
-  // Write forked session snapshot if needed
   let forkSessionTmpDir: string | null = null;
   let forkSessionTmpPath: string | null = null;
-  if (delegationMode === "fork" && forkSessionSnapshotJsonl) {
-    const tmp = writeForkSessionToTempFile(
+  let taskTmpDir: string | null = null;
+  let taskArg: string;
+  // Set when the fork snapshot file is shared with other concurrent tasks —
+  // runAgent must not delete a file another in-flight task is reading.
+  let forkSessionShared = false;
+  try {
+    const effectivePrompt = systemPromptOverride ?? agent.systemPrompt;
+    if (effectivePrompt.trim()) {
+      const tmp = writePromptToTempFile(agent.name, effectivePrompt);
+      promptTmpDir = tmp.dir;
+      promptTmpPath = tmp.filePath;
+    }
+
+    if (delegationMode === "fork" && forkSessionSnapshotJsonl) {
+      if (forkSessionSnapshotFile) {
+        // Caller-written shared snapshot (parallel fan-out): use as-is.
+        forkSessionShared = true;
+        forkSessionTmpDir = forkSessionSnapshotFile.dir;
+        forkSessionTmpPath = forkSessionSnapshotFile.filePath;
+      } else {
+        const tmp = writeForkSessionToTempFile(
+          agent.name,
+          forkSessionSnapshotJsonl,
+        );
+        forkSessionTmpDir = tmp.dir;
+        forkSessionTmpPath = tmp.filePath;
+      }
+    }
+
+    // Route very large tasks through a temp file + @file reference (see
+    // TASK_INLINE_MAX_BYTES) so they never become a single oversized argv
+    // element.
+    const resolvedTask = resolveTaskArg(agent.name, task);
+    taskTmpDir = resolvedTask.dir;
+    taskArg = resolvedTask.arg;
+  } catch (err) {
+    // Clean up anything this sequence already created (the caller-owned
+    // shared fork snapshot is NOT one of them) — the early return below never
+    // enters the outer try/finally that runs after the spawn.
+    cleanupTempDir(promptTmpDir);
+    if (!forkSessionShared) cleanupTempDir(forkSessionTmpDir);
+    cleanupTempDir(taskTmpDir);
+    return makeFailureResult(
       agent.name,
-      forkSessionSnapshotJsonl,
+      agent.source,
+      task,
+      `Failed to prepare subagent files: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      agent.model,
     );
-    forkSessionTmpDir = tmp.dir;
-    forkSessionTmpPath = tmp.filePath;
   }
 
   try {
     const piArgs = buildPiArgs(
       agent,
       promptTmpPath,
-      task,
+      taskArg,
       delegationMode,
       forkSessionTmpPath,
     );
@@ -482,7 +622,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
     return normalizeCompletedResult(result, wasAborted);
   } finally {
     cleanupTempDir(promptTmpDir);
-    cleanupTempDir(forkSessionTmpDir);
+    if (!forkSessionShared) cleanupTempDir(forkSessionTmpDir);
+    cleanupTempDir(taskTmpDir);
   }
 }
 
@@ -492,6 +633,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
 
 /**
  * Map over items with a bounded number of concurrent workers.
+ *
+ * Rejection handling: each worker catches its item's rejection and records the
+ * FIRST one instead of letting it escape as an unhandled rejection. Sibling
+ * workers keep running (same fan-out as a plain Promise.all), and after ALL
+ * workers settle the first recorded error is rethrown — so a failing item can
+ * never orphan sibling workers into unhandled-rejection territory (which
+ * crashes the process under Node's default handler) while still surfacing the
+ * failure to the caller.
  */
 export async function mapConcurrent<TIn, TOut>(
   items: TIn[],
@@ -499,18 +648,30 @@ export async function mapConcurrent<TIn, TOut>(
   fn: (item: TIn, index: number) => Promise<TOut>,
 ): Promise<TOut[]> {
   if (items.length === 0) return [];
-  const limit = Math.max(1, Math.min(concurrency, items.length));
+  // A non-finite concurrency (NaN from a bad caller) would make `limit` NaN
+  // and `Array.from({ length: NaN })` spawn ZERO workers, resolving with a
+  // sparse array of holes — silently doing nothing. Clamp to 1 instead.
+  const safeConcurrency = Number.isFinite(concurrency)
+    ? Math.trunc(concurrency)
+    : 1;
+  const limit = Math.max(1, Math.min(safeConcurrency, items.length));
   const results: TOut[] = new Array(items.length);
   let nextIndex = 0;
+  let firstError: unknown;
 
   const worker = async () => {
     while (true) {
       const i = nextIndex++;
       if (i >= items.length) return;
-      results[i] = await fn(items[i], i);
+      try {
+        results[i] = await fn(items[i], i);
+      } catch (err) {
+        if (firstError === undefined) firstError = err;
+      }
     }
   };
 
   await Promise.all(Array.from({ length: limit }, () => worker()));
+  if (firstError !== undefined) throw firstError;
   return results;
 }

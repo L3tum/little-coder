@@ -5,6 +5,9 @@ import {
   writeFileSync,
   mkdirSync,
   existsSync,
+  readFileSync,
+  readdirSync,
+  utimesSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -259,16 +262,25 @@ describe("buildParallelToolResult", () => {
 
 describe("settings read/write", () => {
   const origHome = process.env.HOME;
+  const origAgentDir = process.env.PI_CODING_AGENT_DIR;
   let testHome: string;
 
   beforeEach(() => {
     testHome = mkdtempSync(join(tmpdir(), "lc-settings-"));
     process.env.HOME = testHome;
+    // Isolate from any ambient PI_CODING_AGENT_DIR: the default-path tests
+    // must hit ~/.pi/agent, not an operator's agent dir.
+    delete process.env.PI_CODING_AGENT_DIR;
     __subagentTest.__resetSettingsCache();
   });
 
   afterEach(() => {
     process.env.HOME = origHome;
+    if (origAgentDir === undefined) {
+      delete process.env.PI_CODING_AGENT_DIR;
+    } else {
+      process.env.PI_CODING_AGENT_DIR = origAgentDir;
+    }
     rmSync(testHome, { recursive: true, force: true });
     __subagentTest.__resetSettingsCache();
   });
@@ -289,7 +301,7 @@ describe("settings read/write", () => {
     expect(settings.little_coder?.subagent_level).toBe("high");
   });
 
-  it("returns raw data on Zod validation failure", () => {
+  it("returns object-shaped data verbatim on schema drift (typeof guards contain it downstream)", () => {
     const settingsDir = join(testHome, ".pi", "agent");
     mkdirSync(settingsDir, { recursive: true });
     writeFileSync(
@@ -297,7 +309,52 @@ describe("settings read/write", () => {
       JSON.stringify({ little_coder: { subagent_level: "invalid" } }),
     );
     const settings = __subagentTest.readSettings();
-    expect(settings).toBeTruthy();
+    expect(settings.little_coder?.subagent_level).toBe("invalid");
+    // The getter-level guard rejects the invalid value instead:
+    expect(__subagentTest.readSettings()).toBeTruthy();
+  });
+
+  it("returns {} for a non-object JSON root (null, array, string) instead of crashing downstream", () => {
+    const settingsDir = join(testHome, ".pi", "agent");
+    mkdirSync(settingsDir, { recursive: true });
+    const p = join(settingsDir, "settings.json");
+    for (const root of [null, ["x"], "str"]) {
+      writeFileSync(p, JSON.stringify(root));
+      __subagentTest.__resetSettingsCache();
+      expect(__subagentTest.readSettings()).toEqual({});
+    }
+    // Corrupt JSON (parse failure) also falls back to {}:
+    writeFileSync(p, "not json at all");
+    __subagentTest.__resetSettingsCache();
+    expect(__subagentTest.readSettings()).toEqual({});
+  });
+
+  it("applySubagentOverrides: named override wins over 'all' for that agent; 'all' is the fallback for others", () => {
+    // Regression: the old precedence applied 'all' to EVERY agent, making a
+    // named entry dead config for its agent. The named entry must win.
+    const settingsDir = join(testHome, ".pi", "agent");
+    mkdirSync(settingsDir, { recursive: true });
+    writeFileSync(
+      join(settingsDir, "settings.json"),
+      JSON.stringify({
+        little_coder: {
+          subagent_models: { RESEARCH: "named-model", all: "all-model" },
+          subagent_thinking: { RESEARCH: "high", all: "low" },
+        },
+      }),
+    );
+    __subagentTest.__resetSettingsCache();
+    const agents = [
+      { name: "RESEARCH", model: "default-model", thinking: "medium" as const },
+      { name: "COMPOSE", model: "default-model", thinking: "medium" as const },
+    ];
+    const out = __subagentTest.applySubagentOverrides(agents);
+    expect(out.find((a) => a.name === "RESEARCH")?.model).toBe("named-model");
+    expect(out.find((a) => a.name === "COMPOSE")?.model).toBe("all-model");
+    expect(out.find((a) => a.name === "RESEARCH")?.thinking).toBe("high");
+    expect(out.find((a) => a.name === "COMPOSE")?.thinking).toBe("low");
+    // Originals untouched (new objects returned):
+    expect(agents[0].model).toBe("default-model");
   });
 
   it("writeSettings performs atomic write and invalidates cache", () => {
@@ -312,8 +369,12 @@ describe("settings read/write", () => {
     const settings = __subagentTest.readSettings();
     expect(settings.little_coder?.subagent_level).toBe("low");
 
-    // Verify no tmp file remains
-    expect(existsSync(join(settingsDir, "settings.json.tmp"))).toBe(false);
+    // Verify no tmp file remains (any shape: the old fixed name or the new
+    // randomized settings.json.tmp-<hex> name — nothing tmp may be left).
+    const leftovers = readdirSync(settingsDir).filter((f) =>
+      f.startsWith("settings.json.tmp"),
+    );
+    expect(leftovers).toEqual([]);
   });
 
   it("uses mtime cache on unchanged file", () => {
@@ -327,7 +388,7 @@ describe("settings read/write", () => {
     expect(r1).toBe(r2); // Same reference from cache
   });
 
-  it("re-reads when mtime changes", async () => {
+  it("re-reads when mtime changes (explicit utimes, no sleep)", () => {
     const settingsDir = join(testHome, ".pi", "agent");
     mkdirSync(settingsDir, { recursive: true });
     const settingsPath = join(settingsDir, "settings.json");
@@ -339,14 +400,72 @@ describe("settings read/write", () => {
     const r1 = __subagentTest.readSettings();
     expect(r1.little_coder?.subagent_level).toBe("low");
 
-    // Wait briefly to ensure a different mtime
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Rewrite and force a DISTINCT mtime with utimesSync: the old version
+    // slept 10 ms, which is flaky on coarse-granularity filesystems where
+    // two quick writes share the same mtimeMs and the cache never invalidates.
     writeFileSync(
       settingsPath,
       JSON.stringify({ little_coder: { subagent_level: "high" } }),
     );
+    utimesSync(settingsPath, new Date(), new Date(Date.now() + 60_000));
 
     const r2 = __subagentTest.readSettings();
+    expect(r2).not.toBe(r1); // cache must have been invalidated
     expect(r2.little_coder?.subagent_level).toBe("high");
+  });
+
+  it("honors PI_CODING_AGENT_DIR: reads <dir>/settings.json", () => {
+    const agentDir = join(testHome, "lc-agent");
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, "settings.json"),
+      JSON.stringify({ little_coder: { subagent_level: "high" } }),
+    );
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    __subagentTest.__resetSettingsCache();
+
+    const settings = __subagentTest.readSettings();
+    expect(settings.little_coder?.subagent_level).toBe("high");
+  });
+
+  it("PI_CODING_AGENT_DIR: writeSettings writes the FILE <dir>/settings.json (regression: env branch must append settings.json, not point at the directory)", () => {
+    const agentDir = join(testHome, "lc-agent");
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    __subagentTest.__resetSettingsCache();
+
+    __subagentTest.writeSettings({ little_coder: { subagent_level: "low" } });
+
+    const file = join(agentDir, "settings.json");
+    expect(existsSync(file)).toBe(true);
+    const raw = JSON.parse(readFileSync(file, "utf-8"));
+    expect(raw.little_coder.subagent_level).toBe("low");
+  });
+
+  it("PI_CODING_AGENT_DIR supports ~ expansion (POSIX)", () => {
+    if (process.platform === "win32") return; // os.homedir() ignores HOME there
+    const agentDir = "~/tilde-agent";
+    process.env.PI_CODING_AGENT_DIR = agentDir;
+    __subagentTest.__resetSettingsCache();
+
+    __subagentTest.writeSettings({ little_coder: { subagent_level: "high" } });
+
+    const file = join(testHome, "tilde-agent", "settings.json");
+    expect(existsSync(file)).toBe(true);
+    const settings = __subagentTest.readSettings();
+    expect(settings.little_coder?.subagent_level).toBe("high");
+  });
+
+  it("whitespace-only PI_CODING_AGENT_DIR falls back to ~/.pi/agent", () => {
+    process.env.PI_CODING_AGENT_DIR = "   ";
+    __subagentTest.__resetSettingsCache();
+    const settingsDir = join(testHome, ".pi", "agent");
+    mkdirSync(settingsDir, { recursive: true });
+    writeFileSync(
+      join(settingsDir, "settings.json"),
+      JSON.stringify({ little_coder: { subagent_level: "medium" } }),
+    );
+
+    const settings = __subagentTest.readSettings();
+    expect(settings.little_coder?.subagent_level).toBe("medium");
   });
 });

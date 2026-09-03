@@ -2,6 +2,21 @@
  * Helpers for parsing Pi JSON mode events and summarizing subagent results.
  */
 
+// Cap for error text surfaced in tool results: a chatty child (stack-dump
+// loop, huge stderr) must not bloat the model's context with a multi-MB
+// tool-result string. The tail is dropped with an explicit marker; this is
+// the same magnitude as the pipeline's toPhaseOutcome error cap.
+const ERROR_TEXT_MAX_CHARS = 2000;
+
+export function capErrorText(message) {
+  if (typeof message !== "string") return message;
+  if (message.length <= ERROR_TEXT_MAX_CHARS) return message;
+  return (
+    message.slice(0, ERROR_TEXT_MAX_CHARS) +
+    ` …(truncated, ${message.length - ERROR_TEXT_MAX_CHARS} more chars)`
+  );
+}
+
 function getSeenMessageSignatures(result) {
   if (
     !Object.prototype.hasOwnProperty.call(result, "__seenMessageSignatures")
@@ -25,7 +40,14 @@ function stableStringify(value) {
     return `[${value.map((item) => stableStringify(item)).join(",")}]`;
   }
 
-  const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
+  // Deterministic key order via codepoint comparison. (NOT localeCompare:
+  // this runs on every message_end/turn_end event for potentially huge
+  // messages, and localeCompare is orders of magnitude slower than `<` for
+  // the ASCII keys involved — the order only needs to be stable, not
+  // locale-aware.)
+  const entries = Object.entries(value).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
   return `{${entries
     .map(
       ([key, entryValue]) =>
@@ -144,7 +166,7 @@ export function getResultSummaryText(result) {
   if (finalText) return finalText;
 
   if (typeof result?.errorMessage === "string" && result.errorMessage.trim()) {
-    return result.errorMessage.trim();
+    return capErrorText(result.errorMessage.trim());
   }
 
   const isError =
@@ -153,7 +175,7 @@ export function getResultSummaryText(result) {
     result?.stopReason === "aborted";
 
   if (isError && typeof result?.stderr === "string" && result.stderr.trim()) {
-    return result.stderr.trim();
+    return capErrorText(result.stderr.trim());
   }
 
   return "(no output)";

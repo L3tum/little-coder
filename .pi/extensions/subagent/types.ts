@@ -3,7 +3,7 @@
  */
 
 import type { Message } from "@earendil-works/pi-ai";
-import { getFinalAssistantText } from "./runner-events.js";
+import { getFinalAssistantText, capErrorText } from "./runner-events.js";
 
 /** Context mode for delegated runs. */
 export type DelegationMode = "spawn" | "fork";
@@ -150,6 +150,48 @@ export function normalizeCompletedResult(
 /** Extract the last assistant text from a message history. */
 export function getFinalOutput(messages: Message[]): string {
   return getFinalAssistantText(messages);
+}
+
+/**
+ * The normalized outcome of one pipeline phase. `ok` is true only when the
+ * child exited successfully AND produced non-empty output — a completed run
+ * that ends with no text is a failed phase, not a silent success (its
+ * downstream phase would otherwise be handed an empty input).
+ */
+export interface PhaseOutcome {
+  ok: boolean;
+  text: string;
+  error?: string;
+}
+
+/**
+ * Classify a finished `SingleResult` into a `PhaseOutcome`. Single source of
+ * truth for the "did this phase succeed?" question so the pipeline (and any
+ * future pipeline consumer) shares one definition of success. A successful
+ * exit with empty final output is treated as a failure; an errored run is one
+ * with stderr/errorMessage/`stopReason: "error"`; the unreachable
+ * `exitCode === -1` (spawn error) is a failure via the fallback branch.
+ * Error strings are bounded (capErrorText) so a chatty stderr cannot
+ * turn one failed phase into a wall of notification text.
+ */
+export function toPhaseOutcome(result: SingleResult): PhaseOutcome {
+  const text = getFinalOutput(result.messages);
+  const success = isResultSuccess(result);
+  const ok = success && text.trim().length > 0;
+  let error: string | undefined;
+  if (!ok) {
+    if (success) {
+      error = `${result.agent} completed but produced no output`;
+    } else if (isResultError(result)) {
+      error =
+        capErrorText(result.stderr) ||
+        capErrorText(result.errorMessage ?? "") ||
+        `${result.agent} failed (exit ${result.exitCode})`;
+    } else {
+      error = `${result.agent} failed (exit ${result.exitCode})`;
+    }
+  }
+  return { ok, text, error };
 }
 
 /** Extract all display-worthy items from a message history. */

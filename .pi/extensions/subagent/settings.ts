@@ -1,0 +1,255 @@
+/**
+ * Subagent user-settings store + per-agent model/thinking overrides.
+ *
+ * Extracted from the subagent extension entry module so that programmatic
+ * pipeline callers (mode-commands) can honor the user's configured
+ * `little_coder.subagent_models` / `subagent_thinking` overrides without
+ * importing a sibling extension's registration entry point. This is a
+ * dependency-free leaf: no TUI, no tool schemas, no side effects at import.
+ */
+
+import { randomBytes } from "node:crypto";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import type { AgentConfig } from "./agents.js";
+
+export type SubagentLevel =
+  "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export const LEVELS: SubagentLevel[] = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+];
+
+export function settingsPath(): string {
+  // Honor PI_CODING_AGENT_DIR (same convention as _shared/little-coder-settings.mjs
+  // getAgentDir, bin/little-coder.mjs step 8, and agents.ts getUserAgentsDir):
+  // the env var points at the agent DIRECTORY, and the settings file is
+  // <agentDir>/settings.json. `~`/`~/x` expand against $HOME.
+  const env = process.env.PI_CODING_AGENT_DIR;
+  let agentDir: string;
+  if (env && env.trim().length > 0) {
+    const trimmed = env.trim();
+    if (trimmed === "~") {
+      agentDir = os.homedir();
+    } else if (trimmed.startsWith("~/")) {
+      agentDir = path.join(os.homedir(), trimmed.slice(2));
+    } else {
+      agentDir = path.resolve(trimmed);
+    }
+  } else {
+    agentDir = path.join(os.homedir(), ".pi", "agent");
+  }
+  return path.join(agentDir, "settings.json");
+}
+
+/** Cached settings payload keyed by file mtime to avoid redundant disk reads.
+ *  The key includes the resolved path so PI_CODING_AGENT_DIR changes (or
+ *  tests that redirect HOME) invalidate the cache. */
+let settingsCache: { data: unknown; mtimeMs: number; path: string } | null =
+  null;
+
+/** Test helper: drop the mtime-keyed cache so the next read re-reads disk. */
+export function __resetSettingsCache(): void {
+  settingsCache = null;
+}
+
+/**
+ * Shape of the `little_coder` namespace in the agent settings file. Validated
+ * by the typeof/LEVELS guards in the getters below (a no-op schema on top
+ * would only add an import — both branches of readSettings return the raw
+ * parsed object).
+ */
+export interface LittleCoderSettings {
+  subagent_thinking?: Record<string, SubagentLevel>;
+  subagent_models?: Record<string, string>;
+  subagent_level?: SubagentLevel;
+  [key: string]: unknown;
+}
+
+export interface PiSettings {
+  little_coder?: LittleCoderSettings;
+  [key: string]: unknown;
+}
+
+/** PiSettings with the little_coder namespace guaranteed present. */
+export type PiSettingsWithLC = PiSettings & {
+  little_coder: LittleCoderSettings;
+};
+
+export function readSettings(): PiSettings {
+  const sp = settingsPath();
+  try {
+    const st = fs.statSync(sp);
+    if (
+      settingsCache &&
+      st.mtimeMs === settingsCache.mtimeMs &&
+      sp === settingsCache.path
+    ) {
+      return settingsCache.data as PiSettings;
+    }
+    const raw: unknown = JSON.parse(fs.readFileSync(sp, "utf-8"));
+    // A non-object JSON root (null, a string, an array) is not settings:
+    // handing it back would crash `s.little_coder ??= {}` / `.little_coder`
+    // downstream, so fall back to an empty object. Anything object-shaped is
+    // returned as-is — unknown keys and schema drift are contained by the
+    // typeof/LEVELS guards in the getters.
+    const data =
+      raw !== null && typeof raw === "object" && !Array.isArray(raw)
+        ? (raw as PiSettings)
+        : ({} as PiSettings);
+    settingsCache = { data, mtimeMs: st.mtimeMs, path: sp };
+    return data;
+  } catch {
+    return {};
+  }
+}
+
+export function writeSettings(settings: PiSettings): void {
+  const sp = settingsPath();
+  fs.mkdirSync(path.dirname(sp), { recursive: true });
+  // Invalidate cache so the next read picks up fresh data
+  settingsCache = null;
+  // Atomic write: write to a temp file then rename, so a crash mid-write
+  // doesn't corrupt the settings file. The temp name is randomized (a fixed
+  // predictable name lets another local user race-read it), and 0600: the
+  // rename preserves the temp file's mode, and the settings file may carry
+  // credentials (the shared _shared/settings-write.mjs writer uses the same
+  // 0600 convention).
+  const tmp = `${sp}.tmp-${randomBytes(4).toString("hex")}`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2) + "\n", {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+    fs.renameSync(tmp, sp);
+  } catch (err) {
+    // Clean up temp file if rename failed
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+}
+
+export function littleCoderSettings(): PiSettingsWithLC {
+  const s = readSettings();
+  s.little_coder ??= {};
+  return s as PiSettingsWithLC;
+}
+
+export function getSubagentLevel(): SubagentLevel {
+  const raw = readSettings().little_coder?.subagent_level;
+  return raw && LEVELS.includes(raw) ? raw : "medium";
+}
+
+export function setSubagentLevel(level: SubagentLevel): void {
+  const s = littleCoderSettings();
+  s.little_coder.subagent_level = level;
+  writeSettings(s);
+}
+
+export function setSubagentModel(agent: string, model: string): void {
+  const s = littleCoderSettings();
+  s.little_coder.subagent_models ??= {};
+  s.little_coder.subagent_models[agent] = model;
+  writeSettings(s);
+}
+
+export function getSubagentModels(): Record<string, string> {
+  const raw = readSettings().little_coder?.subagent_models;
+  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+}
+
+export function subagentModel(
+  agent: string,
+  models?: Record<string, unknown>,
+): string | undefined {
+  // Named override wins over the "all" fallback (same precedence as
+  // subagentThinking): /subagent-model-all X then /subagent-model writer Y
+  // must give writer Y, not X.
+  const m = models ?? getSubagentModels();
+  return pickModelEntry(m[agent]) ?? pickModelEntry(m.all);
+}
+
+function pickModelEntry(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function pickThinkingEntry(value: unknown): SubagentLevel | undefined {
+  return typeof value === "string" && LEVELS.includes(value as SubagentLevel)
+    ? (value as SubagentLevel)
+    : undefined;
+}
+
+export function setSubagentThinking(
+  agent: string,
+  thinking: SubagentLevel,
+): void {
+  const s = littleCoderSettings();
+  s.little_coder.subagent_thinking ??= {};
+  s.little_coder.subagent_thinking[agent] = thinking;
+  writeSettings(s);
+}
+
+export function getSubagentThinkingSettings(): Record<string, SubagentLevel> {
+  const raw = readSettings().little_coder?.subagent_thinking;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).filter(
+      (entry): entry is [string, SubagentLevel] =>
+        typeof entry[1] === "string" &&
+        LEVELS.includes(entry[1] as SubagentLevel),
+    ),
+  );
+}
+
+export function subagentThinking(
+  agent: string,
+  thinking?: Record<string, unknown>,
+): SubagentLevel | undefined {
+  const s = thinking ?? getSubagentThinkingSettings();
+  return pickThinkingEntry(s[agent]) ?? pickThinkingEntry(s.all);
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+/**
+ * Apply the user's per-agent model/thinking overrides (from the
+ * `little_coder.subagent_models` / `subagent_thinking` settings) to a list of
+ * agent configs, returning new objects. Single entry point both the subagent
+ * tool and the programmatic pipeline use to honor configured overrides
+ * without leaking the raw per-agent lookups.
+ *
+ * Reads the settings file ONCE for the whole list (callers may pass an
+ * already-read PiSettings as `settings`): readSettings() stats the file on
+ * every call (the mtime cache skips the read, not the stat), and a 7-agent
+ * pipeline fan-out would otherwise pay a blocking stat per agent. The pick
+ * logic is the SAME subagentModel/subagentThinking precedence the
+ * single-agent command paths (/subagent-model, /subagent-thinking) use, so
+ * the two surfaces cannot drift.
+ */
+export function applySubagentOverrides(
+  agents: AgentConfig[],
+  settings: PiSettings = readSettings(),
+): AgentConfig[] {
+  const models = asRecord(settings.little_coder?.subagent_models);
+  const thinking = asRecord(settings.little_coder?.subagent_thinking);
+  return agents.map((a) => ({
+    ...a,
+    model: subagentModel(a.name, models) ?? a.model,
+    thinking: subagentThinking(a.name, thinking) ?? a.thinking,
+  }));
+}

@@ -1,14 +1,18 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
   autoresearchModePrompt,
   executionModePrompt,
   planModePrompt,
   reviewModePrompt,
-  ThemedReviewKey,
-  ProjectThemedReviewKey,
 } from "./mode-prompts.js";
+import { runDeepPlanPipeline, runThemedReviewPipeline } from "./pipeline.js";
 
 function latestPlan(cwd: string): string | undefined {
   const dirs = [join(cwd, "plans"), cwd];
@@ -26,6 +30,22 @@ function latestPlan(cwd: string): string | undefined {
   }
   return newest ? readFileSync(newest.path, "utf-8") : undefined;
 }
+
+// ---------------------------------------------------------------------------
+// Programmatic pipelines (the machinery lives in ./pipeline.js: delegation
+// gate, per-pipeline + per-phase abort controllers, per-phase watchdog,
+// untrusted-data fences, bounded output threading, the themed review fan-out,
+// and the deep-plan 4-phase pipeline)
+// ---------------------------------------------------------------------------
+
+// The short static deep-plan mode prompt: the pipeline ran programmatically
+// in subagents, so the mode prompt only has to point at the follow-up user
+// message (which carries the plan path and the full handoff rule).
+const STATIC_DEEP_PLAN_PROMPT = `## Deep Plan Pipeline
+
+The deep plan pipeline ran programmatically in subagents (research → draft → dual parallel review → final spec) and wrote the final spec to plans/deep-plan-<timestamp>.md. The follow-up user message contains the plan file path and the full POST-APPROVAL HANDOFF RULE.
+
+Do NOT implement the plan yourself in the main session — after the plan is approved, follow the handoff rule in that follow-up message exactly (spawn the EXECUTION subagent in spawn mode and relay its summary).`;
 
 let activeModePrompt: string | undefined;
 // Whether the post-approval handoff reminder is armed for the current
@@ -171,7 +191,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("review", {
     description:
-      "Run themed code review with security, architecture, tests, bugs, and performance subagents",
+      "Run themed code review with the 7 themed subagents (security, architecture, tests, bugs, performance, linting, ponytail) + one synthesis",
     handler: async (_args, ctx) => {
       if (process.env.LITTLE_CODER_SUBAGENT || process.env.PI_SUBAGENT_DEPTH) {
         ctx.ui?.notify?.(
@@ -181,84 +201,8 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const themes: ThemedReviewKey[] = [
-        "security",
-        "architecture",
-        "tests",
-        "bugs",
-        "performance",
-        "linting",
-        "ponytail",
-      ];
-      const themeAgents: Record<ThemedReviewKey, string> = {
-        security: "REVIEW-SECURITY",
-        architecture: "REVIEW-ARCHITECTURE",
-        tests: "REVIEW-TESTS",
-        bugs: "REVIEW-BUGS",
-        performance: "REVIEW-PERFORMANCE",
-        linting: "REVIEW-LINTING",
-        ponytail: "REVIEW-PONYTAIL",
-      };
-
-      ctx.ui?.notify?.(
-        "Starting themed code review (7 focused reviews)...",
-        "info",
-      );
-
-      // Build a structured request that tells the main agent to run each themed
-      // subagent sequentially. The subagent tool is the mechanism that actually
-      // spawns the isolated review processes.
-      const agentTasks = themes
-        .map((theme, i) => {
-          const agentName = themeAgents[theme];
-          return `Step ${i + 1}: Run subagent ${agentName} with task:\n"Review the current repository changes. Use git diff to see what changed, then examine relevant files. Focus specifically on ${theme} concerns and return a structured report with findings sorted by severity."`;
-        })
-        .join("\n\n");
-
-      const reviewPrompt = `## Themed Code Review Pipeline
-
-Run the following 7 themed review subagents **sequentially** (wait for each to complete before starting the next):
-
-${agentTasks}
-
-### After all themed reviews complete:
-1. Combine all findings into a single synthesis
-2. Deduplicate overlapping issues across themes
-3. Cross-reference related findings
-4. Render a unified verdict: **approve**, **comment**, or **request_changes**
-
-### Output format — render as raw Markdown, NOT inside a code block
-
-\`\`\`
-## Review Verdict: [approve | comment | request_changes]
-
-### Critical Findings
-- [CRITICAL severity items]
-
-### High Priority
-- [HIGH severity items, deduplicated]
-
-### Medium/Low Priority
-- [Remaining items grouped by category]
-
-### Summary
-[2-3 sentence overall assessment]
-
-### Recommendation
-[What to do next]
-\`\`\`
-
-Important: Output the Markdown above as plain rendered text. Do NOT wrap
-the entire response in a code block (triple backticks). The user will read
-this directly.`;
-
-      // Switch to overall review mode with the pipeline instructions
-      switchSystemPrompt(ctx, reviewPrompt);
-
-      // Trigger the review pipeline
-      pi.sendUserMessage(
-        "Execute the themed review pipeline: run all 7 subagents sequentially, collect findings, and produce a synthesized report with verdict.",
-        { deliverAs: "followUp" },
+      await runThemedReviewPipeline(pi, ctx, "review", (prompt) =>
+        switchSystemPrompt(ctx, prompt),
       );
     },
   });
@@ -347,84 +291,8 @@ this directly.`;
         return;
       }
 
-      const themes: ProjectThemedReviewKey[] = [
-        "security",
-        "architecture",
-        "tests",
-        "bugs",
-        "performance",
-        "linting",
-        "ponytail",
-      ];
-      const themeAgents: Record<ProjectThemedReviewKey, string> = {
-        security: "REVIEW-PROJECT-SECURITY",
-        architecture: "REVIEW-PROJECT-ARCHITECTURE",
-        tests: "REVIEW-PROJECT-TESTS",
-        bugs: "REVIEW-PROJECT-BUGS",
-        performance: "REVIEW-PROJECT-PERFORMANCE",
-        linting: "REVIEW-PROJECT-LINTING",
-        ponytail: "REVIEW-PROJECT-PONYTAIL",
-      };
-
-      ctx.ui?.notify?.(
-        "Starting themed project-wide code review (7 focused reviews)...",
-        "info",
-      );
-
-      // Build a structured request that tells the main agent to run each themed
-      // subagent sequentially across the entire project. The subagent tool is
-      // the mechanism that actually spawns the isolated review processes.
-      const agentTasks = themes
-        .map((theme, i) => {
-          const agentName = themeAgents[theme];
-          return `Step ${i + 1}: Run subagent ${agentName} with task:\n"Review the entire project codebase. Use code_search and glob to explore the codebase structure, then examine relevant files. Focus specifically on ${theme} concerns and return a structured report with findings sorted by severity."`;
-        })
-        .join("\n\n");
-
-      const projectReviewPrompt = `## Themed Project-Wide Code Review Pipeline
-
-Run the following 7 themed review subagents **sequentially** (wait for each to complete before starting the next):
-
-${agentTasks}
-
-### After all themed reviews complete:
-1. Combine all findings into a single synthesis
-2. Deduplicate overlapping issues across themes
-3. Cross-reference related findings
-4. Render a unified verdict: **approve**, **comment**, or **request_changes**
-
-### Output format — render as raw Markdown, NOT inside a code block
-
-\`\`\`
-## Review Verdict: [approve | comment | request_changes]
-
-### Critical Findings
-- [CRITICAL severity items]
-
-### High Priority
-- [HIGH severity items, deduplicated]
-
-### Medium/Low Priority
-- [Remaining items grouped by category]
-
-### Summary
-[2-3 sentence overall assessment of the project]
-
-### Recommendation
-[What to do next]
-\`\`\`
-
-Important: Output the Markdown above as plain rendered text. Do NOT wrap
-the entire response in a code block (triple backticks). The user will read
-this directly.`;
-
-      // Switch to project-wide review mode with the pipeline instructions
-      switchSystemPrompt(ctx, projectReviewPrompt);
-
-      // Trigger the project-wide review pipeline
-      pi.sendUserMessage(
-        "Execute the themed project-wide review pipeline: run all 7 subagents sequentially, collect findings, and produce a synthesized report with verdict.",
-        { deliverAs: "followUp" },
+      await runThemedReviewPipeline(pi, ctx, "review-project", (prompt) =>
+        switchSystemPrompt(ctx, prompt),
       );
     },
   });
@@ -450,134 +318,17 @@ this directly.`;
         return;
       }
 
-      ctx.ui?.notify?.(
-        `Starting deep plan: "${prompt.slice(0, 60)}${prompt.length > 60 ? "..." : ""}"`,
-        "info",
-      );
-
-      // The 4-phase procedure, spelled out ONCE and used both here (system prompt)
-      // and in the follow-up user message, so the two carriers cannot drift.
-      // NOTE: the spec's section format is NOT restated here — the COMPOSE
-      // agent's own Output Format (subagent/agents.ts) is the single source of
-      // truth, and the task templates reference it.
-      const pipelineSteps = `Run these 4 phases, in order, each as a subagent call (Phases 1, 2, and 4 run sequentially; Phase 3 runs two reviewers in parallel inside a single subagent call):
-1. RESEARCH — explore the codebase, gather evidence, record all factual findings with EvidenceAdd.
-2. COMPOSE (DRAFT) — task starts with "Role: DRAFT." and includes the full research output; produce the draft spec in the COMPOSE agent's Output Format (its system prompt defines the exact sections — the task references it, it does not restate it).
-3. DUAL PARALLEL REVIEW — ONE parallel subagent call: { tasks: [ { agent: "REVIEW-PLAN", ... }, { agent: "REVIEW-PLAN-PONYTAIL", ... } ] }, each task including the full draft spec. REVIEW-PLAN fact-checks (review report with confidence rating); REVIEW-PLAN-PONYTAIL hunts over-engineering (Plan Ponytail Review Report with Verdict). If the parallel result reports a failure (the tool result is an error, e.g. "Parallel: 1/2 succeeded"), proceed with the review that succeeded and record the missing review in the final spec's Risks & Mitigations.
-4. COMPOSE (FINAL) — task starts with "Role: FINAL." and includes the draft plus both review reports in full; produce the final revised spec.
-
-Then write the final spec to plans/deep-plan-<timestamp>.md and call plannotator_submit_plan with the plan file path.`;
-
-      // Escape the user's prompt for interpolation inside the double-quoted
-      // task strings of the templates and follow-up message below, so the
-      // user's own text (including pasted issue text with quotes, backslashes,
-      // or newlines) cannot break out of the quotes and rewrite the pipeline
-      // instructions.
-      const quotedPrompt = prompt
-        .replace(/\\/g, "\\\\")
-        .replace(/"/g, '\\"')
-        .replace(/\n/g, "\\n");
-
-      const deepPlanPrompt = `## Deep Plan Pipeline
-
-You are orchestrating a deep planning pipeline executed in subagents.
-
-### The pipeline
-${pipelineSteps}
-
-### Phase task templates
-The steps above say WHAT to do; these templates show HOW to phrase each subagent's
-task. Fill the placeholders with the FULL outputs of previous phases — never
-summarize or truncate them.
-
-**Phase 1: RESEARCH** — task:
-"Research the codebase for this request: "${quotedPrompt}". Explore relevant files,
-understand architecture, identify integration points, and record all factual
-findings with EvidenceAdd."
-
-**Phase 2: COMPOSE (DRAFT)** — task: "Role: DRAFT." then:
-"Compose the draft specification for this request: "${quotedPrompt}". Use the research
-findings from Phase 1, included in full below. Produce the complete markdown
-specification following the Output Format in your system prompt."
-+ the FULL research output appended after the instruction.
-
-**Phase 3: dual parallel review** — ONE call:
-\`\`\`
-subagent({ tasks: [
-  { agent: "REVIEW-PLAN", task: "Adversarially review the draft specification below. Verify all code references (file paths, function names, symbols), factual claims, architecture assertions, and implementation feasibility. Produce the structured review report with verified claims, incorrect claims, missing context, and a confidence rating.\n\nFull draft specification:\n<full draft>" },
-  { agent: "REVIEW-PLAN-PONYTAIL", task: "Lazy-engineering review of the draft specification below. Mark over-engineered steps for DELETE or SIMPLIFY (name the simpler alternative), justified complexity as NOTE, and end with the Plan Ponytail Review Report and a Verdict. Do not fact-check code references — REVIEW-PLAN runs in parallel for that.\n\nFull draft specification:\n<full draft>" }
-] })
-\`\`\`
-Each task must include the FULL draft specification.
-
-**Phase 4: COMPOSE (FINAL)** — task: "Role: FINAL." then:
-"Revise the draft specification for: "${quotedPrompt}" using the two review reports
-included in full below. Apply every valid correction and simplification; where the
-reports conflict, resolve in favor of what you can verify in the codebase. Produce
-the complete final markdown specification as your response."
-+ the FULL draft and BOTH review reports appended after the instruction.
-
-### Important Rules
-- Wait for each phase to complete before invoking the next; Phase 3 is ONE call with
-  two parallel tasks — wait for both results
-- Thread the FULL output from each subagent into the next phase's task context —
-  never summarize or truncate it
-- COMPOSE runs twice; its role (DRAFT / FINAL) is the one word in the task you give it
-- Do NOT skip any phase
-- Do NOT edit any project files during the pipeline — the only file you write is the
-  plan file
-- Use \`tools\` to list all available tools and \`subagents\` to list available subagents if needed`;
-
-      // Enter plannotator's planning phase so plannotator_submit_plan is
-      // registered. If the plannotator extension is not active this is a
-      // harmless no-op — the agent will still work, just without the
-      // interactive review gate.
-      try {
-        const { PLANNOTATOR_REQUEST_CHANNEL, PLANNOTATOR_TIMEOUT_MS } =
-          await import("@plannotator/pi-extension/plannotator-events");
-        const requestId = `deep-plan-${Date.now()}`;
-        await new Promise<void>((resolve) => {
-          // Fallback timeout in case no listener exists; cleared when respond()
-          // fires (or if emit throws) so the timer doesn't outlive the handler.
-          const fallback = setTimeout(resolve, PLANNOTATOR_TIMEOUT_MS);
-          try {
-            pi.events.emit(PLANNOTATOR_REQUEST_CHANNEL, {
-              requestId,
-              action: "plan-mode",
-              payload: { mode: "enter" },
-              respond(_resp: unknown) {
-                void _resp;
-                clearTimeout(fallback);
-                resolve();
-              },
-            });
-          } catch (err) {
-            clearTimeout(fallback);
-            throw err;
-          }
-        });
-      } catch {
-        // Plannotator not installed or not active — continue without it
-      }
-
-      // Switch to deep plan mode with the pipeline instructions, arming the
-      // one-time handoff reminder for this run in the SAME call (entering any
-      // other mode command clears it). The full handoff rule is deliberately
-      // NOT in deepPlanPrompt: plannotator's before_agent_start handler
-      // replaces the system prompt (last wins), so only transcript messages
-      // survive — the follow-up message below is the rule's carrier.
-      switchSystemPrompt(ctx, deepPlanPrompt, true);
-
-      // Trigger the deep plan pipeline — this follow-up user message is the
-      // primary instruction carrier: it persists in the transcript, so the
-      // handoff rule stays visible when approval triggers even though
-      // plannotator replaces the system prompt each turn.
-      pi.sendUserMessage(
-        `Deep plan pipeline for: "${quotedPrompt}".\n\n` +
-          `${pipelineSteps}\n\n` +
-          `${DEEP_PLAN_HANDOFF_RULE}`,
-        { deliverAs: "followUp" },
-      );
+      // The 4-phase pipeline (RESEARCH → COMPOSE DRAFT → dual parallel review
+      // → COMPOSE FINAL), the plannotator plan-mode handshake, the spec-file
+      // write, and the mode switch + follow-up handoff message all live in
+      // runDeepPlanPipeline (./pipeline.js) — same programmatic, never-
+      // rejecting contract as the themed review pipeline.
+      await runDeepPlanPipeline(pi, ctx, prompt, {
+        modePrompt: STATIC_DEEP_PLAN_PROMPT,
+        handoffRule: DEEP_PLAN_HANDOFF_RULE,
+        switchMode: (prompt, armDeepPlan) =>
+          switchSystemPrompt(ctx, prompt, armDeepPlan),
+      });
     },
   });
 

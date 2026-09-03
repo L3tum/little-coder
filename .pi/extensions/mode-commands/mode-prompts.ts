@@ -174,8 +174,6 @@ You are a senior developer who has seen every over-engineered codebase and been 
 Return a structured ponytail review with findings sorted by severity (DELETE → SIMPLIFY → NOTE).`,
 } as const;
 
-export type ThemedReviewKey = keyof typeof themedReviewPrompts;
-
 // Themed project-wide review system prompts — mirror of themedReviewPrompts but
 // scoped to the entire codebase rather than the latest diff.
 export const themedProjectReviewPrompts = {
@@ -348,8 +346,6 @@ You are a senior developer who has seen every over-engineered codebase and been 
 Return a structured ponytail review with findings sorted by severity (DELETE → SIMPLIFY → NOTE).`,
 } as const;
 
-export type ProjectThemedReviewKey = keyof typeof themedProjectReviewPrompts;
-
 export function planModePrompt(
   mode: "interactive" | "issue-agent" = "interactive",
 ): string {
@@ -399,7 +395,7 @@ export function modePrompt(
 export function overallProjectReviewPrompt(themedFindings: string): string {
   return `## Overall Project-Wide Code Review — Synthesis
 
-You are the lead reviewer synthesizing findings from multiple focused project-wide reviews. Below are the results from themed sub-agent reviews (Security, Architecture, Tests, Bugs, Performance) examining the entire codebase.
+You are the lead reviewer synthesizing findings from multiple focused project-wide reviews. Below are the results from themed sub-agent reviews (Security, Architecture, Tests, Bugs, Performance, Linting, Ponytail) examining the entire codebase.
 
 ### Your job
 1. Read all themed findings below.
@@ -439,7 +435,7 @@ ${themedFindings}`;
 export function overallReviewPrompt(themedFindings: string): string {
   return `## Overall Code Review — Synthesis
 
-You are the lead reviewer synthesizing findings from multiple focused reviews. Below are the results from themed sub-agent reviews (Security, Architecture, Tests, Bugs, Performance).
+You are the lead reviewer synthesizing findings from multiple focused reviews. Below are the results from themed sub-agent reviews (Security, Architecture, Tests, Bugs, Performance, Linting, Ponytail).
 
 ### Your job
 1. Read all themed findings below.
@@ -474,3 +470,26 @@ Important: Output the Markdown above as plain rendered text. Do NOT wrap the ent
 
 ${themedFindings}`;
 }
+
+// Short STATIC mode prompt for the pipeline-driven review commands. The
+// pipelines now run programmatically and the main agent receives exactly one
+// finished result, so the prompt only has to say what to do with that result.
+// The review prompt deliberately does NOT contain "Deep Plan Pipeline" — the
+// mode-switch contract requires entering any other mode to leave the deep-plan
+// prompt behind.
+export function staticReviewPrompt(scope: "code" | "project"): string {
+  const heading =
+    scope === "project"
+      ? "Themed Project-Wide Code Review"
+      : "Themed Code Review";
+  const scopePhrase =
+    scope === "project"
+      ? "7 themed reviewers of the entire codebase"
+      : "7 themed reviewers";
+  return `## ${heading}
+
+The themed ${scope === "project" ? "project-wide " : ""}code review pipeline ran programmatically in subagents (${scopePhrase}, then one synthesis). The follow-up user message is the finished synthesis report — present it to the user as rendered Markdown, NOT inside a code block. Do not re-run the reviews; do not implement fixes unless asked.`;
+}
+
+export const STATIC_REVIEW_PROMPT = staticReviewPrompt("code");
+export const STATIC_REVIEW_PROJECT_PROMPT = staticReviewPrompt("project");
