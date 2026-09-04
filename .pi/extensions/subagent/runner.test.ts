@@ -346,15 +346,7 @@ describe("isTransientRemoteFailure", () => {
     ).toBe(true);
   });
 
-  it("does NOT flag context overflow (a re-spawn overflows again)", () => {
-    // "400 status code (no body)" is the Cerebras/llama.cpp overflow
-    // signature — the exact error that used to surface as a misleading
-    // subagent result. It must fail fast, not burn the retry budget.
-    expect(
-      isTransientRemoteFailure(
-        errorResult({ errorMessage: "400 status code (no body)" }),
-      ),
-    ).toBe(false);
+  it("does NOT flag explicit context overflow (a re-spawn overflows again)", () => {
     expect(
       isTransientRemoteFailure(
         errorResult({
@@ -362,6 +354,40 @@ describe("isTransientRemoteFailure", () => {
         }),
       ),
     ).toBe(false);
+    // 413 no body can only be size overflow — not ambiguous, fail fast.
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: "413 status code (no body)" }),
+      ),
+    ).toBe(false);
+    // A 400 that DID carry an overflow body is explicit overflow, not the
+    // ambiguous bare-400 shape.
+    expect(
+      isTransientRemoteFailure(
+        errorResult({
+          errorMessage:
+            "400: the request exceeds the available context size, try increasing it",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("flags the bare '400 status code (no body)' as transient (ambiguous: overflow vs dropped-body rejection)", () => {
+    // Empty body = nothing to confirm overflow; transient server/gateway
+    // rejections produce the exact same text, so it gets the retry budget.
+    expect(
+      isTransientRemoteFailure(
+        errorResult({ errorMessage: "400 status code (no body)" }),
+      ),
+    ).toBe(true);
+    expect(
+      isTransientRemoteFailure(
+        errorResult({
+          errorMessage: undefined,
+          stderr: "400 status code (no body)",
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("does NOT flag quota/billing exhaustion", () => {
@@ -473,7 +499,9 @@ describe("withTransientRetry", () => {
     const { result, attempts } = await withTransientRetry(
       async () => {
         calls += 1;
-        return errorResult({ errorMessage: "400 status code (no body)" });
+        return errorResult({
+          errorMessage: "prompt is too long: 213462 tokens > 200000 maximum",
+        });
       },
       undefined,
       3,
@@ -481,7 +509,27 @@ describe("withTransientRetry", () => {
     );
     expect(calls).toBe(1);
     expect(attempts).toBe(1);
-    expect(result.errorMessage).toBe("400 status code (no body)");
+    expect(result.errorMessage).toBe(
+      "prompt is too long: 213462 tokens > 200000 maximum",
+    );
+  });
+
+  it("retries the ambiguous bare 400-no-body failure", async () => {
+    let calls = 0;
+    const { result, attempts } = await withTransientRetry(
+      async () => {
+        calls += 1;
+        return calls < 2
+          ? errorResult({ errorMessage: "400 status code (no body)" })
+          : ok();
+      },
+      undefined,
+      3,
+      fastBackoff,
+    );
+    expect(calls).toBe(2);
+    expect(attempts).toBe(2);
+    expect(result.stopReason).toBe("stop");
   });
 
   it("stops retrying when the signal aborts during backoff", async () => {

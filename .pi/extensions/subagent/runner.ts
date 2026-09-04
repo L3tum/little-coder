@@ -69,8 +69,8 @@ export const MAX_SUBAGENT_PARALLEL_TASKS = 8;
 export const DEFAULT_SUBAGENT_CONCURRENCY = 4;
 // Transient-remote-error retry budget: a child whose final LLM call hit a
 // transient provider/transport failure (rate limit, 5xx, dropped connection,
-// stream cut short) is respawned up to this many times TOTAL. Backoff is
-// per-retry (index = retry number - 1).
+// stream cut short, bare 400 with a lost error body) is respawned up to
+// this many times TOTAL. Backoff is per-retry (index = retry number - 1).
 export const SUBAGENT_MAX_ATTEMPTS = 3;
 export const SUBAGENT_RETRY_BACKOFF_MS = [5_000, 15_000];
 
@@ -346,16 +346,35 @@ export interface RunAgentOptions {
 // Transient-remote-error retry
 // ---------------------------------------------------------------------------
 
+// A 400 whose response body was lost/empty — the openai SDK's generic
+// "400 status code (no body)" shape for any non-2xx whose body it could not
+// read. pi-ai's overflow classifier treats this exact text as context
+// overflow (Cerebras's overflow signature), and its retryable pattern does
+// not cover plain 400s, so without this override the run would fail fast.
+// But this is the ONLY overflow signal with an empty body: with no body
+// there is nothing to confirm overflow, and the same message is what a
+// transient server/gateway rejection produces when the error body is
+// dropped. We therefore treat it as transient (observed in automatic
+// pipelines). Cost of a false positive: a real overflow just burns the
+// retry budget (each respawn overflows again, quickly) instead of failing
+// on the first attempt. Explicit overflow text and 413-no-body (which can
+// only be size overflow) still fail fast.
+const BARE_400_NO_BODY_RE = /^400\s*(?:status code)?\s*\(no body\)/i;
+
 /**
  * Whether a finished subagent run failed on a TRANSIENT remote/provider error
  * worth respawning for.
  *
  * Reuses pi-ai's own classifiers so "transient" means exactly what pi's
  * in-session retries mean: overloaded/rate-limit/5xx/connection-drop/stream
- * cut short. Deliberately NOT retryable (fail fast, a fresh spawn cannot
- * fix them):
- *  - context overflow (e.g. "400 status code (no body)" from Cerebras/
- *    llama.cpp servers) — a re-spawn overflows again at the same point;
+ * cut short. Also treated as transient: a bare "400 status code (no body)"
+ * (see BARE_400_NO_BODY_RE) — ambiguous between context overflow and a
+ * transient rejection whose error body was lost, so it gets the retry
+ * budget. Deliberately NOT retryable (fail fast, a fresh spawn cannot fix
+ * them):
+ *  - EXPLICIT context overflow (e.g. "prompt is too long: X tokens > Y
+ *    maximum", llama.cpp "exceeds the available context size", 413 no
+ *    body) — a re-spawn overflows again at the same point;
  *  - quota/billing exhaustion (pi's NON_RETRYABLE_PROVIDER_LIMIT list);
  *  - anything that is not stopReason "error" — aborts, timeouts, spawn
  *    failures, prep failures, unknown agents.
@@ -368,6 +387,9 @@ export function isTransientRemoteFailure(result: SingleResult): boolean {
     (typeof result.stderr === "string" && result.stderr.trim()) ||
     "";
   if (!text) return false;
+  // Bare 400-no-body: ambiguous (overflow vs dropped-body rejection), so
+  // unlike explicit overflow text it gets the retry budget (see above).
+  if (BARE_400_NO_BODY_RE.test(text)) return true;
   // isRetryableAssistantError/isContextOverflow only read stopReason and
   // errorMessage off the AssistantMessage they are given.
   const probe = {
@@ -441,11 +463,11 @@ export async function withTransientRetry(
  * Returns a SingleResult even on failure (exitCode > 0, stderr populated).
  *
  * Transient remote/provider failures (rate limit, 5xx, dropped connection,
- * stream cut short — see isTransientRemoteFailure) are retried up to
- * SUBAGENT_MAX_ATTEMPTS total spawns with backoff (SUBAGENT_RETRY_BACKOFF_MS);
- * an exhausted budget is annotated into the returned error text. Context
- * overflow, quota exhaustion, aborts, timeouts, and spawn/prep failures are
- * never retried.
+ * stream cut short, bare 400-no-body — see isTransientRemoteFailure) are
+ * retried up to SUBAGENT_MAX_ATTEMPTS total spawns with backoff
+ * (SUBAGENT_RETRY_BACKOFF_MS); an exhausted budget is annotated into the
+ * returned error text. Explicit context overflow, quota exhaustion, aborts,
+ * timeouts, and spawn/prep failures are never retried.
  */
 export async function runAgent(opts: RunAgentOptions): Promise<SingleResult> {
   const {
