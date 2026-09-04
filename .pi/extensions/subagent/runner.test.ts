@@ -9,10 +9,12 @@ import {
   runAgent,
   sleepAbortable,
   SUBAGENT_MAX_ATTEMPTS,
-  SUBAGENT_RETRY_BACKOFF_MS,
+  SUBAGENT_RETRY_BASE_BACKOFF_MS,
+  SUBAGENT_RETRY_JITTER,
   TASK_INLINE_MAX_BYTES,
   withTransientRetry,
   writeTaskToTempFile,
+  computeRetryBackoffMs,
 } from "./runner.js";
 import { emptyUsage, type SingleResult } from "./types.js";
 
@@ -449,7 +451,7 @@ describe("sleepAbortable", () => {
 });
 
 describe("withTransientRetry", () => {
-  const fastBackoff = [1, 2];
+  const fastBackoff = () => 1;
   const transient = () =>
     errorResult({ errorMessage: "503 service unavailable" });
   const ok = (): SingleResult =>
@@ -542,7 +544,7 @@ describe("withTransientRetry", () => {
       },
       c.signal,
       3,
-      [10_000], // long backoff: only the abort can end this quickly
+      () => 10_000, // long backoff: only the abort can end this quickly
     );
     const t = setTimeout(() => c.abort(), 20);
     try {
@@ -555,11 +557,22 @@ describe("withTransientRetry", () => {
     }
   });
 
-  it("exposes sane defaults (3 attempts, growing backoff)", () => {
+  it("exposes sane defaults (3 attempts, growing exponential backoff)", () => {
     expect(SUBAGENT_MAX_ATTEMPTS).toBe(3);
-    expect(SUBAGENT_RETRY_BACKOFF_MS.length).toBeGreaterThanOrEqual(2);
-    expect(SUBAGENT_RETRY_BACKOFF_MS[1]).toBeGreaterThan(
-      SUBAGENT_RETRY_BACKOFF_MS[0],
+    // rand() === 0.5 is the jitter midpoint: the exact exponential base.
+    const exact = (n: number) => computeRetryBackoffMs(n, () => 0.5);
+    expect(exact(1)).toBe(SUBAGENT_RETRY_BASE_BACKOFF_MS);
+    expect(exact(2)).toBeGreaterThan(exact(1));
+    expect(exact(3)).toBeGreaterThan(exact(2));
+    // Jitter stays within ±SUBAGENT_RETRY_JITTER of the base.
+    const base = SUBAGENT_RETRY_BASE_BACKOFF_MS;
+    expect(computeRetryBackoffMs(1, () => 0)).toBe(
+      Math.round(base * (1 - SUBAGENT_RETRY_JITTER)),
     );
+    expect(computeRetryBackoffMs(1, () => 1)).toBe(
+      Math.round(base * (1 + SUBAGENT_RETRY_JITTER)),
+    );
+    // Attempt numbering is clamped: never a zero/negative delay.
+    expect(computeRetryBackoffMs(0, () => 0)).toBeGreaterThan(0);
   });
 });

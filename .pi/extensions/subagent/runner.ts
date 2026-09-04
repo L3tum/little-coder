@@ -70,9 +70,33 @@ export const DEFAULT_SUBAGENT_CONCURRENCY = 4;
 // Transient-remote-error retry budget: a child whose final LLM call hit a
 // transient provider/transport failure (rate limit, 5xx, dropped connection,
 // stream cut short, bare 400 with a lost error body) is respawned up to
-// this many times TOTAL. Backoff is per-retry (index = retry number - 1).
+// this many times TOTAL.
 export const SUBAGENT_MAX_ATTEMPTS = 3;
-export const SUBAGENT_RETRY_BACKOFF_MS = [5_000, 15_000];
+// Exponential backoff between respawns: the gap after attempt N is
+// SUBAGENT_RETRY_BASE_BACKOFF_MS * SUBAGENT_RETRY_BACKOFF_GROWTH^(N-1),
+// randomized by ±SUBAGENT_RETRY_JITTER so parallel subagents do not re-strike
+// the provider in lockstep. Defaults give ~30 s then ~60 s (±25%) — a
+// ~1.5 min retry window, long enough for transient provider cooldowns
+// (rate limits, overload) to actually clear.
+export const SUBAGENT_RETRY_BASE_BACKOFF_MS = 30_000;
+export const SUBAGENT_RETRY_BACKOFF_GROWTH = 2;
+export const SUBAGENT_RETRY_JITTER = 0.25;
+
+/**
+ * Milliseconds to wait before retrying after attempt `attempt` (1-based,
+ * i.e. 1 = the wait before the 2nd spawn). Jitter is applied through
+ * `rand()` (injectable for tests; 0.5 lands on the exact base).
+ */
+export function computeRetryBackoffMs(
+  attempt: number,
+  rand: () => number = Math.random,
+): number {
+  const base =
+    SUBAGENT_RETRY_BASE_BACKOFF_MS *
+    SUBAGENT_RETRY_BACKOFF_GROWTH ** Math.max(0, attempt - 1);
+  const jitter = 1 + (rand() * 2 - 1) * SUBAGENT_RETRY_JITTER;
+  return Math.round(base * jitter);
+}
 
 /** Maps signal names to their POSIX numbers for exit code computation. */
 const SIGNAL_MAP: Record<string, number> = {
@@ -439,7 +463,7 @@ export async function withTransientRetry(
   produce: () => Promise<SingleResult>,
   signal?: AbortSignal,
   maxAttempts: number = SUBAGENT_MAX_ATTEMPTS,
-  backoffMs: number[] = SUBAGENT_RETRY_BACKOFF_MS,
+  backoffForAttempt: (attempt: number) => number = computeRetryBackoffMs,
 ): Promise<{ result: SingleResult; attempts: number }> {
   let result = await produce();
   let attempts = 1;
@@ -448,7 +472,7 @@ export async function withTransientRetry(
     !signal?.aborted &&
     isTransientRemoteFailure(result)
   ) {
-    const backoff = backoffMs[attempts - 1] ?? backoffMs[backoffMs.length - 1];
+    const backoff = backoffForAttempt(attempts);
     const completed = await sleepAbortable(backoff, signal);
     if (!completed) break;
     attempts += 1;
@@ -464,8 +488,9 @@ export async function withTransientRetry(
  *
  * Transient remote/provider failures (rate limit, 5xx, dropped connection,
  * stream cut short, bare 400-no-body — see isTransientRemoteFailure) are
- * retried up to SUBAGENT_MAX_ATTEMPTS total spawns with backoff
- * (SUBAGENT_RETRY_BACKOFF_MS); an exhausted budget is annotated into the
+ * retried up to SUBAGENT_MAX_ATTEMPTS total spawns with exponential
+ * backoff + jitter (computeRetryBackoffMs); an exhausted budget is annotated
+ * into the
  * returned error text. Explicit context overflow, quota exhaustion, aborts,
  * timeouts, and spawn/prep failures are never retried.
  */
